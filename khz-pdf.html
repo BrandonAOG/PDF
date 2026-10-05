@@ -1710,6 +1710,10 @@
   .ffd-colmenu .cm-none, .ffd-colmenu .cm-other { width:100%; background:#fff; border:1px solid #aaa; padding:3px; cursor:pointer; font:12px inherit; }
   .ffpk { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:4px; padding:4px; background:rgba(255,255,255,.04); }
   .ffm-r { display:flex; align-items:center; gap:10px; margin:8px 0; } .ffm-r label { flex:1; } .ffm-r input[type=number] { width:70px; }
+  .bk-list { max-height:260px; overflow:auto; border:1px solid #444; border-radius:3px; margin:8px 0; }
+  .bk-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; padding:7px 10px; cursor:pointer; border-bottom:1px solid #383838; }
+  .bk-row:hover { background:#3a3a3a; } .bk-n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .bk-t, .bk-s { color:#aaa; font-size:12px; white-space:nowrap; }
+  .bk-more summary { cursor:pointer; color:#aaa; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -10111,6 +10115,7 @@ function buildFileMenu() {
     + fmItem('fm_share', 'Share F&ile', 'showShareModal()')
     + SEP
     + fmItem('', 'Re&vert', 'revertFile()', '', { disabled: !state.revertBytes })
+    + fmItem('', 'Restore Previous Ve&rsion...', 'showRestoreVersions()', '', { disabled: !state.pdfDoc })
     + fmItem('', '&Close File', 'closeFile()', 'Ctrl+W')
     + SEP
     + fmItem('', 'Prop&erties...', 'showProperties()', 'Ctrl+D')
@@ -11478,7 +11483,7 @@ function showPreferences(cat) {
   const PANES = {
     Commenting: () => `<fieldset><legend>Making Comments</legend>${txt('author', 'Author name:', commentAuthor())}</fieldset>
       <fieldset><legend>Viewing Comments</legend>${sel('cmFont', 'Font size:', [['10', '10'], ['12', '12'], ['14', '14'], ['16', '16']], '12')}</fieldset>`,
-    Documents: () => `<fieldset><legend>Save Settings</legend>${chk('saveIncremental', 'Keep digital signatures valid when saving (save changes as an update)', true)}</fieldset>`,
+    Documents: () => `<fieldset><legend>Save Settings</legend>${chk('saveIncremental', 'Keep digital signatures valid when saving (save changes as an update)', true)}${chk('askReplace', 'Ask before replacing the original file', false)}</fieldset>`,
     Forms: () => `<fieldset><legend>Highlight Color</legend>${chk('fieldHighlight', 'Show border hover color for fields / highlight fields', true)}</fieldset>`,
     General: () => `<fieldset><legend>Basic Tools</legend>${chk('hoverBoxes', 'Show bounding boxes on hover in Edit PDF', true)}</fieldset>`,
     Identity: () => `<fieldset><legend>Identity</legend>${txt('author', 'Name:', commentAuthor())}${txt('title', 'Title:')}${txt('org', 'Organization Name:')}${txt('email', 'Email Address:')}</fieldset><div class="pf-note">Your name is used as the author of comments and markups.</div>`,
@@ -23811,6 +23816,101 @@ document.addEventListener('drop', e => {
   }
   setTimeout(() => { state._dropHandles = null; }, 60000);
 }, true);
+
+// ================================================================
+//  SAFER SAVE-IN-PLACE
+//  • before a file on the computer is written over, the version that was there is kept (10 per file, 30 days)
+//    → File › Restore Previous Version… brings any of them back
+//  • after saving, a note says exactly which file was replaced
+//  • Preferences › Documents › "Ask before replacing the original file" (off unless you turn it on)
+// ================================================================
+const BK_PER_FILE = 10, BK_DAYS = 30, BK_TOTAL = 300 * 1024 * 1024;
+async function bkList() { return (await svGet('backups')) || []; }
+async function bkSame(h1, h2) { try { return !!(h1 && h2 && await h1.isSameEntry(h2)); } catch (e) { return false; } }
+const bkMatch = async (b, h, name) => b.handle ? bkSame(b.handle, h) : b.name === (h ? h.name : name);
+async function bkKeep(handle, bytes) {
+  let list = await bkList();
+  const id = uid('bk'), now = Date.now();
+  await svPut('bk:' + id, bytes);
+  let h = handle; try { structuredClone(handle); } catch (e) { h = null; }   // a handle that can't be stored: match by name instead
+  list.unshift({ id, name: handle.name, handle: h, time: now, size: bytes.length });
+  // tidy up: too old, too many for one file, too much in total
+  const drop = [], perFile = [];
+  for (const b of list) {
+    if (now - b.time > BK_DAYS * 864e5) { drop.push(b); continue; }
+    let n = 0; for (const o of perFile) if (o.name === b.name && (!o.handle || !b.handle || await bkSame(o.handle, b.handle))) n++;
+    if (n >= BK_PER_FILE) drop.push(b); else perFile.push(b);
+  }
+  let total = 0; const keep = [];
+  for (const b of perFile) { total += b.size; if (total > BK_TOTAL && keep.length) drop.push(b); else keep.push(b); }
+  for (const b of drop) { try { const db = await svDB(); await new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete('bk:' + b.id); t.oncomplete = r; t.onerror = r; }); } catch (e) {} }
+  await svPut('backups', keep);
+}
+// keep what's on disk right before it's replaced
+const _svWriteHandleBK = svWriteHandle;
+svWriteHandle = async function (handle, bytes) {
+  let old = null;
+  try { const f = await handle.getFile(); if (f && f.size) old = new Uint8Array(await f.arrayBuffer()); } catch (e) {}
+  const r = await _svWriteHandleBK.apply(this, arguments);
+  if (old) { try { await bkKeep(handle, old); } catch (e) { console.warn('backup not kept', e); } }
+  state._lastSaveReplaced = !!old;
+  return r;
+};
+// ask first (only when that preference is on), and say what happened afterwards
+const _svSaveToHandleBK = svSaveToHandle;
+svSaveToHandle = async function (handle) {
+  if (handle && handle === state.saveHandle && getPref('askReplace', false)) {
+    const go = await new Promise(res => {
+      const ov = esDialog('ask-replace', 'Replace the original file?', `<div class="es-note">Saving will replace <b>${escapeHtml(handle.name)}</b> in the folder it came from.<br><br>The version that's there now is kept — you can bring it back with File › Restore Previous Version.</div>`,
+        [{ label: 'Replace', primary: true, run: () => res('replace') }, { label: 'Save a Copy...', run: () => res('copy') }, { label: 'Cancel', run: () => res(null) }], 460);
+      ov.querySelector('.ap-x').addEventListener('click', () => res(null));
+    });
+    if (!go) return false;
+    if (go === 'copy') { showSaveDialog(); return false; }
+  }
+  return _svSaveToHandleBK.apply(this, arguments);
+};
+const _svDoneBK = svDone;
+svDone = function (name, where) {
+  const replaced = state._lastSaveReplaced; state._lastSaveReplaced = false;
+  if (!replaced || where) return _svDoneBK.apply(this, arguments);
+  state.fileName = name; state.dirty = false; updateTitle();
+  toast(`Saved — replaced "${name}" in the folder it came from.${state.security ? ' 🔒 Password protected.' : ''} The previous version was kept (File › Restore Previous Version).`, 6000);
+};
+
+// ---------- File › Restore Previous Version… ----------
+async function showRestoreVersions() {
+  if (!requireDoc()) return;
+  const all = await bkList(), h = state.saveHandle;
+  const mine = [];
+  for (const b of all) { if (await bkMatch(b, h, state.fileName)) mine.push(b); }
+  const others = all.filter(b => !mine.includes(b));
+  const fmtT = t => new Date(t).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  const fmtS = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const row = (b, i) => `<label class="bk-row"><input type="radio" name="bk" value="${b.id}" ${i === 0 ? 'checked' : ''}><span class="bk-n">${escapeHtml(b.name)}</span><span class="bk-t">${fmtT(b.time)}</span><span class="bk-s">${fmtS(b.size)}</span></label>`;
+  const body = (mine.length ? `<div class="es-note">Versions of <b>${escapeHtml(state.fileName || 'this file')}</b> as they were just before each save:</div><div class="bk-list">${mine.map(row).join('')}</div>`
+      : `<div class="es-note">No earlier versions of <b>${escapeHtml(state.fileName || 'this file')}</b> have been kept yet. A version is kept each time a file on your computer is saved over.</div>`)
+    + (others.length ? `<details class="bk-more"><summary>Other files (${others.length})</summary><div class="bk-list">${others.map((b, i) => row(b, mine.length ? 1 : i)).join('')}</div></details>` : '')
+    + `<div class="es-note" style="margin-top:10px">Versions are kept for ${BK_DAYS} days, up to ${BK_PER_FILE} per file, on this computer only.</div>`;
+  const pick = ov => { const r = ov.querySelector('input[name=bk]:checked'); return r ? all.find(b => b.id === r.value) : null; };
+  const load = async b => { const bytes = await svGet('bk:' + b.id); if (!bytes) { alert('That version is no longer available.'); return null; } return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes); };
+  const ov = esDialog('bk-ov', 'Restore Previous Version', body, [
+    { label: 'Restore', primary: true, run: async o => {
+      const b = pick(o); if (!b) return false;
+      const bytes = await load(b); if (!bytes) return false;
+      const same = h && await bkMatch(b, h);
+      if (!same) { loadBytes(bytes.slice(), b.name.replace(/\.pdf$/i, '') + ` (${new Date(b.time).toLocaleDateString()}).pdf`); return; }
+      if (state.dirty && !confirm(`Restore the version from ${fmtT(b.time)}? Your unsaved changes will be lost.`)) return false;
+      showLoading(true, 'Restoring…');
+      try { await svWriteHandle(h, bytes); } catch (e) { showLoading(false); handleWriteError(e); return false; }
+      tabReplace++;
+      try { state.dirty = false; await loadBytes(bytes.slice(), h.name); state.saveHandle = h; } finally { tabReplace--; showLoading(false); }
+      toast(`Restored "${h.name}" to the version from ${fmtT(b.time)}. The version it replaced was kept too.`, 6000);
+    } },
+    { label: 'Open as Copy', run: async o => { const b = pick(o); if (!b) return false; const bytes = await load(b); if (!bytes) return false; loadBytes(bytes.slice(), b.name.replace(/\.pdf$/i, '') + ` (${new Date(b.time).toLocaleDateString()}).pdf`); } },
+    { label: 'Cancel' }], 560);
+  if (!all.length) ov.querySelectorAll('.ap-foot .ap-btn').forEach((btn, i) => { if (i < 2) btn.disabled = true; });
+}
 </script>
 </body>
 </html>
