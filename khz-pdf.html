@@ -19929,12 +19929,8 @@ async function khzInstall() {
   esDialog('khz-install', 'Install KHZ PDF as an App', msg, [{ label: 'OK', primary: true }], 460);
 }
 // "Open with KHZ PDF" from Explorer / Finder once installed
-if ('launchQueue' in window) {
-  window.launchQueue.setConsumer(async params => {
-    if (!params.files || !params.files.length) return;
-    try { const f = await params.files[0].getFile(); loadPDFFromFile(f); } catch (e) { toast('Could not open that file: ' + e.message); }
-  });
-}
+// opening files from the computer is handled in app76 (keeps each file's location for Save)
+
 
 // ================================================================
 //  TOUCH & APPLE PENCIL (iPad, touch screens) — the way Acrobat for iPad works:
@@ -20897,7 +20893,7 @@ async function showSaveDialog() {
 // ---- files opened with the computer's Open window (or "Open with KHZ PDF") can be saved in place ----
 const _loadBytesSV = loadBytes;
 loadBytes = async function (bytes, name, opts = {}) {
-  if (!opts.keep) { state.saveHandle = state._openHandle || null; state._openHandle = null; }
+  // (where the file came from is kept by the outermost loadBytes, see app76)
   return _loadBytesSV.apply(this, arguments);
 };
 if (typeof window.showOpenFilePicker === 'function') {
@@ -23770,6 +23766,51 @@ activateToolGroup = function (group) { const r = _activateToolGroupOL.apply(this
 // a new document (or a reload) starts over
 const _loadBytesOL = loadBytes;
 loadBytes = async function () { state.olSeg = {}; const r = await _loadBytesOL.apply(this, arguments); if (state.activeToolGroup === 'edit') setTimeout(olQueue, 300); return r; };
+
+// ================================================================
+//  REMEMBER WHERE EACH FILE CAME FROM, so Save (Ctrl+S) writes it back into its own folder:
+//  • right-click a PDF › Open with › KHZ PDF (or double-click when KHZ PDF is the default PDF app)
+//  • File › Open, Recent files, and dragging a PDF from a folder onto the window
+//  Each tab keeps its own file. A file that came from somewhere the browser can't write (e.g. an email
+//  attachment) asks where to save the first time, then remembers that place.
+// ================================================================
+const _loadBytesWH = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  let h = null;
+  if (!opts.keep) {
+    h = state._openHandle || null; state._openHandle = null;
+    if (!h && state._dropHandles) { const d = state._dropHandles.find(x => x.name === name); if (d) { try { h = await d.p; } catch (e) { h = null; } } }
+    if (h && h.kind !== 'file') h = null;
+  }
+  const r = await _loadBytesWH.apply(this, arguments);
+  if (!opts.keep) { state.saveHandle = h; if (h && typeof svRemember === 'function') { try { await svRemember(h); } catch (e) {} } }
+  return r;
+};
+// opened from the computer (Open with › KHZ PDF): every file opens in its own tab, linked to its file
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async params => {
+    for (const fh of params.files || []) {
+      try {
+        const f = await fh.getFile();
+        state._openHandle = fh;
+        showLoading(true, 'Loading PDF...');
+        await loadBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+      } catch (e) { toast('Could not open ' + (fh.name || 'that file') + ': ' + e.message); }
+      finally { showLoading(false); }
+    }
+  });
+}
+// dragged in from a folder: grab the file's handle while the drop is happening
+document.addEventListener('drop', e => {
+  state._dropHandles = [];
+  const items = e.dataTransfer && e.dataTransfer.items; if (!items) return;
+  for (const it of items) {
+    if (it.kind !== 'file' || typeof it.getAsFileSystemHandle !== 'function') continue;
+    const f = it.getAsFile(); if (!f) continue;
+    state._dropHandles.push({ name: f.name, p: it.getAsFileSystemHandle() });
+  }
+  setTimeout(() => { state._dropHandles = null; }, 60000);
+}, true);
 </script>
 </body>
 </html>
