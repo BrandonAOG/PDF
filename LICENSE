@@ -1,0 +1,66 @@
+KHZ PDF — Proprietary License
+
+Copyright (c) 2026 Brandon Keilholz. All rights reserved.
+
+1. OWNERSHIP
+KHZ PDF, including its source code, design, layout, icons, name and logo
+(together, the "Software"), is owned by Brandon Keilholz and is protected by
+copyright and other intellectual property laws. The Software is licensed, not
+sold.
+
+2. WHAT YOU MAY DO
+You may use the Software, free of charge, for personal or business purposes:
+  (a) by opening it from its official web address
+      (https://brandonaog.github.io/PDF/), or
+  (b) by installing it as an app from that web address.
+Any PDF or other file you create or edit with the Software belongs to you.
+
+3. WHAT YOU MAY NOT DO
+Unless you have written permission from the copyright holder, you may not:
+  (a) copy, host, mirror or redistribute the Software or any part of it;
+  (b) modify, translate, adapt or create derivative works based on it;
+  (c) sell, rent, lease, sublicense or otherwise commercially offer the
+      Software or any part of it;
+  (d) remove or change this license, copyright notices, the KHZ PDF name or
+      logo, or rebrand the Software as your own;
+  (e) use the source code, or any part of it, in another product or service.
+
+4. PUBLIC REPOSITORY
+The source code is publicly visible so it can be hosted on GitHub Pages.
+Being able to see the code does not grant any license to use it beyond
+Section 2. As required by GitHub's Terms of Service, GitHub users may view
+and fork this repository on GitHub; no other rights are granted by doing so.
+
+5. THIRD-PARTY COMPONENTS
+The Software loads open-source libraries (including PDF.js, pdf-lib,
+fontkit, node-forge, Tesseract.js, JSZip, PptxGenJS and SheetJS). Those
+libraries are not owned by the copyright holder and remain under their own
+licenses. This license applies only to the KHZ PDF code and assets.
+
+6. TRADEMARKS
+"KHZ PDF" and the KHZ PDF logo are trademarks of the copyright holder.
+KHZ PDF is an independent application and is not affiliated with, endorsed
+by, or sponsored by Adobe Inc. Adobe and Acrobat are trademarks of
+Adobe Inc.
+
+7. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. YOU ARE RESPONSIBLE
+FOR KEEPING BACKUP COPIES OF YOUR FILES AND FOR CHECKING THE RESULTS BEFORE
+RELYING ON THEM.
+
+8. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, LOSS OF DATA OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OF OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+9. TERMINATION
+This license ends automatically if you break any of its terms. When it
+ends, you must stop using the Software and delete any copies you have.
+
+10. PERMISSIONS
+To request permission for any use not allowed above, contact:
+brandon@alwaysongenerators.com
