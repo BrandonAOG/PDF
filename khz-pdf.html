@@ -23984,6 +23984,80 @@ setZoom = function (scale) {
   }
   return r;
 };
+
+// ================================================================
+//  ONE LINE, SEVERAL FONTS/COLOURS (e.g. "(address)" with black brackets and a red bold word)
+//  PDFs often draw the different-looking word separately, leaving a gap of spaces in the line around it.
+//  Acrobat treats it as one line of mixed text; so do we now: the word is put back into its gap and
+//  keeps its own colour / font / size, so editing it pushes the closing bracket along instead of
+//  running over it.
+// ================================================================
+const _buildTextBlockObjectsMX = buildTextBlockObjects;
+buildTextBlockObjects = async function (n) {
+  const r = await _buildTextBlockObjectsMX.apply(this, arguments);
+  try { await mxMergeGuests(n); } catch (e) { console.warn('merge mixed-style lines', e); }
+  return r;
+};
+async function mxMergeGuests(n) {
+  const ps = state.pages[n]; if (!ps) return;
+  const vp1 = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) });
+  const tc = await getTextContent(n);
+  const blocks = (state.textBlocks[n] && state.textBlocks[n].blocks) || [];
+  const same = (p, q) => Math.abs(p[0][0] - q[0][0]) < 0.01 && Math.abs(p[0][1] - q[0][1]) < 0.01 && Math.abs(p[1][0] - q[1][0]) < 0.01;
+  const tbs = () => state.annotations.filter(a => a.page === n && a.type === 'text-block' && a.untouched && !a.invisible && !a.link);
+  const vb = a => bboxOf(a.origPts.map(p => vp1.convertToViewportPoint(p[0], p[1])));
+  const itemsOf = a => { const b = blocks.find(x => same(x.pts, a.origPts)); if (!b) return null; return b.idxs.map(i => tc.items[i]).filter(it => it && it.str).map(it => { const t = pdfjsLib.Util.transform(vp1.transform, it.transform); return { x: t[4], base: t[5], w: it.width, str: it.str, fh: Math.abs(t[3]) || 10 }; }); };
+  for (const G of tbs().filter(a => !String(a.text).includes('\n'))) {
+    const g = vb(G), gIt = itemsOf(G); if (!gIt || !gIt.length) continue;
+    const gBase = gIt[0].base, gx0 = Math.min(...gIt.map(i => i.x)), gx1 = Math.max(...gIt.map(i => i.x + i.w));
+    for (const H of tbs()) {
+      if (H === G || !state.annotations.includes(G)) continue;
+      const h = vb(H); if (gx0 < h.x - 2 || gx1 > h.x + h.w + 2 || g.y + g.h < h.y || g.y > h.y + h.h) continue;
+      const hIt = itemsOf(H); if (!hIt) continue;
+      // the host line on the guest's baseline
+      const line = hIt.filter(it => Math.abs(it.base - gBase) < 0.45 * Math.max(it.fh, G.fontSize)).sort((p, q) => p.x - q.x);
+      if (!line.length) continue;
+      const before = line.filter(it => it.x + it.w <= gx0 + 1), after = line.filter(it => it.x >= gx1 - 1);
+      if (!before.length && !after.length) continue;
+      if (line.some(it => it.x + it.w > gx0 + 1 && it.x < gx1 - 1 && it.str.trim())) continue;   // something printed where the word sits: not a gap
+      // find that line in the host text and the run of spaces that stands for the gap
+      const lines = String(H.text).split('\n');
+      const li = (() => { const firstBase = Math.min(...hIt.map(i => i.base)), lh = H.lineH || H.fontSize * 1.2; return Math.round((gBase - firstBase) / lh); })();
+      if (li < 0 || li >= lines.length) continue;
+      const L = lines[li], nb = before.map(i => i.str).join('').replace(/\s/g, '').length;
+      let pos = -1, end = -1, cnt = 0;
+      for (let k = 0; k <= L.length; k++) {
+        if (cnt === nb) { const m = /^\s*/.exec(L.slice(k)); pos = k; end = k + m[0].length; break; }
+        if (k < L.length && !/\s/.test(L[k])) cnt++;
+      }
+      if (pos < 0) continue;
+      const pb = before[before.length - 1], pa = after[0];
+      const spW = 0.22 * G.fontSize;
+      const lead = pb && gx0 - (pb.x + pb.w) > spW ? ' ' : '', trail = pa && pa.x - gx1 > spW ? ' ' : '';
+      const ins = lead + G.text + trail;
+      const newLine = L.slice(0, pos) + ins + L.slice(end);
+      lines[li] = newLine;
+      // per-letter styles: the host's own look, the guest word keeps its colour / font / size
+      const hostStyles = charStylesOf(H);
+      let off = 0; for (let k = 0; k < li; k++) off += lines[k].length + 1;
+      const oldLines = String(H.text).split('\n'); let oOff = 0; for (let k = 0; k < li; k++) oOff += oldLines[k].length + 1;
+      const gs = { color: G.color, fontSize: G.fontSize, family: G.family, bold: !!G.bold, italic: !!G.italic };
+      const text = lines.join('\n'), styles = [];
+      for (let k = 0; k < oOff + pos; k++) styles.push(hostStyles[k] || {});
+      for (let k = 0; k < ins.length; k++) styles.push(k < lead.length || k >= lead.length + G.text.length ? (hostStyles[oOff + pos] || {}) : gs);
+      for (let k = oOff + end; k < String(H.text).length; k++) styles.push(hostStyles[k] || {});
+      const runs = charsToRuns(text, styles, baseStyleOf(H));
+      // operators: the host now owns the guest's too
+      const hi = state.textBlockIndex.find(t => t.id === H.id), gi = state.textBlockIndex.find(t => t.id === G.id);
+      if (!hi || !gi || !hi.ops || !gi.ops) continue;
+      hi.ops = [...new Set(hi.ops.concat(gi.ops))].sort((p, q) => p - q); H.ops = hi.ops.slice();
+      state.textBlockIndex.splice(state.textBlockIndex.indexOf(gi), 1);
+      H.text = text; H.origText = text; H.runs = hasOverrides(runs) ? runs : null;
+      state.annotations.splice(state.annotations.indexOf(G), 1);
+      break;
+    }
+  }
+}
 </script>
 </body>
 </html>
