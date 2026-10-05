@@ -1613,6 +1613,8 @@
 
   body.rot-hover .page-wrapper, body.rotating, body.rotating * { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M14 3.5l3.4 3-3.9 1.6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, crosshair !important; }
   #rot-tip { position:fixed; z-index:100005; background:#1473e6; color:#fff; font:12px 'Segoe UI',Arial,sans-serif; padding:2px 6px; border-radius:3px; pointer-events:none; }
+
+  .vt-edit { transform-origin:0 0 !important; transform:rotate(90deg) translateY(-100%) !important; }
 </style>
 </head>
 <body>
@@ -21594,6 +21596,109 @@ $('canvas-area').addEventListener('mousemove', e => {
   if (id && (!old || old.page !== n)) renderPageAnnots(n);
 }, { passive: true });
 $('canvas-area').addEventListener('mouseleave', () => { const old = state.annotations.find(a => a.id === state.redactHover); state.redactHover = null; if (old) renderPageAnnots(old.page); });
+
+// ================================================================
+//  Edit PDF › right-click on an empty spot (Add Text): Acrobat's "Select All" and
+//  "Make text direction vertical" join what was already there.
+//  Vertical text runs top-to-bottom (letters turned 90° clockwise), on screen and in the saved PDF.
+// ================================================================
+state.textVertical = false;
+const _pageContextMenuVT = pageContextMenu;
+pageContextMenu = function (e, n) {
+  const realOpen = openCtxMenu; let items = null;
+  openCtxMenu = (x, y, it) => { items = it; };
+  try { _pageContextMenuVT.apply(this, arguments); } finally { openCtxMenu = realOpen; }
+  if (!items) return;
+  const ps = state.pages[n], [vx, vy] = viewPoint(e, ps), hit = hitTest(n, vx, vy);
+  if (state.activeToolGroup === 'edit' && !hit && !items.some(it => it && it.label === 'Copy')) {
+    const extra = [
+      { icon: '⬚', label: 'Select All', key: 'Ctrl+A', action: () => mselSet(mqCandidates(n).map(a => a.id)) },
+      { icon: '⇅', label: state.textVertical ? 'Make text direction horizontal' : 'Make text direction vertical', action: () => { state.textVertical = !state.textVertical; toast(state.textVertical ? 'New text will run top to bottom. Click Add Text, then click on the page.' : 'New text will run left to right.'); } },
+      '-'];
+    items = [...extra, ...items];
+  }
+  realOpen(e.clientX, e.clientY, items);
+};
+// right-click on text added in Edit PDF: turn that text
+const _objectContextMenuVT = objectContextMenu;
+objectContextMenu = function (e, a) {
+  if (!a || a.type !== 'textbox' || state.activeToolGroup !== 'edit') return _objectContextMenuVT.apply(this, arguments);
+  const realOpen = openCtxMenu; let items = null;
+  openCtxMenu = (x, y, it) => { items = it; };
+  try { _objectContextMenuVT.apply(this, arguments); } finally { openCtxMenu = realOpen; }
+  if (!items) return;
+  items = [...items, '-', { icon: '⇅', label: a.vertical ? 'Make text direction horizontal' : 'Make text direction vertical', action: () => { if (!touchNative(a)) return; vtSwap(a, !a.vertical); renderPageAnnots(a.page); pushHistory(); markDirty(); } }];
+  realOpen(e.clientX, e.clientY, items);
+};
+
+// keep the top-left corner, swap width and height
+function vtSwap(a, vertical) {
+  const ps = state.pages[a.page]; if (!ps) return;
+  const b = bboxOf(a.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+  a.pts = toPdfPts(ps, [[b.x, b.y], [b.x + b.h, b.y + b.w]]);
+  a.vertical = vertical || undefined;
+}
+// new text from Edit PDF › Add Text follows the setting
+const _addAnnotationVT = addAnnotation;
+addAnnotation = function (a) {
+  const r = _addAnnotationVT.apply(this, arguments);
+  if (state.textVertical && a && a.type === 'textbox' && (a.origin === 'edit' || state.activeToolGroup === 'edit') && !a.vertical) { vtSwap(a, true); renderPageAnnots(a.page); }
+  return r;
+};
+// editing vertical text: type it the normal way, then it turns back
+const _editAnnotTextVT = editAnnotText;
+editAnnotText = async function (a) {
+  if (!a || !a.vertical) return _editAnnotTextVT.apply(this, arguments);
+  vtSwap(a, false); renderPageAnnots(a.page);
+  try { return await _editAnnotTextVT.apply(this, arguments); }
+  finally {
+    const back = () => { if (state.editingId === a.id) return setTimeout(back, 150); vtSwap(a, true); renderPageAnnots(a.page); };
+    back();
+  }
+};
+
+// drawing: lay the text out across, then turn the whole thing 90° clockwise into the tall box
+const _annotGeometryVT = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (!a.vertical || a.type !== 'textbox' || !a.pts) return _annotGeometryVT.apply(this, arguments);
+  const V = bboxOf(a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+  const flat = { ...a, vertical: undefined, pts: [vp.convertToPdfPoint(V.x, V.y), vp.convertToPdfPoint(V.x + V.h, V.y + V.w)] };
+  const prims = _annotGeometryVT.call(this, flat, vp, forPdf);
+  const M = [0, 1, -1, 0, V.x + V.w + V.y, V.y - V.x];   // (x, y) → (x0 + W − (y − y0), y0 + (x − x0))
+  return [{ k: 'group', m: M, prims, x: V.x, y: V.y, w: V.w, h: V.h }];
+};
+const _drawPrimSVGVT = drawPrimSVG;
+drawPrimSVG = function (p, g) {
+  if (!p || p.k !== 'group') return _drawPrimSVGVT.apply(this, arguments);
+  const gg = svgEl('g', { transform: `matrix(${p.m.join(' ')})` }, g);
+  p.prims.forEach(c => drawPrimSVG(c, gg));
+};
+const _drawPrimPDFVT = drawPrimPDF;
+drawPrimPDF = async function (doc, lp, p, vp1, rot, ctx) {
+  if (!p || p.k !== 'group') return _drawPrimPDFVT.apply(this, arguments);
+  const T = vp1.transform, C = mMul(mMul(T, p.m), mInv(T));
+  lp.pushOperators(PDFLib.pushGraphicsState(), PDFLib.concatTransformationMatrix(...C));
+  try { for (const c of p.prims) await drawPrimPDF(doc, lp, c, vp1, rot, ctx); }
+  finally { lp.pushOperators(PDFLib.popGraphicsState()); }
+};
+
+// typing shows vertical too: the box you type in is turned the same way while you type
+function vtMarkEditor() {
+  const go = () => { if (activeEditor && activeEditor.el) activeEditor.el.classList.add('vt-edit'); };
+  go(); setTimeout(go, 0); setTimeout(go, 60);
+}
+const _inlineEditVT = inlineEdit;
+inlineEdit = function () {
+  const r = _inlineEditVT.apply(this, arguments);
+  if ((state.textVertical && state.activeToolGroup === 'edit' && state.activeTool === 'add-text') || state._vtEditing) vtMarkEditor();
+  return r;
+};
+const _editAnnotTextVT2 = editAnnotText;
+editAnnotText = async function (a) {
+  if (!a || !a.vertical) return _editAnnotTextVT2.apply(this, arguments);
+  state._vtEditing = true;
+  try { return await _editAnnotTextVT2.apply(this, arguments); } finally { state._vtEditing = false; }
+};
 </script>
 </body>
 </html>
