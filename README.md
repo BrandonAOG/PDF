@@ -75,6 +75,11 @@ KHZ PDF has no server, no account and no tracking. Files you open stay in your b
 - [Tesseract.js](https://tesseract.projectnaptha.com/) – text recognition / OCR (Apache 2.0)
 - [JSZip](https://stuk.github.io/jszip/), [PptxGenJS](https://gitbrent.github.io/PptxGenJS/), [SheetJS](https://sheetjs.com/) – exporting (MIT / Apache 2.0)
 
+## License
+
+Copyright © 2026 Brandon Keilholz. All rights reserved.
+You're welcome to use KHZ PDF from the link above, but the code may not be copied, modified, redistributed or rebranded without permission. See [LICENSE](LICENSE) for details.
+
 ## Disclaimer
 
 KHZ PDF is an independent application. It is not affiliated with, endorsed by, or sponsored by Adobe Inc. Adobe and Acrobat are trademarks of Adobe Inc.
