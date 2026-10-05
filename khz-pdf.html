@@ -10352,7 +10352,7 @@ async function runOCR() {
       const c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
       const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
       ocrProgress(`Page ${n}: preparing…`, (done + 0.05) / pages.length);
-      await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE }).promise;
+      await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE, intent: 'print' }).promise;   // 'print' doesn't wait for screen refreshes, so it keeps going when the window is hidden
       state.ocrPageFrac = f => ocrProgress(`Recognizing text on page ${n} of ${N}…`, (done + 0.1 + 0.85 * f) / pages.length);
       const { data } = await ocrWorker.recognize(c, {}, { blocks: true, text: false });
       if (ocrCancel) { view.destroy(); return; }
@@ -17182,7 +17182,7 @@ async function expOCRPages(bytes, pages, lang) {
       const pg = await pdf.getPage(i + 1), v1 = pg.getViewport({ scale: 1 }), k = Math.min(300 / 72, Math.sqrt(30e6 / (v1.width * v1.height)));
       const vp = pg.getViewport({ scale: k }), c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
       const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
-      await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE }).promise;
+      await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE, intent: 'print' }).promise;
       const { data } = await worker.recognize(c, {}, { blocks: true, text: false });
       erase[i] = [];
       ocrWordsOf(data).forEach(w => {
@@ -17310,7 +17310,7 @@ async function expRender1(pdf, i, dpi, o = {}) {
   const vp = pg.getViewport({ scale: k });
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(vp.width)); c.height = Math.max(1, Math.round(vp.height));
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  await pg.render({ canvasContext: ctx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode ? pdfjsLib.AnnotationMode.ENABLE : undefined }).promise;
+  await pg.render({ canvasContext: ctx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode ? pdfjsLib.AnnotationMode.ENABLE : undefined, intent: 'print' }).promise;
   if (o.erase && o.erase.length) {   // scanned words that became real text: paint them out with the paper color
     o.erase.forEach(r => { const x = r.x * k, y = r.y * k, w = r.w * k, h = r.h * k; let px; try { px = ctx.getImageData(Math.max(0, x - 3), Math.max(0, y - 3), 1, 1).data; } catch (e) { px = [255, 255, 255]; } ctx.fillStyle = `rgb(${px[0]},${px[1]},${px[2]})`; ctx.fillRect(x, y, w, h); });
   }
@@ -21698,6 +21698,54 @@ editAnnotText = async function (a) {
   if (!a || !a.vertical) return _editAnnotTextVT2.apply(this, arguments);
   state._vtEditing = true;
   try { return await _editAnnotTextVT2.apply(this, arguments); } finally { state._vtEditing = false; }
+};
+
+// ================================================================
+//  Recognize Text keeps working when the KHZ PDF window is behind other windows or minimized:
+//  • pages are drawn without waiting for screen refreshes (see runOCR)
+//  • a Web Lock stops the browser from freezing the page while it works
+//  • the screen is kept awake while KHZ PDF is in front
+//  • progress shows on the tab / taskbar title ("38% – Recognizing text")
+//  • when it finishes: a bell notification, plus a Windows notification if you're in another window
+// ================================================================
+let ocrBg = null;
+const _ocrProgressBG = ocrProgress;
+ocrProgress = function (msg, frac) {
+  const r = _ocrProgressBG.apply(this, arguments);
+  if (ocrBg) {
+    if (frac !== undefined) ocrBg.frac = frac;
+    if (/Updating the document/.test(msg)) ocrBg.done = true;
+    document.title = `${Math.round((ocrBg.frac || 0) * 100)}% – Recognizing text – ${state.fileName || 'KHZ PDF'}`;
+  }
+  return r;
+};
+async function ocrWake() {
+  try { if (navigator.wakeLock && document.visibilityState === 'visible' && ocrBg && !ocrBg.wake) ocrBg.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (ocrBg && document.visibilityState === 'visible') { ocrBg.wake = null; ocrWake(); } });
+const _runOCRBG = runOCR;
+runOCR = async function () {
+  if (ocrBg) return;
+  ocrBg = { frac: 0, done: false, t0: Date.now(), title: document.title, name: state.fileName };
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {}); } catch (e) {}
+  ocrWake();
+  const job = () => _runOCRBG.apply(this, arguments);
+  try {
+    if (navigator.locks && navigator.locks.request) await navigator.locks.request('khz-ocr', job);
+    else await job();
+  } finally {
+    const b = ocrBg; ocrBg = null;
+    try { if (b.wake) b.wake.release(); } catch (e) {}
+    updateTitle();
+    if (b.done) {
+      const secs = Math.round((Date.now() - b.t0) / 1000), took = secs > 90 ? Math.round(secs / 60) + ' min' : secs + ' s';
+      const msg = `Recognize Text finished for "${b.name || 'your document'}" (${took}).`;
+      if (typeof notify === 'function') notify(msg, { kind: 'info' });
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        try { const n = new Notification('KHZ PDF', { body: msg, tag: 'khz-ocr' }); n.onclick = () => { window.focus(); n.close(); }; } catch (e) {}
+      }
+    }
+  }
 };
 </script>
 </body>
