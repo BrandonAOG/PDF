@@ -20849,6 +20849,174 @@ const _renderTextLayerFM = renderTextLayer;
 renderTextLayer = function (ps) { const r = _renderTextLayerFM.apply(this, arguments); try { ffMarkCheck(ps); } catch (e) {} return r; };
 const _renderFormLayerFM = typeof renderFormLayer === 'function' ? renderFormLayer : null;
 if (_renderFormLayerFM) renderFormLayer = function (n) { const r = _renderFormLayerFM.apply(this, arguments); try { const ps = state.pages[n]; if (ps && ps.renderedKey) ffMarkCheck(ps); } catch (e) {} return r; };
+
+// ================================================================
+//  DOCUMENT TABS like Acrobat: Home · Tools · one tab per open PDF
+//  • opening another PDF (Open, drag & drop, Combine, blank PDF, recent files…) adds a new tab
+//    instead of replacing the one you're working on
+//  • click a tab to switch; your changes, zoom, page and settings come back with it
+//  • × closes a tab (asks first when it has unsaved changes); closing the last one shows Home
+// ================================================================
+state.docTabs = [];          // [{ id, name, dirty, snap }] — the active tab's live document is in `state`
+state.activeTabId = null;
+let tabSeq = 0, tabBusy = false;
+
+// what a tab needs to come back exactly as it was
+async function tabSnapshot() {
+  if (!state.pdfDoc) return null;
+  const bytes = state.dirty ? await buildOutputBytes({ commitOnly: true }) : state.fileBytes.slice();
+  const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'form-field').map(a => JSON.parse(JSON.stringify(a)));
+  const area = $('canvas-area');
+  return {
+    bytes, name: state.fileName, annotations: keep, dirty: state.dirty, page: state.currentPage, scale: state.scale,
+    scrollTop: area.scrollTop, scrollLeft: area.scrollLeft, pageRotations: { ...state.pageRotations },
+    watermark: state.watermark, headerFooter: state.headerFooter, background: state.background, attachments: state.attachments,
+    meta: state.meta, metaEdited: state.metaEdited, security: state.security, saveHandle: state.saveHandle || null,
+    revertBytes: state.revertBytes || null, bookmarksEdited: state.bookmarksEdited,
+  };
+}
+function tabActive() { return state.docTabs.find(t => t.id === state.activeTabId) || null; }
+function tabNew(name) { const t = { id: 'doc' + (++tabSeq), name: name || 'Untitled', dirty: false, snap: null }; state.docTabs.push(t); return t; }
+
+// ---- opening something new: keep the current document in its own tab ----
+let tabReplace = 0;   // >0 while a tool is swapping the current document's contents (same tab)
+const _loadBytesTB = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  if (!opts.keep && !tabReplace && !opts._tabRestore) {
+    if (state.pdfDoc && tabActive()) {
+      showLoading(true, 'Opening in a new tab…');
+      try { const cur = tabActive(); cur.snap = await tabSnapshot(); cur.name = state.fileName; cur.dirty = state.dirty; } catch (e) { console.warn('could not keep the current tab', e); }
+      // the new document starts clean
+      state.dirty = false; state.saveHandle = null; state.revertBytes = null;
+      if (typeof crop !== 'undefined' && crop.on) cropEnd();
+    }
+    const t = tabNew(name); state.activeTabId = t.id;
+  }
+  const r = await _loadBytesTB.apply(this, arguments);
+  const t = tabActive(); if (t) { t.name = state.fileName || name; t.snap = null; }
+  renderDocTabs();
+  return r;
+};
+// tools that change the open document in place stay in the same tab
+[['revertFile'], ['tcDoOptimize'], ['tcPrinterMarks']].forEach(([fn]) => {
+  const orig = window[fn]; if (typeof orig !== 'function') return;
+  window[fn] = async function () { tabReplace++; try { return await orig.apply(this, arguments); } finally { tabReplace--; } };
+});
+// opening a file no longer throws away the open one
+const _confirmDiscardTB = confirmDiscard;
+confirmDiscard = function () { return state._closingTab ? _confirmDiscardTB.apply(this, arguments) : true; };
+
+// ---- switching ----
+async function switchDocTab(id) {
+  if (tabBusy || id === state.activeTabId) { showDocView(); return; }
+  const target = state.docTabs.find(t => t.id === id); if (!target || !target.snap) return;
+  tabBusy = true;
+  showLoading(true, 'Switching…');
+  try {
+    if (typeof setActiveTool === 'function') setActiveTool('select');
+    const cur = tabActive();
+    if (cur && state.pdfDoc) { cur.snap = await tabSnapshot(); cur.name = state.fileName; cur.dirty = state.dirty; }
+    await tabRestore(target);
+  } catch (e) { showLoading(false); alert('Could not switch tabs: ' + (e && e.message || e)); }
+  finally { tabBusy = false; }
+}
+async function tabRestore(t) {
+  const s = t.snap;
+  state.activeTabId = t.id;
+  state.keepZoom = true;
+  try { await _loadBytesTB.call(this, s.bytes.slice(), s.name, { keep: true, annotations: s.annotations, page: s.page, _tabRestore: true }); }
+  finally { state.keepZoom = false; }
+  Object.assign(state, {
+    watermark: s.watermark, headerFooter: s.headerFooter, background: s.background, attachments: s.attachments || [],
+    meta: s.meta, metaEdited: s.metaEdited, security: s.security, saveHandle: s.saveHandle, revertBytes: s.revertBytes,
+    bookmarksEdited: s.bookmarksEdited, selectedId: null, history: [], historyIndex: -1,
+  });
+  state.pageRotations = s.pageRotations || {};
+  if (Object.keys(state.pageRotations).length) relayoutAll();
+  if (Math.abs(state.scale - s.scale) > 0.001) setZoom(s.scale);
+  renderAllAnnots();
+  try { pushHistory(); } catch (e) {}
+  state.dirty = s.dirty; updateTitle();
+  if (typeof updateSecurityBadge === 'function') updateSecurityBadge();
+  const area = $('canvas-area'); setTimeout(() => { area.scrollTop = s.scrollTop; area.scrollLeft = s.scrollLeft; }, 60);
+  t.snap = null; t.name = s.name;
+  showDocView(); renderDocTabs();
+}
+
+// ---- closing ----
+async function closeDocTab(id) {
+  const t = state.docTabs.find(x => x.id === id); if (!t) return;
+  if (id !== state.activeTabId) {   // a tab in the background
+    if (t.dirty && !confirm(`Do you want to save changes to "${t.name}" before closing?\n\nOK = close without saving · Cancel = keep it open`)) return;
+    state.docTabs = state.docTabs.filter(x => x !== t); renderDocTabs(); return;
+  }
+  state._closingTab = true;
+  const was = state.pdfDoc;
+  try { _closeFileTB.call(this); } finally { state._closingTab = false; }
+  if (was && state.pdfDoc) return;   // they cancelled
+  const i = state.docTabs.indexOf(t);
+  state.docTabs = state.docTabs.filter(x => x !== t);
+  state.activeTabId = null;
+  const next = state.docTabs[Math.min(i, state.docTabs.length - 1)];
+  if (next && next.snap) { tabBusy = true; showLoading(true, 'Switching…'); try { await tabRestore(next); } finally { tabBusy = false; } }
+  else { renderDocTabs(); if (typeof showHomeView === 'function') showHomeView(); }
+}
+const _closeFileTB = closeFile;
+closeFile = function () { const t = tabActive(); if (t && !state._closingTab) return closeDocTab(t.id); return _closeFileTB.apply(this, arguments); };
+
+// ---- the tab strip ----
+function renderDocTabs() {
+  const bar = $('tab-bar'), main = $('tab-0'); if (!bar || !main) return;
+  bar.querySelectorAll('.tab.doc-x').forEach(e => e.remove());
+  const after = $('tab-tools');
+  let prev = after;
+  state.docTabs.forEach(t => {
+    let el;
+    if (t.id === state.activeTabId && state.pdfDoc) { el = main; }
+    else {
+      el = document.createElement('div'); el.className = 'tab doc-x'; el.dataset.tab = t.id; el.title = t.name;
+      el.innerHTML = `<span class="tab-name">${t.dirty ? '* ' : ''}${escapeHtml(t.name)}</span><button class="tab-close" title="Close">×</button>`;
+      el.onclick = () => switchDocTab(t.id);
+      el.querySelector('.tab-close').onclick = e => { e.stopPropagation(); closeDocTab(t.id); };
+    }
+    prev.after(el); prev = el;
+  });
+  if (!state.pdfDoc) after.after(main);
+  main.title = state.fileName || '';
+  const centerOn = document.body.classList.contains('center-view');
+  main.classList.toggle('active', !centerOn && !!state.pdfDoc);
+}
+const _updateTitleTB = updateTitle;
+updateTitle = function () { const r = _updateTitleTB.apply(this, arguments); const t = tabActive(); if (t) { t.name = state.fileName || t.name; t.dirty = state.dirty; } return r; };
+// the active tab's own × closes just that tab
+(function () { const b = document.querySelector('#tab-0 .tab-close'); if (b) b.setAttribute('onclick', 'event.stopPropagation();closeDocTab(state.activeTabId)'); })();
+// the active tab is reached through the normal document view; Home shows every open document
+const _showToolsCenterTB = showToolsCenter;
+showToolsCenter = function (home) {
+  const r = _showToolsCenterTB.apply(this, arguments);
+  const tc = $('tools-center');
+  if (home && tc && state.docTabs.length > 1) {
+    const cards = tc.querySelector('.home-cards');
+    if (cards) {
+      cards.querySelectorAll('.home-card').forEach(c => { if (/showDocView\(\)$/.test(c.getAttribute('onclick') || '')) c.remove(); });
+      const html = state.docTabs.map(t => `<div class="home-card" data-tab="${t.id}"><span class="hc-ic" style="color:#f26f6f"><span class="ic">${icon('createpdf')}</span></span><div><b>${t.dirty ? '* ' : ''}${escapeHtml(t.name)}</b><br><span>Open file${t.id === state.activeTabId ? ' · current' : ''}</span></div></div>`).join('');
+      cards.insertAdjacentHTML('afterbegin', html);
+      cards.querySelectorAll('.home-card[data-tab]').forEach(c => c.onclick = () => switchDocTab(c.dataset.tab));
+    }
+  }
+  document.querySelectorAll('.tab.doc-x').forEach(e => e.classList.remove('active'));
+  return r;
+};
+// Ctrl+Tab / Ctrl+Shift+Tab move between tabs, Ctrl+W closes one
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (e.key === 'Tab' && state.docTabs.length > 1) {
+    e.preventDefault();
+    const i = state.docTabs.findIndex(t => t.id === state.activeTabId), n = state.docTabs.length;
+    switchDocTab(state.docTabs[((i + (e.shiftKey ? -1 : 1)) % n + n) % n].id);
+  } else if ((e.key === 'w' || e.key === 'W') && state.activeTabId && !e.shiftKey) { e.preventDefault(); closeDocTab(state.activeTabId); }
+}, true);
+window.addEventListener('beforeunload', e => { if (state.docTabs.some(t => t.id !== state.activeTabId && t.dirty)) { e.preventDefault(); e.returnValue = ''; } });
 </script>
 </body>
 </html>
