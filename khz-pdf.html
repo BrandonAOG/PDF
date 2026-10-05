@@ -24338,8 +24338,8 @@ document.addEventListener('keydown', e => {
 }, true);
 
 // ================================================================
-//  AUTO-RECOVERY (like Acrobat): while a document has unsaved changes, a recovery copy is kept about
-//  once a minute (and when the window is hidden). If KHZ PDF is closed with the ×, the computer restarts
+//  AUTO-RECOVERY (like Acrobat): while a document has unsaved changes, a recovery copy is kept every
+//  20 seconds (and when the window is hidden). If KHZ PDF is closed with the ×, the computer restarts
 //  or the browser crashes, the next start offers "Recover unsaved changes?".
 //  Copies are deleted as soon as the file is saved, or closed with "No".
 // ================================================================
@@ -24387,7 +24387,7 @@ async function recSaveNow(force) {
   } catch (e) { console.warn('recovery copy not kept', e); }
   finally { recBusy = false; }
 }
-setInterval(() => recSaveNow(false), 60 * 1000);
+setInterval(() => recSaveNow(false), 20 * 1000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') recSaveNow(true); });
 // saved or closed on purpose: no copy needed
 const _updateTitleREC = updateTitle;
