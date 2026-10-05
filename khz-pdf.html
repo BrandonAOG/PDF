@@ -3546,13 +3546,15 @@ function annotGeometry(a, vp, forPdf) {
     case 'text-comment': case 'callout': case 'stamp': case 'textbox': {
       const fs = (a.fontSize || (a.type === 'stamp' ? 18 : 12));
       const bold = a.type === 'stamp' || !!a.bold;
-      const pad = a.pad !== undefined ? a.pad : (a.type === 'stamp' ? 6 : 4);
-      const maxW = a.type === 'textbox' ? Math.max(20, box.w / s - pad * 2) : (a.type === 'stamp' ? 0 : 220);
+      const apL = a.type === 'textbox' && a.apTop !== undefined;   // imported box: text where the file had it
+      const pad = apL ? 0 : a.pad !== undefined ? a.pad : (a.type === 'stamp' ? 6 : 4);
+      const maxW = a.type === 'textbox' ? Math.max(20, box.w / s - pad * 2 - (apL ? a.apX * 2 : 0)) : (a.type === 'stamp' ? 0 : 220);
       const lines = wrapText(a.text, fs, maxW * (a.wrapSlack || 1), bold, a.family);
       const natW = Math.max(...lines.map(l => textWidth(l, fs, bold, a.family)), 10) + pad * 2;
       const natH = lines.length * fs * 1.2 + pad * 2;
       let x = V[0][0], y = V[0][1], w = natW * s, h = natH * s;
       if (a.type === 'textbox') { x = box.x; y = box.y; w = box.w; h = Math.max(box.h, natH * s); }
+      const apLh = apL ? (a.apLh || fs * 1.15) : 0;
       const styles = {
         'text-comment': { color: a.color || '#000000', bg: '#ffffc8', border: '#999999' },
         'textbox': { color: a.color || '#000000', bg: '#ffffff', bgOpacity: 0.9, border: '#888888' },
@@ -3561,7 +3563,8 @@ function annotGeometry(a, vp, forPdf) {
       }[a.type];
       if (a.fill !== undefined) { styles.bg = a.fill; styles.bgOpacity = undefined; }   // imported Acrobat text boxes
       if (a.borderW !== undefined) { styles.border = a.borderW > 0 ? (a.borderColor || '#000000') : null; styles.borderWidth = a.borderW; }
-      return [richPrim({ k: 'text', x, y, w, h, lines, size: fs * s, pad: pad * s, bold, italic: !!a.italic, family: a.family, align: a.type === 'textbox' ? a.align : undefined, base: a.type === 'textbox' ? 0.8 : undefined, fitW: a.type === 'textbox' && !a.runs, ...styles, borderWidth: (styles.borderWidth || 1) * s }, a, s)];
+      if (apL) { const tH = a.apTop + (lines.length - 1) * apLh + fs * 0.3; if (tH * s > h) h = tH * s; }
+      return [richPrim({ k: 'text', x, y, w, h, lines, size: fs * s, pad: pad * s, ...(apL ? { ix: a.apX * s, lh: apLh * s } : {}), bold, italic: !!a.italic, family: a.family, align: a.type === 'textbox' ? a.align : undefined, base: a.type === 'textbox' ? (apL ? a.apTop / fs : 0.8) : undefined, fitW: a.type === 'textbox' && !a.runs, ...styles, borderWidth: (styles.borderWidth || 1) * s }, a, s)];
     }
     case 'text-edit': {
       // white-out of the original line + replacement text at the same baseline/size
@@ -4220,6 +4223,7 @@ async function importNativeAnnots() {
     const L = lk(d.get(N('L')));
     if (L && L.size && L.size() === 4) info.L = L.asArray().map(x => x.asNumber());   // true direction (pdf.js sorts these)
     { const LL = d.get(N('LL')); if (LL && LL.asNumber) info.ll = LL.asNumber(); const LLE = d.get(N('LLE')); if (LLE && LLE.asNumber) info.lle = LLE.asNumber(); const LLO = d.get(N('LLO')); if (LLO && LLO.asNumber) info.llo = LLO.asNumber(); const CP = d.get(N('CP')); if (CP) info.cp = String(CP); }
+    if (String(d.get(N('Subtype'))) === '/FreeText') { try { info.apText = apTextLines(d, lk); } catch (e) {} }
     const ds = d.get(N('DS'));
     info.font = ds ? (ds.decodeText ? ds.decodeText() : String(ds)) : '';
     const ic = lk(d.get(N('IC')));
@@ -4285,6 +4289,15 @@ async function importNativeAnnots() {
           a = { ...base, type: 'textbox', pts: rectPtsPdf, fontSize: da.fontSize || 12, color: rgbHex(da.fontColor) || '#000000',
                 fill: rgbHex(d.color), borderW: raw.width, borderColor: raw.strokeColor || rgbHex(da.fontColor) || '#000000', pad: raw.width > 0 ? 2 : 0,
                 family: /calibri/i.test(raw.font + ' ' + (da.fontName || '')) ? 'calibri' : 'sans' };
+          // keep the text where the file's own appearance puts it (Bluebeam etc. place it lower than Acrobat's top margin)
+          if (!raw.cl && raw.apText && raw.apText.length) {
+            const L0 = raw.apText[0], top = Math.max(r[1], r[3]), left = Math.min(r[0], r[2]);
+            const off = top - L0.y, dx = L0.x - left;
+            if (off > 0 && off < Math.abs(r[3] - r[1]) + 2 && dx >= 0 && dx < 40) {
+              a.apTop = off; a.apX = dx;
+              if (raw.apText.length > 1) { const lh = raw.apText[0].y - raw.apText[1].y; if (lh > 1 && lh < (a.fontSize || 12) * 3) a.apLh = lh; }
+            }
+          }
           if (raw.cl) {   // Text Callout: arrow point + text box (box = Rect minus RD)
             const rd = raw.rd || [0, 0, 0, 0];
             a.type = 'callout'; a.tip = [raw.cl[0], raw.cl[1]]; if (raw.cl.length === 6) a.knee = [raw.cl[2], raw.cl[3]];
@@ -4545,6 +4558,46 @@ function mImported(raw, base, mtype) {
   const sc = { a: +m[1] || 1, au: M_IN[au] ? au : 'in', b: +m[3] || 1, bu: bu === 'ft' && /^in/i.test(raw.mU2 || '') ? 'ft-in' : (M_IN[bu] ? bu : 'in'), prec };
   const txt = base.text || '', sub = base.subject && !/^(Distance|Perimeter|Area|Dimension)/i.test(base.subject) ? base.subject : '';
   return { type: 'measure', mtype, scale: sc, label: sub, color: base.color, closed: undefined, le: undefined, subject: { dist: 'Distance', perim: 'Perimeter', area: 'Area' }[mtype], note: txt };
+}
+
+// Where the lines of text sit in an annotation's own appearance (page coordinates): [{x, y}] top line first
+function apTextLines(d, lk) {
+  const N = k => PDFLib.PDFName.of(k);
+  const ap = lk(d.get(N('AP'))); if (!ap || !ap.get) return null;
+  let st = lk(ap.get(N('N'))); if (st && st.get && !st.dict) { const k0 = st.keys()[0]; st = k0 ? lk(st.get(k0)) : null; }
+  if (!st || !st.dict) return null;
+  const raw = st instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(st).decode() : (st.getUnencodedContents ? st.getUnencodedContents() : st.getContents());
+  const src = new TextDecoder('latin1').decode(raw);
+  const nums = v => v && v.asArray ? v.asArray().map(x => x.asNumber ? x.asNumber() : 0) : null;
+  const M = nums(lk(st.dict.get(N('Matrix')))) || [1, 0, 0, 1, 0, 0];
+  const bb = nums(lk(st.dict.get(N('BBox')))); const R = nums(lk(d.get(N('Rect'))));
+  if (!bb || !R) return null;
+  const tp = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  const cs = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[0], bb[3]], [bb[2], bb[3]]].map(([x, y]) => tp(M, x, y));
+  const tx0 = Math.min(...cs.map(c => c[0])), tx1 = Math.max(...cs.map(c => c[0])), ty0 = Math.min(...cs.map(c => c[1])), ty1 = Math.max(...cs.map(c => c[1]));
+  const rx0 = Math.min(R[0], R[2]), rx1 = Math.max(R[0], R[2]), ry0 = Math.min(R[1], R[3]), ry1 = Math.max(R[1], R[3]);
+  const sx = tx1 > tx0 ? (rx1 - rx0) / (tx1 - tx0) : 1, sy = ty1 > ty0 ? (ry1 - ry0) / (ty1 - ty0) : 1;
+  const toPage = (x, y) => { const [a, b] = tp(M, x, y); return [rx0 + (a - tx0) * sx, ry0 + (b - ty0) * sy]; };
+  // walk the text operators (cm inside the stream is followed for the simple q/cm/Q case)
+  const toks = src.replace(/\((?:\\.|[^\\)])*\)/g, ' (S) ').replace(/<[0-9a-fA-F\s]*>/g, ' (S) ').split(/\s+/).filter(Boolean);
+  let ctm = [1, 0, 0, 1, 0, 0]; const stack = []; let lm = [1, 0, 0, 1, 0, 0], tl = 0; const out = []; let shown = false; const st2 = [];
+  const mul = (a, b) => [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3], a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]];
+  const nl = () => { shown = false; };
+  for (const t of toks) {
+    if (/^[-+.\d]/.test(t)) { st2.push(parseFloat(t)); continue; }
+    if (t === 'q') stack.push(ctm.slice()); else if (t === 'Q') ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+    else if (t === 'cm' && st2.length >= 6) ctm = mul(st2.slice(-6), ctm);
+    else if (t === 'BT') { lm = [1, 0, 0, 1, 0, 0]; nl(); }
+    else if (t === 'Tm' && st2.length >= 6) { lm = st2.slice(-6); nl(); }
+    else if ((t === 'Td' || t === 'TD') && st2.length >= 2) { const [x, y] = st2.slice(-2); if (t === 'TD') tl = -y; lm = mul([1, 0, 0, 1, x, y], lm); nl(); }
+    else if (t === 'TL' && st2.length) tl = st2[st2.length - 1];
+    else if (t === 'T*' || t === "'" || t === '"') { lm = mul([1, 0, 0, 1, 0, -tl], lm); nl(); if (t !== 'T*') { shown = true; const m = mul(lm, ctm); out.push(toPage(m[4], m[5])); } }
+    else if ((t === 'Tj' || t === 'TJ') && !shown) { shown = true; const m = mul(lm, ctm); out.push(toPage(m[4], m[5])); }
+    st2.length = 0;
+  }
+  const lines = [];
+  out.sort((a, b) => b[1] - a[1]).forEach(([x, y]) => { const L = lines.find(l => Math.abs(l.y - y) < 2); if (L) L.x = Math.min(L.x, x); else lines.push({ x, y }); });
+  return lines;
 }
 
 // ================================================================
