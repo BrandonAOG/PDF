@@ -1592,6 +1592,8 @@
   .sv-cancel { background:none; color:#eee; border:1.5px solid #aaa; } .sv-cancel:hover { background:#3a3a3a; }
   .sv-go { background:#5c8ef0; color:#fff; border:1.5px solid #5c8ef0; } .sv-go:hover { background:#4b7de0; }
   body.theme-light .sv-dlg { background:#fff; color:#222; } body.theme-light .sv-place.on { background:#e8eefc; color:#111; } body.theme-light .sv-cancel { color:#222; border-color:#888; }
+
+  .ff.ff-mark::after { content:attr(data-mark); position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:var(--ffm,10px)/1 'Segoe UI Symbol','DejaVu Sans',Arial,sans-serif; color:#000; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -8091,6 +8093,7 @@ function renderFormLayer(n) {
       el = document.createElement('div');
       el.tabIndex = 0;
       el.setAttribute('role', f.type);
+      el.dataset.bv = f.buttonValue == null ? '' : String(f.buttonValue);
       const toggle = () => {
         if (f.readOnly) return;
         if (f.type === 'checkbox') setFieldValue(f.name, !state.formValues[f.name]);
@@ -20800,6 +20803,40 @@ window.addEventListener('dragenter', e => {
 }, true);
 // a missed drag (e.g. dropped outside the window) clears up as soon as the mouse moves again
 window.addEventListener('mousemove', e => { const o = $('drag-overlay'); if (o && !o.classList.contains('hidden') && !e.buttons) dropCoverOff(); }, true);
+
+// ================================================================
+//  Check boxes / radio buttons that are marked in the file always show their mark.
+//  Some PDFs' own check-mark drawing doesn't come out in every browser (the page picture then
+//  shows an empty box). After each page is drawn we look inside every marked box; if the picture
+//  has no mark there, the app draws the ✔ (or ●) itself.
+// ================================================================
+function ffMarkCheck(ps) {
+  if (!ps || !ps.canvas || !ps.wrapper) return;
+  const c = ps.canvas, k = c.width / ps.vp.width;
+  let g; try { g = c.getContext('2d', { willReadFrequently: true }); } catch (e) { return; }
+  ps.wrapper.querySelectorAll('.ff-checkbox, .ff-radio').forEach(el => {
+    const v = state.formValues[el.dataset.name];
+    const on = el.classList.contains('ff-radio') ? (v != null && v !== '' && String(v) === el.dataset.bv) : !!v && v !== 'Off';
+    el.classList.remove('ff-mark');
+    if (!on) return;
+    const x = parseFloat(el.style.left), y = parseFloat(el.style.top), w = parseFloat(el.style.width), h = parseFloat(el.style.height);
+    const sx = Math.round((x + w * 0.34) * k), sy = Math.round((y + h * 0.34) * k), sw = Math.max(1, Math.round(w * 0.32 * k)), sh = Math.max(1, Math.round(h * 0.32 * k));   // the middle only: never the box's own border
+    let dark = 0, tot = 0;
+    try {
+      const d = g.getImageData(sx, sy, sw, sh).data;
+      for (let i = 0; i < d.length; i += 4) { tot++; if (d[i + 3] > 40 && d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11 < 150) dark++; }
+    } catch (e) { return; }
+    if (tot && dark / tot < 0.12) {   // the picture has no mark here
+      el.classList.add('ff-mark');
+      el.dataset.mark = el.classList.contains('ff-radio') ? '●' : '✔';
+      el.style.setProperty('--ffm', Math.max(6, Math.min(w, h) * (el.classList.contains('ff-radio') ? 0.55 : 0.8)) + 'px');
+    }
+  });
+}
+const _renderTextLayerFM = renderTextLayer;
+renderTextLayer = function (ps) { const r = _renderTextLayerFM.apply(this, arguments); try { ffMarkCheck(ps); } catch (e) {} return r; };
+const _renderFormLayerFM = typeof renderFormLayer === 'function' ? renderFormLayer : null;
+if (_renderFormLayerFM) renderFormLayer = function (n) { const r = _renderFormLayerFM.apply(this, arguments); try { const ps = state.pages[n]; if (ps && ps.renderedKey) ffMarkCheck(ps); } catch (e) {} return r; };
 </script>
 </body>
 </html>
