@@ -1523,6 +1523,75 @@
   .fp-more-b { background:none; border:0; color:#e6e6e6; font-size:12.5px; cursor:pointer; padding:2px 4px; } .fp-more:hover .fp-more-b { color:#fff; text-decoration:underline; }
   .fp-more-sw { width:14px; height:14px; border:1px solid #888; }
   #win-color { z-index:100000 !important; }
+
+  /* Signature panel tree (Acrobat style, app colors) */
+  .spt { font:12.5px 'Segoe UI',Tahoma,Arial,sans-serif; color:#e8e8e8; padding:2px 4px 12px; }
+  .spt-bar { display:flex; align-items:center; gap:10px; padding:4px 4px 10px; border-bottom:1px solid #4a4a4a; margin-bottom:8px; }
+  .spt-opt { background:none; border:0; color:#d6d6d6; cursor:pointer; padding:2px 4px; border-radius:3px; } .spt-opt svg { width:22px; height:16px; display:block; }
+  .spt-opt:hover, .spt-val:hover { background:rgba(255,255,255,.08); }
+  .spt-val { background:none; border:0; color:#f0f0f0; font:600 14px 'Segoe UI',Tahoma,Arial,sans-serif; cursor:pointer; padding:3px 6px; border-radius:3px; }
+  .spt-row { display:flex; align-items:center; gap:6px; padding:4px 2px; line-height:1.35; }
+  .spt-tog { cursor:pointer; user-select:none; } .spt-tog:hover { background:rgba(255,255,255,.05); }
+  .spt-chev { width:14px; height:14px; flex:none; color:#c8c8c8; transition:transform .12s; transform:rotate(-90deg); }
+  .spt-node.open > .spt-row > .spt-chev { transform:none; }
+  .spt-kids { display:none; padding-left:22px; } .spt-node.open > .spt-kids { display:block; }
+  .spt-leaf { padding-left:4px; color:#d0d0d0; }
+  .spt-reasons { padding-left:16px; }
+  .spt-ic { width:16px; height:16px; flex:none; } .spt-pen { width:20px; height:20px; color:#cfcfcf; }
+  .spt-title { font-weight:600; color:#f2f2f2; }
+  .spt-sub > .spt-row { color:#d0d0d0; }
+  .spt-link { color:#e0e0e0; text-decoration:underline; cursor:pointer; } .spt-link:hover { color:#fff; }
+  .spt-chg { margin-top:4px; } .spt-chg > .spt-row b { font-weight:600; color:#f0f0f0; }
+  .spt-chg > .spt-row.spt-leaf { padding-left:22px; }
+  body.theme-light .spt, body.theme-light .spt-leaf, body.theme-light .spt-title, body.theme-light .spt-val, body.theme-light .spt-link, body.theme-light .spt-chg b { color:#2c2c2c; }
+  /* Certificate Viewer */
+  .cv-ov .ap-dlg { background:#f0f0f0; color:#111; } .cv { font:12.5px 'Segoe UI',Tahoma,Arial,sans-serif; color:#111; }
+  .cv-intro { font-weight:600; margin-bottom:8px; } .cv-all { display:flex; gap:6px; align-items:center; margin-bottom:8px; }
+  .cv-main { display:flex; gap:12px; height:330px; }
+  .cv-tree { width:160px; flex:none; background:#fff; border:1px solid #9a9a9a; overflow:auto; padding:2px 0; }
+  .cv-node { padding:3px 6px; cursor:pointer; white-space:nowrap; } .cv-node.on { background:#cce4f7; }
+  .cv-right { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .cv-tabs { display:flex; gap:2px; } .cv-tab { border:1px solid #c4c4c4; border-bottom:none; background:#f5f5f5; padding:3px 8px; font:inherit; cursor:pointer; color:#111; } .cv-tab.on { background:#fff; position:relative; top:1px; }
+  .cv-pane { flex:1; background:#fff; border:1px solid #c4c4c4; padding:12px; display:flex; flex-direction:column; overflow:auto; }
+  .cv-sum { display:grid; grid-template-columns:110px 1fr; gap:10px 12px; align-items:start; } .cv-ic { text-align:right; font-size:20px; }
+  .cv-k { text-align:right; } .cv-v { margin-bottom:6px; } .cv-box { border:1px solid #b8b8b8; background:#f4f4f4; padding:4px 6px; min-height:40px; }
+  .cv-exp { margin-top:auto; text-align:center; padding-top:10px; }
+  .cv-det { display:flex; flex-direction:column; gap:8px; } .cv-flist { border:1px solid #c4c4c4; height:160px; overflow:auto; } .cv-f { padding:2px 6px; cursor:pointer; } .cv-f.on { background:#cce4f7; }
+  .cv-fval { height:70px; resize:none; font:12px Consolas, monospace; }
+  .cv-p { margin-bottom:10px; line-height:1.45; }
+  .cv-note { display:flex; gap:10px; margin-top:12px; line-height:1.4; } .cv-i { width:18px; height:18px; border:1.5px solid #333; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font:bold 11px serif; flex:none; }
+
+  #left-panel.open.sig-wide { width:440px; }
+  #left-panel.open[style*="--lpw"] { width:var(--lpw) !important; }
+  .lp-grip { position:absolute; top:0; right:-3px; width:6px; height:100%; cursor:ew-resize; z-index:5; }
+  .lp-grip:hover { background:rgba(75,156,245,.35); }
+  .cv-one { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
+
+  /* Save as PDF window */
+  #sv-ov { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.35); }
+  .sv-dlg { position:relative; width:min(880px,96vw); background:#2b2b2b; color:#e6e6e6; border:1px solid #555; box-shadow:0 14px 40px rgba(0,0,0,.6); font:13.5px 'Segoe UI',Tahoma,Arial,sans-serif; display:flex; flex-direction:column; }
+  .sv-titlebar { display:flex; justify-content:space-between; align-items:center; background:#f3f3f3; color:#111; padding:6px 10px; font-size:12px; }
+  .sv-x { background:none; border:0; font-size:14px; cursor:pointer; color:#333; }
+  .sv-head { padding:20px 20px 14px; font-weight:700; font-size:17px; border-bottom:1px solid #444; }
+  .sv-main { display:flex; height:min(430px,60vh); }
+  .sv-nav { width:200px; border-right:1px solid #444; padding:22px 0; flex:none; }
+  .sv-navh { font-weight:700; font-size:12.5px; padding:0 20px 10px; color:#ddd; }
+  .sv-place { padding:8px 20px; cursor:pointer; color:#d8d8d8; } .sv-place:hover { background:#353535; } .sv-place.on { background:#3a3d42; color:#fff; }
+  .sv-right { flex:1; padding:20px 20px 10px; overflow:auto; }
+  .sv-h { font-size:15px; margin-bottom:14px; } .sv-h2 { margin-top:28px; }
+  .sv-opts { display:flex; gap:80px; } .sv-opts label { display:flex; align-items:center; gap:8px; cursor:pointer; } .sv-opts.dis { opacity:.45; }
+  .sv-row { display:flex; gap:14px; align-items:flex-start; padding:10px 4px; cursor:pointer; border-radius:4px; } .sv-row:hover { background:#353535; }
+  .sv-row svg { width:26px; height:26px; color:#cfcfcf; flex:none; margin-top:1px; }
+  .sv-rn { font-size:14.5px; } .sv-rp { font-size:12.5px; color:#bdbdbd; margin-top:3px; }
+  .sv-empty, .sv-note { color:#a8a8a8; font-size:12.5px; padding:6px 2px; }
+  .sv-name { width:100%; max-width:420px; background:#1f1f1f; border:1px solid #666; color:#eee; padding:6px 8px; font:inherit; border-radius:3px; }
+  .sv-foot { display:flex; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid #444; }
+  .sv-conv { display:flex; align-items:center; gap:8px; } .sv-convs { background:#1f1f1f; color:#eee; border:1px solid #777; padding:6px 8px; border-radius:3px; font:inherit; }
+  .sv-sp { flex:1; }
+  .sv-btn { border-radius:16px; padding:6px 16px; font:inherit; cursor:pointer; }
+  .sv-cancel { background:none; color:#eee; border:1.5px solid #aaa; } .sv-cancel:hover { background:#3a3a3a; }
+  .sv-go { background:#5c8ef0; color:#fff; border:1.5px solid #5c8ef0; } .sv-go:hover { background:#4b7de0; }
+  body.theme-light .sv-dlg { background:#fff; color:#222; } body.theme-light .sv-place.on { background:#e8eefc; color:#111; } body.theme-light .sv-cancel { color:#222; border-color:#888; }
 </style>
 </head>
 <body>
@@ -20197,6 +20266,540 @@ function fpColorPalette(lab) {
     return _setPrefsED.call(this, obj);
   };
 })();
+
+// ================================================================
+//  Scanned / layered pages (e.g. a scanner's background picture with line art on top):
+//  an untouched picture is only drawn by the app when nothing else on the page sits on top of it.
+//  Otherwise pdf.js keeps drawing it in its real place in the stack, so it can't cover
+//  the text and line work painted over it (it switches over only once you move or edit it).
+// ================================================================
+function imgCoveredByLater(a) {
+  const box = pts => { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]; };
+  const hit = (A, B) => A[0] < B[2] - 0.5 && A[2] > B[0] + 0.5 && A[1] < B[3] - 0.5 && A[3] > B[1] + 0.5;
+  const B = box(a.origPts || a.pts), [n, idx] = String(a.imgKey).split(':').map(Number);
+  const ps = state.pages[a.page];
+  if (ps) { const v = ps.page.view, pageA = (v[2] - v[0]) * (v[3] - v[1]); if ((B[2] - B[0]) * (B[3] - B[1]) > pageA * 0.5) return true; }   // a page-size picture is a background
+  for (const o of state.annotations) {
+    if (o.page !== a.page || o === a) continue;
+    if (o.type === 'page-image' && o.imgKey) { const [n2, i2] = String(o.imgKey).split(':').map(Number); if (n2 === n && i2 > idx && hit(B, box(o.origPts || o.pts))) return true; }
+    if (o.type === 'text-block' && (o.origPts || o.pts) && hit(B, box(o.origPts || o.pts))) return true;
+  }
+  return false;
+}
+const _wantedHiddenBG = wantedHidden;
+wantedHidden = function () {
+  const r = _wantedHiddenBG.apply(this, arguments);
+  r.images.forEach(k => {
+    const a = state.annotations.find(x => x.type === 'page-image' && x.imgKey === k);
+    if (a && a.untouched && imgCoveredByLater(a)) r.images.delete(k);
+  });
+  return r;
+};
+// and don't paint those over the page either
+const _appDrawsBG = typeof appDraws === 'function' ? appDraws : null;
+if (_appDrawsBG) appDraws = function (a) {
+  if (a && a.type === 'page-image' && a.untouched && !a.newImg && imgCoveredByLater(a)) return false;
+  return _appDrawsBG.apply(this, arguments);
+};
+
+// ================================================================
+//  SIGNATURE PANEL like Acrobat: an expandable tree with chevrons
+//    Rev. n: Signed by …            (status badge on the pen icon)
+//      Signature is valid / invalid / validity is unknown:  + reasons
+//      › Signature Details → Certificate Details… (Certificate Viewer), reason, location, time
+//      Last Checked · Field · Click to view this version
+//    ⚠ n Page(s) Modified · Annotations Created / Deleted / Modified · Form Fields Filled In  (changes after signing)
+//  Options menu: Expand All, Collapse All, Validate All, Manage Trusted Certificates
+//  A signed page whose content was changed after signing makes the signature invalid (as in Acrobat).
+// ================================================================
+const SP_CHEV = '<svg class="spt-chev" viewBox="0 0 16 16"><path d="M4.5 6l3.5 3.5L11.5 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const SP_WARN = '<svg class="spt-ic" viewBox="0 0 16 16"><path d="M8 1.5l7 12.5H1z" fill="#f2c200" stroke="#a07c00" stroke-width=".6"/><path d="M8 6v4 M8 11.8v.4" stroke="#222" stroke-width="1.6" stroke-linecap="round"/></svg>';
+function spPen(kind) {
+  const badge = kind === 'ok' ? '<circle cx="12" cy="12" r="4" fill="#2d9d78"/><path d="M10.2 12l1.3 1.3 2.4-2.6" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>'
+    : kind === 'bad' ? '<circle cx="12" cy="12" r="4" fill="#d7373f"/><path d="M10.4 10.4l3.2 3.2 M13.6 10.4l-3.2 3.2" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>'
+    : '<path d="M12 7.6l4.2 7.6H7.8z" fill="#f2c200" stroke="#a07c00" stroke-width=".5"/><path d="M12 10.2v2.4 M12 13.7v.2" stroke="#222" stroke-width="1.1" stroke-linecap="round"/>';
+  return `<svg class="spt-ic spt-pen" viewBox="0 0 16 16"><path d="M1.5 12.5c1.5-1 2.5-3.5 3.5-3.5s.2 2.6 1.2 2.6 1.6-1.6 2.6-1.6" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6.5 7.5l5-5 1.6 1.6-5 5-2.2.6z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M1 14.3h7" stroke="currentColor" stroke-width="1"/>${badge}</svg>`;
+}
+const spFmtTime = d => {
+  if (!d || isNaN(d)) return 'unknown';
+  const p = n => String(n).padStart(2, '0'), off = -d.getTimezoneOffset(), sg = off >= 0 ? '+' : '-', o = Math.abs(off);
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${sg}${p(Math.floor(o / 60))}'${p(o % 60)}'`;
+};
+function spStatus(s) {
+  if (s.error || s.digestOk === false || s.sigOk === false || s.alteredAfter) return 'bad';
+  return s.trusted ? 'ok' : 'warn';
+}
+
+// ---------- what changed after each signature ----------
+async function sigChangesBetween(oldBytes, newBytes) {
+  const load = b => PDFLib.PDFDocument.load(b, { ignoreEncryption: true, updateMetadata: false });
+  const A = await load(oldBytes), B = await load(newBytes), N = k => PDFLib.PDFName.of(k);
+  const out = { pages: [], created: [], deleted: [], modified: [], filled: [] };
+  const annots = (doc, lp) => {
+    const m = new Map(), an = lp.node.lookup(N('Annots'));
+    if (an && an.asArray) an.asArray().forEach(r => {
+      const d = doc.context.lookup(r); if (!d || !d.get) return;
+      const st = String(d.get(N('Subtype')) || '').replace('/', '');
+      if (st === 'Popup') return;
+      const t = d.lookup(N('T')); const nm = t && t.decodeText ? t.decodeText() : '';
+      m.set(r instanceof PDFLib.PDFRef ? r.toString() : d.toString(), { st, nm, ser: d.toString(), v: String(d.get(N('V')) || d.get(N('AS')) || '') });
+    });
+    return m;
+  };
+  const pa = A.getPages(), pb = B.getPages();
+  for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+    if (pageContentString(A, pa[i]) !== pageContentString(B, pb[i])) out.pages.push(i + 1);
+    const ma = annots(A, pa[i]), mb = annots(B, pb[i]);
+    ma.forEach((x, k) => { if (!mb.has(k)) out.deleted.push({ ...x, page: i + 1 }); });
+    mb.forEach((x, k) => {
+      const o = ma.get(k);
+      if (!o) out.created.push({ ...x, page: i + 1 });
+      else if (o.ser !== x.ser) (x.st === 'Widget' && o.v !== x.v ? out.filled : out.modified).push({ ...x, page: i + 1 });
+    });
+  }
+  if (pb.length > pa.length) for (let i = pa.length; i < pb.length; i++) out.pages.push(i + 1);
+  return out;
+}
+const _analyzeSignaturesSP = analyzeSignatures;
+analyzeSignatures = async function (bytes) {
+  const r = await _analyzeSignaturesSP.apply(this, arguments);
+  const list = Array.isArray(r) ? r : (state.digitalSigs || []);
+  state.sigCheckedAt = new Date();
+  for (const s of list) {
+    s.checkedAt = state.sigCheckedAt;
+    if (!s.changedAfter || !s.revisionEnd || !bytes) continue;
+    try {
+      s.changes = await sigChangesBetween(bytes.slice(0, s.revisionEnd), bytes.slice());
+      // page content changed after signing: Acrobat treats the signature as broken
+      if (s.changes.pages.length) { s.alteredAfter = true; s.valid = false; }
+    } catch (e) { console.warn('could not compare revisions', e); }
+  }
+  return r;
+};
+// the yellow/red bar follows the new result
+const _sigSummarySP = sigSummary;
+sigSummary = function () {
+  const sigs = state.digitalSigs || [];
+  if (sigs.some(s => s.alteredAfter)) return { kind: 'bad', text: 'At least one signature is invalid.' };
+  return _sigSummarySP.apply(this, arguments);
+};
+
+// ---------- the panel ----------
+state.spOpen = state.spOpen || {};
+function spNode(id, head, kids, cls = '', openDefault = true) {
+  const open = state.spOpen[id] !== undefined ? state.spOpen[id] : openDefault;
+  return `<div class="spt-node ${cls} ${open ? 'open' : ''}" data-id="${id}"><div class="spt-row spt-tog">${SP_CHEV}${head}</div><div class="spt-kids">${kids}</div></div>`;
+}
+const spLeaf = (html, cls = '') => `<div class="spt-row spt-leaf ${cls}">${html}</div>`;
+const _loadLeftPanelSP = loadLeftPanel;
+loadLeftPanel = function (mode) {
+  _loadLeftPanelSP.apply(this, arguments);
+  const lp = $('left-panel');
+  if (lp) { lp.classList.toggle('sig-wide', mode === 'signatures'); if (spLPW[mode]) lp.style.setProperty('--lpw', spLPW[mode] + 'px'); else lp.style.removeProperty('--lpw'); spResizer(); }
+  if (mode !== 'signatures') return;
+  const body = $('left-panel-body'), sigs = state.digitalSigs || [];
+  if (!body || !sigs.length) return;
+  const old = body.querySelector('.sp-wrap'); if (old) old.remove();
+  const wrap = document.createElement('div'); wrap.className = 'sp-wrap spt';
+  const status = s => {
+    const k = spStatus(s);
+    const lines = [];
+    if (s.error) lines.push('Signature could not be checked: ' + escapeHtml(s.error));
+    else if (s.digestOk === false || s.alteredAfter) lines.push('Document has been altered or corrupted since it was signed.');
+    else if (s.changedAfter) lines.push('This revision of the document has not been altered since it was signed. There have been subsequent changes to the document.');
+    else lines.push('Document has not been modified since this signature was applied.');
+    if (s.sigOk === false) lines.push('The signature does not match the signer’s certificate.');
+    lines.push(s.trusted ? 'The signer’s identity is valid.' : 'Signer’s identity is unknown because it has not been included in your list of trusted certificates and none of its parent certificates are trusted certificates.');
+    lines.push(s.timestamped ? 'Signature includes an embedded timestamp.' : 'Signing time is from the clock on the signer’s computer.');
+    return { k, head: k === 'ok' ? 'Signature is valid:' : k === 'bad' ? 'Signature is invalid:' : 'Signature validity is unknown:', lines };
+  };
+  wrap.innerHTML = `<div class="spt-bar"><button class="spt-opt" title="Options">${'<svg viewBox="0 0 20 16"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4 5h2 M8 5h4.5 M4 8h2 M8 8h4.5 M4 11h2 M8 11h4.5" stroke="currentColor" stroke-width="1.2"/><path d="M16 7l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>'}</button><button class="spt-val">Validate All</button></div>`
+    + sigs.map((s, i) => {
+      const st = status(s), c = s.changes;
+      const det = [
+        spLeaf(`<a href="#" class="spt-link" data-cert="${i}">Certificate Details...</a>`),
+        s.time ? spLeaf('Signing Time: ' + escapeHtml(spFmtTime(s.time))) : '',
+        s.reason ? spLeaf('Reason: ' + escapeHtml(s.reason)) : '',
+        s.location ? spLeaf('Location: ' + escapeHtml(s.location)) : '',
+      ].join('');
+      let html = spNode('sig' + i, `${spPen(st.k)}<b class="spt-title">Rev. ${s.rev}: Signed by ${escapeHtml(s.signer)}${s.email ? ' &lt;' + escapeHtml(s.email) + '&gt;' : ''}</b>`,
+        spLeaf(st.head) + `<div class="spt-reasons">${st.lines.map(l => spLeaf(l)).join('')}</div>`
+        + spNode('det' + i, '<span>Signature Details</span>', det, 'spt-sub', true)
+        + spLeaf('Last Checked: ' + escapeHtml(spFmtTime(s.checkedAt || state.sigCheckedAt)))
+        + spLeaf(`Field: ${escapeHtml(s.field)}${s.page ? ` on page ${s.page}` : ' (invisible signature)'}`)
+        + (s.changedAfter ? spLeaf(`<a href="#" class="spt-link" data-ver="${i}">Click to view this version</a>`) : (s.page ? spLeaf(`<a href="#" class="spt-link" data-go="${s.page}">Go to signature</a>`) : '')),
+        'spt-sig', i === sigs.length - 1);
+      // changes made after this signature (before the next one)
+      const next = sigs[i + 1];
+      if (c && !next) {
+        if (c.pages.length) html += `<div class="spt-node spt-chg"><div class="spt-row spt-leaf">${SP_WARN}<b>${c.pages.length} Page(s) Modified</b></div></div>`;
+        const grp = (id, label, arr, fmt) => arr.length ? spNode(id, `${SP_WARN}<b>${label}</b>`, arr.map(x => spLeaf(fmt(x))).join(''), 'spt-chg', true) : '';
+        const an = x => `${escapeHtml(x.st)} annot on page ${x.page}`;
+        html += grp('cr', 'Annotations Created', c.created.filter(x => x.st !== 'Widget'), an)
+          + grp('de', 'Annotations Deleted', c.deleted.filter(x => x.st !== 'Widget'), an)
+          + grp('mo', 'Annotations Modified', c.modified.filter(x => x.st !== 'Widget'), an)
+          + grp('ff', 'Form Fields Filled In', [...c.filled, ...c.modified.filter(x => x.st === 'Widget')], x => `${escapeHtml(x.nm || 'Field')} on page ${x.page}`)
+          + grp('fc', 'Form Fields Created', c.created.filter(x => x.st === 'Widget'), x => `${escapeHtml(x.nm || 'Field')} on page ${x.page}`);
+      }
+      return html;
+    }).join('');
+  body.prepend(wrap);
+  // chevrons
+  wrap.addEventListener('click', e => {
+    const lk = e.target.closest('.spt-link');
+    if (lk) {
+      e.preventDefault();
+      if (lk.dataset.cert) showCertViewer(state.digitalSigs[+lk.dataset.cert]);
+      else if (lk.dataset.ver) viewSignedVersion(+lk.dataset.ver);
+      else if (lk.dataset.go) goToPage(+lk.dataset.go);
+      return;
+    }
+    const tog = e.target.closest('.spt-tog');
+    if (tog) { const n = tog.parentNode; n.classList.toggle('open'); state.spOpen[n.dataset.id] = n.classList.contains('open'); return; }
+    if (e.target.closest('.spt-val')) { revalidateSignatures(); return; }
+    if (e.target.closest('.spt-opt')) spOptions(e.target.closest('.spt-opt'), wrap);
+  });
+  wrap.addEventListener('dblclick', e => { const r = e.target.closest('.spt-sig > .spt-tog'); if (r) { const i = [...wrap.querySelectorAll('.spt-sig')].indexOf(r.parentNode); showSigStatus(state.digitalSigs[i]); } });
+};
+function spOptions(btn, wrap) {
+  document.querySelectorAll('.spt-menu').forEach(m => m.remove());
+  const m = document.createElement('div'); m.className = 'dropdown-content file-menu ov-menu spt-menu'; m.style.zIndex = topZ() + 5;
+  m.innerHTML = ['Expand All', 'Collapse All', 'Validate All', 'Signature Properties...', 'Manage Trusted Certificates...'].map((t, i) => `<div class="dd-item" data-i="${i}">${t}</div>`).join('');
+  document.body.appendChild(m);
+  const r = btn.getBoundingClientRect();
+  Object.assign(m.style, { position: 'fixed', left: r.left + 'px', top: r.bottom + 2 + 'px', display: 'block' });
+  m.onclick = e => {
+    const it = e.target.closest('.dd-item'); if (!it) return; m.remove();
+    const nodes = [...wrap.querySelectorAll('.spt-node[data-id]')];
+    ({ 0: () => nodes.forEach(n => { n.classList.add('open'); state.spOpen[n.dataset.id] = true; }),
+       1: () => nodes.forEach(n => { n.classList.remove('open'); state.spOpen[n.dataset.id] = false; }),
+       2: () => revalidateSignatures(),
+       3: () => showSigStatus((state.digitalSigs || [])[(state.digitalSigs || []).length - 1]),
+       4: () => showSigImport() })[it.dataset.i]();
+  };
+  setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('mousedown', h); } }), 0);
+}
+
+// ---------- Certificate Viewer ----------
+const CV_OIDS = { '1.2.840.113549.1.1.5': 'SHA1 with RSA', '1.2.840.113549.1.1.11': 'SHA256 with RSA', '1.2.840.113549.1.1.12': 'SHA384 with RSA', '1.2.840.113549.1.1.13': 'SHA512 with RSA',
+  '1.2.840.10045.4.3.2': 'ECDSA with SHA256', '1.2.840.10045.4.3.3': 'ECDSA with SHA384', '1.2.840.10045.4.3.4': 'ECDSA with SHA512', '1.2.840.113549.1.1.10': 'RSASSA-PSS',
+  '1.3.6.1.5.5.7.3.4': 'Email Protection', '1.3.6.1.5.5.7.3.2': 'Client Authentication', '1.3.6.1.5.5.7.3.1': 'Server Authentication', '1.2.840.113583.1.1.5': 'Adobe Authentic Documents Trust', '1.3.6.1.4.1.311.10.3.12': 'Document Signing', '1.3.6.1.5.5.7.3.36': 'Document Signing' };
+const CV_KU = ['Digital Signature', 'Non-Repudiation', 'Encrypt Keys', 'Encrypt Document', 'Key Agreement', 'Sign Certificate (CA)', 'Sign CRL', 'Encipher Only', 'Decipher Only'];
+function cvParse(der) {
+  const F = forge.asn1, asn = F.fromDer(bytesToBin(der)), ci = certInfo(asn), tbs = asn.value[0].value;
+  const out = { ci, ext: {}, sigAlg: '', version: 1, keyBits: 0, keyAlg: '' };
+  try { out.sigAlg = CV_OIDS[F.derToOid(asn.value[1].value[0].value)] || F.derToOid(asn.value[1].value[0].value); } catch (e) {}
+  try { if (tbs[0].tagClass === F.Class.CONTEXT_SPECIFIC) out.version = tbs[0].value[0].value.charCodeAt(0) + 1; } catch (e) {}
+  try {
+    const algOid = F.derToOid(ci.spki.value[0].value[0].value);
+    out.keyAlg = algOid === OID.rsa ? 'RSA' : algOid === OID.ec ? 'ECDSA' : algOid;
+    if (algOid === OID.rsa) { const pk = F.fromDer(ci.spki.value[1].value.slice(1)); out.keyBits = (pk.value[0].value.replace(/^\x00/, '').length) * 8; }
+    else if (algOid === OID.ec) { const cv = F.derToOid(ci.spki.value[0].value[1].value); out.keyBits = { [OID.p256]: 256, [OID.p384]: 384, [OID.p521]: 521 }[cv] || 0; }
+  } catch (e) {}
+  const extNode = tbs.find(x => x.tagClass === F.Class.CONTEXT_SPECIFIC && x.type === 3);
+  if (extNode) extNode.value[0].value.forEach(e => {
+    try {
+      const oid = F.derToOid(e.value[0].value), val = e.value[e.value.length - 1].value, inner = F.fromDer(val);
+      if (oid === '2.5.29.15') {   // key usage
+        const bits = inner.value, unused = bits.charCodeAt(0), u = [];
+        for (let b = 0; b < (bits.length - 1) * 8 - unused; b++) if (bits.charCodeAt(1 + (b >> 3)) & (0x80 >> (b & 7))) u.push(CV_KU[b]);
+        out.ext.ku = u;
+      } else if (oid === '2.5.29.37') out.ext.eku = inner.value.map(x => CV_OIDS[F.derToOid(x.value)] || F.derToOid(x.value));
+      else if (oid === '2.5.29.19') out.ext.ca = inner.value.some(x => x.type === F.Type.BOOLEAN && x.value.charCodeAt(0));
+    } catch (e2) {}
+  });
+  return out;
+}
+async function showCertViewer(s) {
+  if (!s || !s.certDers || !s.certDers.length) { toast('The certificate is not included in this signature.'); return; }
+  if (!window.forge) await loadForge();
+  const certs = s.certDers.map(d => ({ der: d, ...cvParse(d) }));
+  const hex = async (alg, d) => Array.from(new Uint8Array(await crypto.subtle.digest(alg, d)), b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+  for (const c of certs) { c.sha1 = await hex('SHA-1', c.der); c.sha256 = await hex('SHA-256', c.der); c.fp = await certFp(c.der); }
+  const trusted = new Set(trustedCerts().map(t => t.fp));
+  const dt = d => d ? spFmtTime(d).replace(/^(\d{4})\.(\d\d)\.(\d\d)/, '$1/$2/$3') : 'unknown';
+  let sel = 0, tab = 'summary';
+  const ov = esDialog('cert-viewer', 'Certificate Viewer', '<div class="cv"></div>', [{ label: 'OK', primary: true }], 680);
+  ov.classList.add('cv-ov');
+  const root = ov.querySelector('.cv');
+  const draw = () => {
+    const c = certs[sel], ci = c.ci, self = ci.subject.dn === ci.issuer.dn, top = certs[certs.length - 1];
+    const org = ci.subject.O || ci.subject.OU || '';
+    const iorg = ci.issuer.O || ci.issuer.OU || '';
+    const fields = [['Version', String(c.version)], ['Signature algorithm', c.sigAlg], ['Subject', ci.subject.dn], ['Issuer', ci.issuer.dn], ['Serial number', ci.serial.toUpperCase()],
+      ['Validity starts', dt(ci.notBefore)], ['Validity ends', dt(ci.notAfter)], ['Public key', `${c.keyAlg} (${c.keyBits} bits)`], ...(c.ext.ku ? [['Key usage', c.ext.ku.join(', ')]] : []),
+      ...(c.ext.eku ? [['Extended key usage', c.ext.eku.join(', ')]] : []), ...(c.ext.ca !== undefined ? [['Basic constraints', c.ext.ca ? 'Certificate Authority' : 'End entity']] : []),
+      ['SHA1 digest', c.sha1], ['SHA256 digest', c.sha256]];
+    const isTrusted = trusted.has(c.fp);
+    const pane = {
+      summary: `<div class="cv-sum"><div class="cv-ic">📜</div><div><div class="cv-v">${escapeHtml(ci.subject.CN || ci.subject.dn)}</div>${org ? `<div class="cv-v cv-one" title="${escapeHtml(org)}">${escapeHtml(org)}</div>` : ''}</div>
+          <div class="cv-k">Issued by:</div><div><div class="cv-v">${escapeHtml(ci.issuer.CN || ci.issuer.dn)}</div>${iorg ? `<div class="cv-v cv-one" title="${escapeHtml(iorg)}">${escapeHtml(iorg)}</div>` : ''}</div>
+          <div class="cv-k">Valid from:</div><div class="cv-v">${escapeHtml(dt(ci.notBefore))}</div>
+          <div class="cv-k">Valid to:</div><div class="cv-v">${escapeHtml(dt(ci.notAfter))}</div>
+          <div class="cv-k">Intended usage:</div><div class="cv-box">${escapeHtml((c.ext.ku || []).concat(c.ext.eku || []).join(', ') || 'Not specified')}</div></div>
+          <div class="cv-exp"><button class="ap-btn cv-export">Export...</button></div>`,
+      details: `<div class="cv-det"><div class="cv-flist">${fields.map(([k], i) => `<div class="cv-f ${i === 0 ? 'on' : ''}" data-i="${i}">${escapeHtml(k)}</div>`).join('')}</div><textarea class="cv-fval" readonly>${escapeHtml(fields[0][1])}</textarea></div>
+          <div class="cv-exp"><button class="ap-btn cv-export">Export...</button></div>`,
+      revocation: `<div class="cv-p">Revocation checks (CRL / OCSP) need to contact the certificate issuer on the internet, which this app doesn't do. ${self ? 'This certificate is self-signed, so there is no issuer to ask.' : ''}</div>`,
+      trust: `<div class="cv-p">${isTrusted ? 'This certificate is in your list of trusted certificates.' : 'This is not a trusted certificate. Its signatures show "validity is unknown" until you trust it.'}</div>
+          <div class="cv-p"><button class="ap-btn cv-trust">${isTrusted ? 'Remove from Trusted Certificates' : 'Add to Trusted Certificates...'}</button></div>`,
+      policies: `<div class="cv-p">No certificate policies are listed in this certificate.</div>`,
+      legal: `<div class="cv-p">No legal notice is attached to this signature.</div>`,
+    }[tab];
+    root.innerHTML = `<div class="cv-intro">This dialog allows you to view the details of a certificate and its entire issuance chain. The details correspond to the selected entry.</div>
+      <label class="cv-all"><input type="checkbox" checked disabled> Show all certification paths found</label>
+      <div class="cv-main">
+        <div class="cv-tree">${certs.slice().reverse().map((x, j) => { const i = certs.length - 1 - j; return `<div class="cv-node ${i === sel ? 'on' : ''}" data-i="${i}" style="padding-left:${6 + j * 14}px">${escapeHtml(x.ci.subject.CN || x.ci.subject.dn)}</div>`; }).join('')}</div>
+        <div class="cv-right"><div class="cv-tabs">${[['summary', 'Summary'], ['details', 'Details'], ['revocation', 'Revocation'], ['trust', 'Trust'], ['policies', 'Policies'], ['legal', 'Legal Notice']].map(([k, l]) => `<button class="cv-tab ${k === tab ? 'on' : ''}" data-t="${k}">${l}</button>`).join('')}</div>
+          <div class="cv-pane">${pane}</div></div>
+      </div>
+      <div class="cv-note"><span class="cv-i">i</span><div>${top.ci.subject.dn === top.ci.issuer.dn ? (certs.length === 1 ? 'This is a self-signed certificate. ' : '') + 'The selected certificate path is valid.' : 'The issuer of the top certificate in this path was not included in the signature.'}<br><br>The path validation checks were done as of the signing time:<br>${escapeHtml(dt(s.time))}</div></div>`;
+    root.querySelectorAll('.cv-node').forEach(n => n.onclick = () => { sel = +n.dataset.i; draw(); });
+    root.querySelectorAll('.cv-tab').forEach(b => b.onclick = () => { tab = b.dataset.t; draw(); });
+    root.querySelectorAll('.cv-f').forEach(f => f.onclick = () => { root.querySelectorAll('.cv-f').forEach(x => x.classList.toggle('on', x === f)); root.querySelector('.cv-fval').value = fields[+f.dataset.i][1]; });
+    const ex = root.querySelector('.cv-export'); if (ex) ex.onclick = () => downloadBlob(new Blob([c.der], { type: 'application/pkix-cert' }), (ci.subject.CN || 'certificate').replace(/[\\/:*?"<>|#]+/g, '_') + '.cer');
+    const tr = root.querySelector('.cv-trust');
+    if (tr) tr.onclick = async () => {
+      if (isTrusted) { removeTrusted(c.fp); trusted.delete(c.fp); }
+      else {
+        const list = trustedCerts();
+        list.push({ fp: c.fp, name: ci.subject.CN || ci.subject.dn, subject: ci.subject.dn, issuer: ci.issuer.CN || ci.issuer.dn, notAfter: ci.notAfter ? ci.notAfter.toISOString() : '', der: b64(c.der), added: new Date().toISOString() });
+        saveTrusted(list); trusted.add(c.fp);
+        await applyTrust(); renderSigBar(); if (state.leftPanelMode === 'signatures') loadLeftPanel('signatures');
+        toast('Added to your Trusted Certificates.');
+      }
+      draw();
+    };
+  };
+  draw();
+}
+
+// ---------- drag the left panel's edge to make it wider (remembered per panel) ----------
+const spLPW = (() => { try { return JSON.parse(localStorage.getItem('acro-lp-widths') || '{}'); } catch (e) { return {}; } })();
+function spResizer() {
+  const lp = $('left-panel'); if (!lp || lp.querySelector('.lp-grip')) return;
+  lp.style.position = lp.style.position || 'relative';
+  const g = document.createElement('div'); g.className = 'lp-grip'; g.title = 'Drag to resize';
+  lp.appendChild(g);
+  g.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const x0 = e.clientX, w0 = lp.getBoundingClientRect().width; lp.style.transition = 'none';
+    const mv = ev => { lp.style.setProperty('--lpw', Math.max(180, Math.min(window.innerWidth * 0.6, w0 + ev.clientX - x0)) + 'px'); };
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); lp.style.transition = '';
+      const m = state.leftPanelMode; if (m) { spLPW[m] = Math.round(lp.getBoundingClientRect().width); try { localStorage.setItem('acro-lp-widths', JSON.stringify(spLPW)); } catch (e) {} } };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+  });
+}
+
+// ================================================================
+//  SAVE AS PDF window (like Acrobat):
+//  • File Options: Reduce File Size, Restrict Editing
+//  • Save in Recent Folder… (folders you saved to before — opens the Windows/Mac save window right there)
+//  • Convert to: Word / Excel / PowerPoint / images / HTML / RTF / text instead of PDF
+//  • Choose a Different Folder… (the computer's own Save As window)
+//  • after a file has a place on your computer, Ctrl+S saves straight back to it (no window)
+//  Browsers without folder access (Safari, iPad, Firefox) save to the Downloads folder.
+// ================================================================
+const SV_FSA = typeof window.showSaveFilePicker === 'function';
+const SV_CONVERT = [['word', 'docx', 'Microsoft Word (*.docx)'], ['word', 'doc', 'Word 97-2003 (*.doc)'], ['sheet', 'xlsx', 'Microsoft Excel (*.xlsx)'], ['ppt', 'pptx', 'Microsoft PowerPoint (*.pptx)'],
+  ['image', 'jpg', 'JPEG Image (*.jpg)'], ['image', 'png', 'PNG Image (*.png)'], ['image', 'tif', 'TIFF Image (*.tif)'], ['html', 'html', 'HTML Web Page (*.html)'], ['more', 'rtf', 'Rich Text Format (*.rtf)'], ['more', 'txt', 'Text (Plain) (*.txt)']];
+
+// ---- remembered save places (file handles live in IndexedDB; they can't go in localStorage) ----
+function svDB() {
+  return new Promise((res, rej) => { const r = indexedDB.open('khz-pdf', 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('kv')) r.result.createObjectStore('kv'); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+}
+async function svGet(k) { try { const db = await svDB(); return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); } catch (e) { return undefined; } }
+async function svPut(k, v) { try { const db = await svDB(); await new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = res; }); } catch (e) {} }
+async function svRecent() { return (await svGet('recentSaves')) || []; }
+async function svRemember(handle) {
+  if (!handle) return;
+  let list = await svRecent();
+  const same = [];
+  for (const r of list) { try { if (await r.handle.isSameEntry(handle)) same.push(r); } catch (e) {} }
+  list = [{ handle, name: handle.name, time: Date.now() }, ...list.filter(r => !same.includes(r))].slice(0, 8);
+  await svPut('recentSaves', list);
+}
+
+// ---- the PDF bytes, the same way the old Save made them ----
+async function svBytes() {
+  const pending = state.annotations.filter(a => a.type === 'redact-area').length;
+  if (pending && !confirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return null;
+  let bytes = await buildOutputBytes();
+  if (state.security) { showLoading(true, 'Encrypting (AES-256)…'); bytes = await encryptPdfBytes(bytes, state.security); }
+  return bytes;
+}
+function svDone(name, where) {
+  state.fileName = name; state.dirty = false; updateTitle();
+  toast(`Saved "${name}"${where ? ' ' + where : ''}.${state.security ? ' 🔒 Password protected.' : ''}`);
+}
+async function svWriteHandle(handle, bytes) {
+  if (handle.queryPermission && (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+    if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('permission to write the file was not given');
+  }
+  const w = await handle.createWritable(); await w.write(bytes); await w.close();
+}
+async function svSaveToHandle(handle) {
+  showLoading(true, 'Saving...');
+  try {
+    const bytes = await svBytes(); if (!bytes) return false;
+    await svWriteHandle(handle, bytes);
+    state.saveHandle = handle; await svRemember(handle);
+    svDone(handle.name);
+    return true;
+  } catch (e) { if (e && e.name === 'AbortError') return false; handleWriteError(e); return false; }
+  finally { showLoading(false); }
+}
+async function svPick(startIn) {
+  const opts = { suggestedName: /\.pdf$/i.test(state.fileName || '') ? state.fileName : (baseName(state.fileName || 'document') + '.pdf'), types: [{ description: 'PDF Files', accept: { 'application/pdf': ['.pdf'] } }] };
+  if (startIn) opts.startIn = startIn;
+  try { return await window.showSaveFilePicker(opts); }
+  catch (e) { if (e && e.name === 'AbortError') return null; if (startIn) { try { delete opts.startIn; return await window.showSaveFilePicker(opts); } catch (e2) { return null; } } return null; }
+}
+async function svDownload(name) {
+  showLoading(true, 'Saving...');
+  try { const bytes = await svBytes(); if (!bytes) return; downloadBytes(bytes, name); svDone(name, 'to your Downloads folder'); }
+  catch (e) { handleWriteError(e); } finally { showLoading(false); }
+}
+
+// ---- Save / Save As ----
+const _savePDFSV = savePDF;
+savePDF = async function (nameOverride) {
+  if (!requireDoc()) return;
+  if (nameOverride) return _savePDFSV.apply(this, arguments);           // other tools that name the copy themselves
+  if (state.saveHandle) return svSaveToHandle(state.saveHandle);         // it already has a place: save in place, like Acrobat
+  return showSaveDialog();
+};
+savePDFAs = async function () { if (!requireDoc()) return; if (state.ov && state.ov.changed && typeof ovCommit === 'function') await ovCommit(); showSaveDialog(); };
+
+async function showSaveDialog() {
+  const recent = SV_FSA ? await svRecent() : [];
+  const fmtT = t => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const folderIc = '<svg viewBox="0 0 24 24"><path d="M3 6.5h6.5l2 2H21V19H3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  let place = SV_FSA ? 'pc' : 'dl';
+  document.querySelectorAll('#sv-ov').forEach(x => x.remove());
+  const ov = document.createElement('div'); ov.id = 'sv-ov'; ov.className = 'vm-ov'; ov.style.zIndex = topZ();
+  ov.innerHTML = `<div class="sv-dlg">
+    <div class="sv-titlebar"><span>Save as PDF</span><button class="sv-x" title="Close">✕</button></div>
+    <div class="sv-head">Save as PDF</div>
+    <div class="sv-main">
+      <div class="sv-nav"><div class="sv-navh">FILES</div>
+        ${SV_FSA ? '<div class="sv-place" data-p="pc">Your computer</div>' : ''}<div class="sv-place" data-p="dl">Downloads folder</div></div>
+      <div class="sv-right">
+        <div class="sv-h">File Options</div>
+        <div class="sv-opts"><label><input type="checkbox" class="sv-reduce"> Reduce File Size</label><label><input type="checkbox" class="sv-restrict" ${state.security && !state.security.userPw ? 'checked' : ''}> Restrict Editing</label></div>
+        <div class="sv-pc">
+          <div class="sv-h sv-h2">Save in Recent Folder...</div>
+          <div class="sv-list">${recent.length ? recent.map((r, i) => `<div class="sv-row" data-i="${i}">${folderIc}<div><div class="sv-rn">Folder with “${escapeHtml(r.name)}”</div><div class="sv-rp">Last saved there ${escapeHtml(fmtT(r.time))}</div></div></div>`).join('')
+            : '<div class="sv-empty">Folders you save to will show up here.</div>'}</div>
+        </div>
+        <div class="sv-dl">
+          <div class="sv-h sv-h2">File name</div>
+          <input class="sv-name" value="${escapeHtml(/\.pdf$/i.test(state.fileName || '') ? state.fileName : baseName(state.fileName || 'document') + '.pdf')}">
+          <div class="sv-note">${SV_FSA ? 'Saves a copy into your browser’s Downloads folder.' : 'This browser saves files into your Downloads folder. (Chrome or Edge can save straight into any folder.)'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="sv-foot">
+      <label class="sv-conv"><input type="checkbox" class="sv-convc"> Convert to</label>
+      <select class="sv-convs">${SV_CONVERT.map((c, i) => `<option value="${i}">${c[2]}</option>`).join('')}</select>
+      <span class="sv-sp"></span>
+      <button class="sv-btn sv-cancel">Cancel</button>
+      <button class="sv-btn sv-go"></button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const q = s => ov.querySelector(s), close = () => ov.remove();
+  const sync = () => {
+    ov.querySelectorAll('.sv-place').forEach(p => p.classList.toggle('on', p.dataset.p === place));
+    q('.sv-pc').style.display = place === 'pc' ? '' : 'none'; q('.sv-dl').style.display = place === 'dl' ? '' : 'none';
+    const conv = q('.sv-convc').checked;
+    q('.sv-go').textContent = conv ? 'Convert…' : place === 'pc' ? 'Choose a Different Folder...' : 'Save';
+    q('.sv-reduce').disabled = q('.sv-restrict').disabled = conv;
+    ov.querySelector('.sv-opts').classList.toggle('dis', conv);
+  };
+  ov.querySelectorAll('.sv-place').forEach(p => p.onclick = () => { place = p.dataset.p; sync(); });
+  q('.sv-convc').onchange = sync;
+  q('.sv-convs').onchange = () => { q('.sv-convc').checked = true; sync(); };
+  q('.sv-x').onclick = close; q('.sv-cancel').onclick = close;
+  ov.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+  ov.addEventListener('mousedown', e => { if (e.target === ov) e.preventDefault(); });
+  // Restrict Editing: set the permissions password now
+  q('.sv-restrict').onchange = () => {
+    const cb = q('.sv-restrict');
+    if (!cb.checked) { if (state.security && !state.security.userPw) { state.security = null; if (typeof updateSecurityBadge === 'function') updateSecurityBadge(); } return; }
+    protectUsingPassword('edit');
+    const d = $('prt-pw'); if (d) d.style.zIndex = topZ() + 2;
+    const t = setInterval(() => { if ($('prt-pw')) return; clearInterval(t); cb.checked = !!(state.security && state.security.ownerPw); }, 250);
+  };
+  // before writing: shrink the pictures if asked
+  const prepare = async () => {
+    if (q('.sv-reduce').checked) {
+      if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
+      await tcDoOptimize({ q: 'medium', gray: false, meta: true, thumbs: true });
+    }
+    return true;
+  };
+  const convert = () => { const c = SV_CONVERT[+q('.sv-convs').value]; close(); expExport(c[0], c[1]); };
+  q('.sv-go').onclick = async () => {
+    if (q('.sv-convc').checked) return convert();
+    if (place === 'dl') {
+      let n = q('.sv-name').value.trim() || 'document.pdf'; if (!/\.pdf$/i.test(n)) n += '.pdf';
+      close(); if (await prepare()) await svDownload(n); return;
+    }
+    const h = await svPick(recent[0] && recent[0].handle);   // the computer's own Save As window
+    if (!h) return;
+    close(); if (await prepare()) await svSaveToHandle(h);
+  };
+  ov.querySelectorAll('.sv-row').forEach(r => r.onclick = async () => {
+    if (q('.sv-convc').checked) return convert();
+    const h = await svPick(recent[+r.dataset.i].handle);
+    if (!h) return;
+    close(); if (await prepare()) await svSaveToHandle(h);
+  });
+  sync();
+  setTimeout(() => q('.sv-go').focus(), 30);
+}
+
+// ---- files opened with the computer's Open window (or "Open with KHZ PDF") can be saved in place ----
+const _loadBytesSV = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  if (!opts.keep) { state.saveHandle = state._openHandle || null; state._openHandle = null; }
+  return _loadBytesSV.apply(this, arguments);
+};
+if (typeof window.showOpenFilePicker === 'function') {
+  openFileDialog = async function () {
+    let hs;
+    try { hs = await window.showOpenFilePicker({ types: [{ description: 'PDF Files', accept: { 'application/pdf': ['.pdf'] } }], multiple: false }); }
+    catch (e) { if (e && e.name === 'AbortError') return; return $('file-input').click(); }
+    const h = hs && hs[0]; if (!h) return;
+    if (!confirmDiscard()) return;
+    const f = await h.getFile();
+    state._openHandle = h;
+    showLoading(true, 'Loading PDF...');
+    try { await loadBytes(new Uint8Array(await f.arrayBuffer()), f.name); } catch (e) { showLoading(false); alert('Could not read file: ' + e.message); }
+  };
+}
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async params => {
+    const h = params.files && params.files[0]; if (!h) return;
+    try { const f = await h.getFile(); if (!confirmDiscard()) return; state._openHandle = h; showLoading(true, 'Loading PDF...'); await loadBytes(new Uint8Array(await f.arrayBuffer()), f.name); }
+    catch (e) { showLoading(false); toast('Could not open that file: ' + e.message); }
+  });
+}
+
+// ================================================================
+//  The "Drop PDF here to open" cover always goes away after a drop — even when the drop
+//  was taken by Combine Files / Organize Pages (they stop the event before the page sees it)
+// ================================================================
+function dropCoverOff() { try { dragDepth = 0; } catch (e) {} const o = $('drag-overlay'); if (o) o.classList.add('hidden'); }
+window.addEventListener('drop', dropCoverOff, true);
+window.addEventListener('dragend', dropCoverOff, true);
+window.addEventListener('dragleave', e => { if (!e.relatedTarget && (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= innerWidth || e.clientY >= innerHeight)) dropCoverOff(); }, true);
+// the workspaces that take files themselves don't need the cover at all
+window.addEventListener('dragenter', e => {
+  if (e.target.closest && e.target.closest('#cmb-view, #ov-view, .ov-grid, .si-drop, #exp-view')) setTimeout(() => { const o = $('drag-overlay'); if (o) o.classList.add('hidden'); }, 0);
+}, true);
+// a missed drag (e.g. dropped outside the window) clears up as soon as the mouse moves again
+window.addEventListener('mousemove', e => { const o = $('drag-overlay'); if (o && !o.classList.contains('hidden') && !e.buttons) dropCoverOff(); }, true);
 </script>
 </body>
 </html>
