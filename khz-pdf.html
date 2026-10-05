@@ -1714,6 +1714,10 @@
   .bk-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center; padding:7px 10px; cursor:pointer; border-bottom:1px solid #383838; }
   .bk-row:hover { background:#3a3a3a; } .bk-n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .bk-t, .bk-s { color:#aaa; font-size:12px; white-space:nowrap; }
   .bk-more summary { cursor:pointer; color:#aaa; margin-top:8px; }
+  .sv-fn { margin:16px 0 10px; } .sv-fn label { display:block; font-size:12.5px; color:#bdbdbd; margin-bottom:4px; }
+  .sv-fn .sv-fname { width:100%; box-sizing:border-box; background:#1e1e1e; border:1px solid #555; color:#eee; padding:6px 8px; border-radius:3px; font-size:14px; }
+  .sv-link { font-size:12px; color:#aaa; margin-top:6px; } .sv-link a { color:#5aa9ff; }
+  .sv-ell { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:560px; }
 </style>
 </head>
 <body>
@@ -24058,6 +24062,160 @@ async function mxMergeGuests(n) {
     }
   }
 }
+
+// ================================================================
+//  SAVE WHERE THE FILES CAME FROM (fewer clicks)
+//  • combined files (Binder…), and any file without its own place yet, remember the folder their
+//    source files came from: Save opens right there ("Folder with <source file>")
+//  • optional: link your work folder once (e.g. "Always On Generators - Office - General") and the
+//    Save window shows real folder names and paths like Acrobat, and saves straight into them with one click
+// ================================================================
+// 1. picking files remembers their handles (needed to open the Save window in the same folder)
+const _pickFilesSH = pickFiles;
+pickFiles = function (multiple, accept) {
+  if (typeof window.showOpenFilePicker !== 'function' || !/pdf/i.test(accept || '')) return _pickFilesSH.apply(this, arguments);
+  return (async () => {
+    try {
+      const types = [{ description: 'PDF and pictures', accept: { 'application/pdf': ['.pdf'], 'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'], 'text/plain': ['.txt'] } }];
+      const hs = await window.showOpenFilePicker({ multiple: !!multiple, types, excludeAcceptAllOption: false });
+      const files = [];
+      for (const h of hs) { const f = await h.getFile(); files.push(f); shRemember(f.name, h); }
+      return files;
+    } catch (e) { if (e && e.name === 'AbortError') return []; return _pickFilesSH.call(this, multiple, accept); }
+  })();
+};
+const shHandles = new Map();   // file name → handle, for files picked or dropped this session
+function shRemember(name, h) { if (h && h.kind === 'file') shHandles.set(name, h); }
+document.addEventListener('drop', () => { setTimeout(async () => { for (const d of state._dropHandles || []) { try { shRemember(d.name, await d.p); } catch (e) {} } }, 0); }, true);
+// 2. Combine: the new Binder remembers its first source file's folder
+const _cmbAddBytesSH = cmbAddBytes;
+cmbAddBytes = async function (bytes, name, meta) {
+  const f = await _cmbAddBytesSH.apply(this, arguments);
+  try { const it = state.cmb && state.cmb.files.find(x => x.name === name && !x.srcHandle); if (it) it.srcHandle = (meta && meta.kind === 'current') ? (state.saveHandle || state.saveHint || null) : (shHandles.get(name) || null); } catch (e) {}
+  return f;
+};
+const _loadBytesSH = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  let hint = null;
+  if (!opts.keep && /^Binder\d+\.pdf$/.test(name || '') && state.cmb && state.cmb.files) hint = (state.cmb.files.find(f => f.srcHandle) || {}).srcHandle || null;
+  const r = await _loadBytesSH.apply(this, arguments);
+  if (!opts.keep) state.saveHint = hint;
+  return r;
+};
+// the tab remembers it too
+const _tabSnapshotSH = tabSnapshot;
+tabSnapshot = async function () { const s = await _tabSnapshotSH.apply(this, arguments); if (s) s.saveHint = state.saveHint || null; return s; };
+const _tabRestoreSH = tabRestore;
+tabRestore = async function (t) { const hint = t.snap && t.snap.saveHint; const r = await _tabRestoreSH.apply(this, arguments); state.saveHint = hint || null; return r; };
+
+// 3. the linked work folder
+async function shRoot() { return (await svGet('workRoot')) || null; }
+async function shRootReady(ask) {
+  const root = await shRoot(); if (!root) return null;
+  try {
+    let p = await root.queryPermission({ mode: 'readwrite' });
+    if (p !== 'granted' && ask) p = await root.requestPermission({ mode: 'readwrite' });
+    return p === 'granted' ? root : null;
+  } catch (e) { return null; }
+}
+async function shLinkRoot() {
+  try {
+    const root = await window.showDirectoryPicker({ id: 'khz-work', mode: 'readwrite' });
+    await svPut('workRoot', root);
+    toast(`Linked "${root.name}". Folders inside it now show their names and save with one click.`);
+    return root;
+  } catch (e) { return null; }
+}
+async function shPathOf(root, fileHandle) {   // folder names from the work folder down to the file's folder
+  if (!root || !fileHandle) return null;
+  try { const p = await root.resolve(fileHandle); return p ? p.slice(0, -1) : null; } catch (e) { return null; }
+}
+async function shDirAt(root, parts) { let d = root; for (const p of parts) d = await d.getDirectoryHandle(p); return d; }
+
+// 4. the Save window: source folder first, real names/paths when the work folder is linked, one-click save
+const _showSaveDialogSH = showSaveDialog;
+showSaveDialog = async function () {
+  await _showSaveDialogSH.apply(this, arguments);
+  const ov = $('sv-ov'); if (!ov || !SV_FSA) return;
+  const q = s => ov.querySelector(s), close = () => ov.remove();
+  const recent = await svRecent();
+  const rootOk = await shRootReady(false), rootAny = await shRoot();
+  const folderIc = '<svg viewBox="0 0 24 24"><path d="M3 6.5h6.5l2 2H21V19H3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  const fmtT = t => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // places to offer: where this document came from, then recent save folders
+  const places = [];
+  const add = async (handle, label, sub) => {
+    for (const p of places) { try { if (await p.handle.isSameEntry(handle)) return; } catch (e) {} }
+    const parts = rootOk ? await shPathOf(rootOk, handle) : null;
+    places.push({ handle, label, sub, parts });
+  };
+  const src = state.saveHandle || state.saveHint;
+  if (src) await add(src, `Folder with “${src.name}”`, state.saveHandle ? 'Where this file is' : 'Where the combined files came from');
+  for (const r of recent) await add(r.handle, `Folder with “${r.name}”`, `Last saved there ${fmtT(r.time)}`);
+  // same folder twice (two files from one folder) → show it once when names are known
+  const seen = new Set(), list = places.filter(p => { if (!p.parts) return true; const k = p.parts.join('/'); if (seen.has(k)) return false; seen.add(k); return true; });
+  const rootName = rootOk ? rootOk.name : '';
+  const nameOf = p => p.parts ? (p.parts.length ? p.parts[p.parts.length - 1] : rootName) : p.label;
+  const pathOf = p => p.parts ? [rootName, ...p.parts].join(' \\ ') : p.sub;
+  const box = q('.sv-list'); if (!box) return;
+  box.innerHTML = list.length ? list.map((p, i) => `<div class="sv-row" data-j="${i}" title="${escapeHtml(p.parts ? pathOf(p) : '')}">${folderIc}<div style="min-width:0"><div class="sv-rn">${escapeHtml(nameOf(p))}</div><div class="sv-rp sv-ell">${escapeHtml(pathOf(p))}</div></div></div>`).join('')
+    : '<div class="sv-empty">Folders you save to will show up here.</div>';
+  // file name (used for one-click saves into a known folder)
+  const pc = q('.sv-pc');
+  const defName = /\.pdf$/i.test(state.fileName || '') ? state.fileName : baseName(state.fileName || 'document') + '.pdf';
+  const head = document.createElement('div'); head.className = 'sv-fn';
+  head.innerHTML = `<label>File name</label><input class="sv-fname" value="${escapeHtml(defName)}">
+    <div class="sv-link">${rootAny ? (rootOk ? `Work folder: <b>${escapeHtml(rootOk.name)}</b> · <a href="#" data-a="relink">Change</a>` : `Work folder <b>${escapeHtml(rootAny.name)}</b> · <a href="#" data-a="allow">Allow access this session</a> to see folder names and save in one click`) : `<a href="#" data-a="link">Link your work folder…</a> to see folder names and save in one click`}</div>`;
+  pc.insertBefore(head, pc.firstChild);
+  head.onclick = async e => {
+    const a = e.target.closest('[data-a]'); if (!a) return; e.preventDefault();
+    if (a.dataset.a === 'allow') { if (await shRootReady(true)) { close(); showSaveDialog(); } }
+    else { if (await shLinkRoot()) { close(); showSaveDialog(); } }
+  };
+  const prepare = async () => {
+    if (q('.sv-reduce') && q('.sv-reduce').checked) {
+      if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
+      await tcDoOptimize({ q: 'medium', gray: false, meta: true, thumbs: true });
+    }
+    return true;
+  };
+  const convertOn = () => q('.sv-convc') && q('.sv-convc').checked;
+  box.querySelectorAll('.sv-row').forEach(row => row.onclick = async () => {
+    if (convertOn()) { q('.sv-go').click(); return; }
+    const p = list[+row.dataset.j];
+    let name = (q('.sv-fname').value || defName).trim(); if (!/\.pdf$/i.test(name)) name += '.pdf'; name = name.replace(/[\\/:*?"<>|]+/g, '_');
+    if (p.parts) {   // known folder: save straight into it
+      const root = await shRootReady(true);
+      if (root) {
+        try {
+          const dir = await shDirAt(root, p.parts);
+          let exists = false; try { await dir.getFileHandle(name); exists = true; } catch (e) {}
+          if (exists && !confirm(`"${name}" already exists in ${nameOf(p)}.\n\nReplace it? (The version that's there now is kept — File › Restore Previous Version.)`)) return;
+          const h = await dir.getFileHandle(name, { create: true });
+          close(); if (await prepare()) await svSaveToHandle(h);
+          return;
+        } catch (e) { console.warn('direct save failed, asking instead', e); }
+      }
+    }
+    // otherwise: the computer's Save window, opened in that folder with the name filled in
+    const opts = { suggestedName: name, startIn: p.handle, types: [{ description: 'PDF Files', accept: { 'application/pdf': ['.pdf'] } }] };
+    let h = null; try { h = await window.showSaveFilePicker(opts); } catch (e) { if (e && e.name === 'AbortError') return; try { delete opts.startIn; h = await window.showSaveFilePicker(opts); } catch (e2) { return; } }
+    close(); if (await prepare()) await svSaveToHandle(h);
+  });
+  // "Choose a Different Folder…" starts where the document came from
+  const go = q('.sv-go'), go2 = go.cloneNode(true); go.replaceWith(go2);
+  go2.onclick = async () => {
+    if (convertOn() || ![...ov.querySelectorAll('.sv-place')].some(x => x.dataset.p === 'pc' && x.classList.contains('on'))) { go2.replaceWith(go); go.click(); return; }
+    let name = (q('.sv-fname').value || defName).trim(); if (!/\.pdf$/i.test(name)) name += '.pdf';
+    const opts = { suggestedName: name, types: [{ description: 'PDF Files', accept: { 'application/pdf': ['.pdf'] } }] };
+    const start = (list[0] && list[0].handle) || null; if (start) opts.startIn = start;
+    let h = null; try { h = await window.showSaveFilePicker(opts); } catch (e) { if (e && e.name === 'AbortError') return; try { delete opts.startIn; h = await window.showSaveFilePicker(opts); } catch (e2) { return; } }
+    close(); if (await prepare()) await svSaveToHandle(h);
+  };
+  // the go button text follows the old sync() — keep it in step
+  const syncText = () => { go2.textContent = convertOn() ? 'Convert…' : ([...ov.querySelectorAll('.sv-place')].find(x => x.classList.contains('on')) || {}).dataset?.p === 'dl' ? 'Save' : 'Choose a Different Folder...'; };
+  ov.addEventListener('click', () => setTimeout(syncText, 0)); ov.addEventListener('change', () => setTimeout(syncText, 0)); syncText();
+};
 </script>
 </body>
 </html>
