@@ -4462,7 +4462,7 @@ function scanContent(str, imageNames) {
   const images = [], texts = [];
   let i = 0; const n = str.length;
   let ctm = IDM.slice(); const gs = [];
-  let Tm = IDM.slice(), Tlm = IDM.slice(), TL = 0, rise = 0, fill = '#000000', tfont = '', Tc = 0;
+  let Tm = IDM.slice(), Tlm = IDM.slice(), TL = 0, rise = 0, fill = '#000000', tfont = '', Tc = 0, Tr = 0;
   const hx = v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0');
   const rgbHex = (r, g, b) => '#' + hx(r) + hx(g) + hx(b);
   const cmykHex = (c, m, y, k) => rgbHex((1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k));
@@ -4518,9 +4518,10 @@ function scanContent(str, imageNames) {
     }
     const opStart = operands.length ? operands[0].start : st;
     switch (op) {
-      case 'q': gs.push({ ctm: ctm.slice(), TL, rise, fill, tfont, Tc }); break;
-      case 'Q': { const g = gs.pop(); if (g) { ctm = g.ctm; TL = g.TL; rise = g.rise; fill = g.fill; tfont = g.tfont; Tc = g.Tc; } else ctm = IDM.slice(); break; }
+      case 'q': gs.push({ ctm: ctm.slice(), TL, rise, fill, tfont, Tc, Tr }); break;
+      case 'Q': { const g = gs.pop(); if (g) { ctm = g.ctm; TL = g.TL; rise = g.rise; fill = g.fill; tfont = g.tfont; Tc = g.Tc; Tr = g.Tr || 0; } else ctm = IDM.slice(); break; }
       case 'Tc': Tc = num(1); break;
+      case 'Tr': Tr = num(1); break;   // 3 = invisible (scanned pages with recognized text)
       case 'Tf': { const f = operands.find(o => o.t === 'n'); if (f) tfont = f.v; break; }
       case 'g': fill = rgbHex(num(1), num(1), num(1)); break;
       case 'rg': fill = rgbHex(num(3), num(2), num(1)); break;
@@ -4545,7 +4546,7 @@ function scanContent(str, imageNames) {
         let rep = '';
         if (op === "'") { td(0, -TL); rep = 'T*'; }
         if (op === '"') { rep = `${fmtNum(num(3))} Tw ${fmtNum(num(2))} Tc T*`; Tc = num(2); td(0, -TL); }
-        texts.push({ start: opStart, end: i, rep, fill, font: tfont, tc: Tc * Math.hypot(...mMul(Tm, ctm).slice(0, 2)), pt: mApply(mMul(Tm, ctm), 0, rise) });
+        texts.push({ start: opStart, end: i, rep, fill, font: tfont, tr: Tr, tc: Tc * Math.hypot(...mMul(Tm, ctm).slice(0, 2)), pt: mApply(mMul(Tm, ctm), 0, rise) });
         break;
       }
       case 'Do': {
@@ -5307,6 +5308,7 @@ async function buildTextBlockObjects(n) {
       pts: JSON.parse(JSON.stringify(b.pts)), origPts: JSON.parse(JSON.stringify(b.pts)),
       text: b.text, origText: b.text, fontSize: b.fh, lineH: b.lineH, family: b.family, bold: b.bold, baseOff: b.baseOff, charSp: b.charSp || 0, italic: !!b.italic, align: b.align || 'left',
       color: blockColor(bi), ops: opIdx && opIdx.length ? opIdx : null,
+      ...([...blockGroups[bi]].flatMap(g => g.ops).every(k => ops[k] && (ops[k].tr === 3 || ops[k].tr === 7)) ? { invisible: true } : {}),
       ...(linkId[r] && opIdx ? { link: linkId[r] } : {}),
     });
   });
@@ -21746,6 +21748,63 @@ runOCR = async function () {
       }
     }
   }
+};
+
+// ================================================================
+//  Editing text found by Recognize Text (the hidden layer over a scan):
+//  once you click into it, the scanned words underneath are covered with the paper colour
+//  so only the live text shows (no doubled, ghosted letters), and the new text is
+//  stretched to the same width the scanned words took up.
+// ================================================================
+function ocrSampleBg(a) {
+  const ps = state.pages[a.page]; if (!ps || !ps.canvas || !ps.canvas.width) return '#ffffff';
+  try {
+    const c = ps.canvas, k = c.width / ps.vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+    const x0 = Math.max(0, Math.floor((b.x - 3) * k)), y0 = Math.max(0, Math.floor((b.y - 3) * k));
+    const x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w + 3) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + b.h + 3) * k));
+    if (x1 <= x0 || y1 <= y0) return '#ffffff';
+    const d = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1), W = d.width, H = d.height, px = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (y > 1 && y < H - 2 && x > 1 && x < W - 2) continue;   // just the ring around the words
+      const i = (y * W + x) * 4; px.push([d.data[i], d.data[i + 1], d.data[i + 2]]);
+    }
+    if (!px.length) return '#ffffff';
+    // the brightest half is the paper (ink and specks are darker)
+    px.sort((p, q) => (q[0] + q[1] + q[2]) - (p[0] + p[1] + p[2]));
+    const top = px.slice(0, Math.max(1, Math.ceil(px.length / 2))), m = [0, 1, 2].map(j => Math.round(top.reduce((s, p) => s + p[j], 0) / top.length));
+    return '#' + m.map(v => v.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return '#ffffff'; }
+}
+function ocrFitWidth(a) {
+  if (a._ocrFit) return; a._ocrFit = true;
+  if (a.hScale) return;
+  const lines = String(a.text || '').split('\n'), fs = a.fontSize || 10, fam = a.family || 'sans';
+  const tw = Math.max(0, ...lines.map(l => textWidth(l, fs, a.bold, fam, a.charSp || 0)));
+  const xs = a.origPts.map(p => p[0]), ow = Math.max(...xs) - Math.min(...xs);
+  if (tw > 0 && ow > 0) { const r = Math.round(ow / tw * 100); if (Math.abs(r - 100) > 4) a.hScale = Math.max(50, Math.min(150, r)); }
+}
+const _annotGeometryOCR = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  const prims = _annotGeometryOCR.apply(this, arguments);
+  if (!a || a.type !== 'text-block' || !a.invisible || a.untouched || !a.origPts) return prims;
+  if (!a.bg) a.bg = ocrSampleBg(a);
+  const ob = bboxOf(a.origPts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+  const pad = 0.8 * vp.scale;
+  let b = { x: ob.x - pad, y: ob.y - pad, w: ob.w + 2 * pad, h: ob.h + 2 * pad };
+  const t = prims.find(p => p.main);
+  if (t) { try { const tb = primBBox(t); const X0 = Math.min(b.x, tb.x); b = { x: X0, y: b.y, w: Math.max(b.x + b.w, tb.x + tb.w) - X0, h: b.h }; /* wider text: cover across, never down into the next line */ } catch (e) {} }
+  return [{ k: 'poly', pts: rectPts(b), fill: a.bg, mask: true }, ...prims];
+};
+// first click into it: fit the width before the editor opens
+const _editAnnotTextOCR = editAnnotText;
+editAnnotText = async function (a) {
+  if (a && a.type === 'text-block' && a.invisible) {
+    ocrFitWidth(a);
+    const paint = () => { if (activeEditor && state.editingId === a.id && activeEditor.el) { activeEditor.el.style.background = a.bg || '#ffffff'; activeEditor.el.classList.add('ocr-edit'); } };
+    setTimeout(paint, 0); setTimeout(paint, 60);
+  }
+  return _editAnnotTextOCR.apply(this, arguments);
 };
 </script>
 </body>
