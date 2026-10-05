@@ -1595,6 +1595,24 @@
 
   .ff.ff-show { color:#000 !important; }
   .ff.ff-mark::after { content:attr(data-mark); position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:var(--ffm,10px)/1 'Segoe UI Symbol','DejaVu Sans',Arial,sans-serif; color:#000; pointer-events:none; }
+
+  /* comment right-click extras */
+  .cm-submenu { position:fixed; background:#2f2f2f; border:1px solid #1d1d1d; box-shadow:0 8px 24px rgba(0,0,0,.55); padding:4px 0; z-index:100002; }
+  .cm-hassub .cm-key { font-size:10px; }
+  .cm-popnote { position:fixed; width:250px; background:#fff9c4; border:1px solid #c9b73e; box-shadow:0 6px 18px rgba(0,0,0,.35); display:flex; flex-direction:column; }
+  .cpn-head { display:flex; align-items:center; gap:6px; padding:4px 6px; background:#f7e978; cursor:move; font:12px 'Segoe UI',Arial,sans-serif; color:#222; }
+  .cpn-ic .ic { width:14px; height:14px; color:#6b5d00; } .cpn-au { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .cpn-dt { color:#555; font-size:11px; }
+  .cpn-x { background:none; border:0; cursor:pointer; color:#444; font-size:12px; }
+  .cpn-tx { height:120px; resize:vertical; border:0; background:transparent; padding:6px 8px; font:13px 'Segoe UI',Arial,sans-serif; color:#111; outline:none; }
+  .cmp-status { margin-left:auto; font-size:11px; padding:1px 7px; border-radius:9px; background:#555; color:#fff; }
+  .cmp-status.st-accepted, .cmp-status.st-completed { background:#2d9d78; } .cmp-status.st-rejected, .cmp-status.st-cancelled { background:#c9252d; }
+
+  .lk-draw { position:absolute; border:1px dashed #1473e6; background:rgba(20,115,230,.08); z-index:40; pointer-events:none; }
+  .lk-dlg .exp-grp { margin-bottom:10px; } .lk-row { display:flex; align-items:center; gap:8px; margin:6px 0; } .lk-ind { margin-left:22px; }
+  .lk-url { width:100%; box-sizing:border-box; margin:2px 0 6px 22px; width:calc(100% - 22px); padding:4px 6px; } .lk-pg { width:60px; }
+
+  body.rot-hover .page-wrapper, body.rotating, body.rotating * { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M14 3.5l3.4 3-3.9 1.6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, crosshair !important; }
+  #rot-tip { position:fixed; z-index:100005; background:#1473e6; color:#fff; font:12px 'Segoe UI',Arial,sans-serif; padding:2px 6px; border-radius:3px; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -5439,7 +5457,8 @@ async function writeContentEdits(doc) {
         name = lp.node.newXObject('ImgR', img.ref).asString().slice(1);
         const b = bboxOf(a.pts);
         P = [b.w, 0, 0, b.h, b.x, b.y];
-      } else P = imagePlacement(a);
+        if (typeof imgRotatePdf === 'function') P = imgRotatePdf(a, P);
+      } else P = typeof imgRotatePdf === 'function' ? imgRotatePdf(a, imagePlacement(a)) : imagePlacement(a);
       const X = mMul(P, mInv(im.ctm));
       reps.push({ start: im.start, end: im.end, text: `q ${X.map(fmtNum).join(' ')} cm /${name} Do Q` });
     }
@@ -21017,6 +21036,564 @@ document.addEventListener('keydown', e => {
   } else if ((e.key === 'w' || e.key === 'W') && state.activeTabId && !e.shiftKey) { e.preventDefault(); closeDocTab(state.activeTabId); }
 }, true);
 window.addEventListener('beforeunload', e => { if (state.docTabs.some(t => t.id !== state.activeTabId && t.dirty)) { e.preventDefault(); e.returnValue = ''; } });
+
+// ================================================================
+//  Right-click on a comment: everything that was there stays, plus Acrobat's missing items —
+//  Open Pop-Up Note, Reply, Set Status ▸, Hide/Show Comment Panel,
+//  Make Current Properties Default, Flip Line
+// ================================================================
+const CM_STATUSES = ['None', 'Accepted', 'Cancelled', 'Completed', 'Rejected'];
+const CM_NOTEXT = ['text-block', 'page-image', 'form-field', 'text-edit'];
+const _objectContextMenuX = objectContextMenu;
+objectContextMenu = function (e, a, n, vx, vy) {
+  if (!a || CM_NOTEXT.includes(a.type)) return _objectContextMenuX.apply(this, arguments);
+  const realOpen = openCtxMenu;
+  let captured = null;
+  openCtxMenu = (x, y, items) => { captured = items; };
+  try { _objectContextMenuX.apply(this, arguments); } finally { openCtxMenu = realOpen; }
+  if (!captured) return;
+  const items = captured.slice();
+  const panelOpen = $('comment-panel') && $('comment-panel').classList.contains('open');
+  const top = [];
+  if (a.type !== 'sticky') top.push({ icon: '🗨', label: 'Open Pop-Up Note', action: () => cmPopupNote(a) });
+  top.push({ icon: '↩', label: 'Reply', action: () => cmReplyTo(a) }, '-');
+  items.unshift(...top);
+  const del = items.findIndex(it => it && it.label === 'Delete');
+  items.splice(del >= 0 ? del + 1 : items.length, 0, { icon: '', label: 'Set Status', sub: CM_STATUSES, current: a.status || 'None', action: () => {} });
+  const props = items.findIndex(it => it && /^Properties/.test(it.label));
+  const extra = ['-', { icon: '', label: panelOpen ? 'Hide Comment Panel' : 'Show Comment Panel', action: () => cmTogglePanel(panelOpen) }, '-',
+    { icon: '', label: 'Make Current Properties Default', action: () => cmMakeDefault(a) }];
+  if (props >= 0) items.splice(props, 0, ...extra); else items.push(...extra);
+  if (['line', 'arrow'].includes(a.type) || (a.type === 'measure' && a.mtype === 'dist')) items.push('-', { icon: '', label: 'Flip Line', action: () => cmFlipLine(a) });
+  realOpen(e.clientX, e.clientY, items);
+  // Set Status ▸ submenu
+  const m = ctxMenuEl; if (!m) return;
+  const row = [...m.querySelectorAll('.cm-item')].find(d => d.querySelector('.cm-lbl').textContent === 'Set Status');
+  if (!row) return;
+  row.classList.add('cm-hassub'); row.querySelector('.cm-key').textContent = '▸';
+  const openSub = () => {
+    if (m.querySelector('.cm-submenu')) return;
+    const s = document.createElement('div'); s.className = 'cm-submenu';
+    s.innerHTML = CM_STATUSES.map(st => `<div class="cm-item" data-s="${st}"><span class="cm-ico">${(a.status || 'None') === st ? '✓' : ''}</span><span class="cm-lbl">${st}</span></div>`).join('');
+    m.appendChild(s);
+    const r = row.getBoundingClientRect(), w = 160;
+    Object.assign(s.style, { left: (r.right + w > innerWidth ? r.left - w : r.right - 2) + 'px', top: Math.min(r.top - 4, innerHeight - CM_STATUSES.length * 30 - 10) + 'px', width: w + 'px' });
+    s.querySelectorAll('.cm-item').forEach(d => d.onclick = ev => { ev.stopPropagation(); closeCtxMenu(); cmSetStatus(a, d.dataset.s); });
+  };
+  row.addEventListener('mouseenter', openSub);
+  row.addEventListener('click', ev => { ev.stopImmediatePropagation(); openSub(); }, true);
+  m.querySelectorAll('.cm-item').forEach(d => { if (d !== row && !d.closest('.cm-submenu')) d.addEventListener('mouseenter', () => { const s = m.querySelector('.cm-submenu'); if (s) s.remove(); }); });
+};
+
+function cmSetStatus(a, st) {
+  if (!touchNative(a)) return;
+  a.status = st === 'None' ? undefined : st;
+  a.replies = a.replies || [];
+  a.replies.push({ author: commentAuthor(), text: st === 'None' ? 'None' : st, status: st, date: Date.now() });
+  a.modDate = Date.now();
+  pushHistory(); renderCommentList(); markDirty();
+  toast(`Status set to ${st}.`);
+}
+function cmTogglePanel(isOpen) {
+  if (isOpen) { $('comment-panel').classList.remove('open'); return; }
+  if (typeof setRightPaneMode === 'function') setRightPaneMode('comment'); else toggleCommentPanel(true);
+  $('comment-panel').classList.add('open');
+}
+function cmReplyTo(a) {
+  cmTogglePanel(false);
+  selectAnnot(a.id);
+  renderCommentList();
+  setTimeout(() => {
+    const card = document.querySelector(`.cmp-card[data-id="${CSS.escape(a.id)}"]`);
+    if (card) { card.scrollIntoView({ block: 'nearest' }); const inp = card.querySelector('.cmp-replybox input'); if (inp) { inp.placeholder = 'Add a reply'; inp.focus(); } }
+  }, 80);
+}
+function cmMakeDefault(a) {
+  state.annotDefaults = state.annotDefaults || {};
+  if (a.type === 'measure') {
+    const le = lineEndsOf(a);
+    setPrefs({ mColor: a.color || '#d7373f', ...(a.mtype === 'dist' ? { mLE0: le[0], mLE1: le[1], mCaption: a.capInline ? 'Inside' : 'Top', mDefLLE: a.lle !== undefined ? a.lle : 5, mDefLLO: a.llo || 0 } : {}) });
+    state.annotDefaults.measure = { ...(a.width ? { width: a.width } : {}), dash: a.dash || null, ...(a.opacity !== undefined ? { opacity: a.opacity } : {}) };
+  } else {
+    const d = state.annotDefaults[a.type] = { color: a.color, ...(a.width ? { width: a.width } : {}), dash: a.dash || null, ...(a.fill !== undefined ? { fill: a.fill } : {}), ...(a.opacity !== undefined ? { opacity: a.opacity } : {}) };
+    if (['line', 'arrow'].includes(a.type) && a.le) d.le = a.le.slice();
+    if (BOXTEXT.includes(a.type)) { d.borderColor = a.borderColor || (a.type === 'callout' ? '#000000' : '#888888'); d.borderW = a.borderW === undefined ? 1 : a.borderW; }
+    if (a.color && !BOXTEXT.includes(a.type)) state.inkColor = a.color;
+  }
+  if (typeof saveAnnotDefaults === 'function') saveAnnotDefaults();
+  toast(`New ${subjectOf(a).toLowerCase()} comments will look like this one.`);
+}
+function cmFlipLine(a) {
+  if (!a.pts || a.pts.length < 2 || !touchNative(a)) return;
+  a.pts = a.pts.slice().reverse();
+  if (a.type === 'measure') a.note = mLabelText(a);
+  renderPageAnnots(a.page); pushHistory(); markDirty();
+}
+
+// ---------- the yellow pop-up note ----------
+function cmPopupNote(a) {
+  document.querySelectorAll('.cm-popnote').forEach(p => p.remove());
+  const ps = state.pages[a.page]; if (!ps) return;
+  let b; try { b = annotBBox(a, ps.vp); } catch (e) { b = { x: 0, y: 0, w: 0, h: 0 }; }
+  const wr = ps.wrapper.getBoundingClientRect();
+  const p = document.createElement('div'); p.className = 'cm-popnote';
+  const text = a.note || (a.native ? a.text : '') || '';
+  p.innerHTML = `<div class="cpn-head"><span class="cpn-ic">${typeof cmIcon === 'function' ? `<span class="ic">${cmIcon(a)}</span>` : ''}</span><b class="cpn-au"></b><span class="cpn-dt">${typeof fmtCommentDate === 'function' ? fmtCommentDate(a.modDate) : ''}</span><button class="cpn-x" title="Close">✕</button></div>
+    <textarea class="cpn-tx" placeholder="Add a note"></textarea>`;
+  p.querySelector('.cpn-au').textContent = a.author || commentAuthor();
+  p.querySelector('textarea').value = text;
+  document.body.appendChild(p);
+  Object.assign(p.style, { left: Math.min(innerWidth - 270, wr.left + b.x + b.w + 12) + 'px', top: Math.max(60, Math.min(innerHeight - 200, wr.top + b.y)) + 'px', zIndex: topZ() + 1 });
+  const ta = p.querySelector('textarea');
+  const commit = () => {
+    const v = ta.value;
+    if (v === (a.note || (a.native ? a.text : '') || '')) return;
+    if (!touchNative(a)) return;
+    a.note = v; if (a.native && a.type !== 'sticky' && !TEXT_TYPES.includes(a.type)) a.text = v;
+    a.modDate = Date.now(); pushHistory(); renderCommentList(); markDirty();
+  };
+  ta.addEventListener('keydown', e => e.stopPropagation());
+  ta.addEventListener('blur', commit);
+  p.querySelector('.cpn-x').onclick = () => { commit(); p.remove(); };
+  const head = p.querySelector('.cpn-head');
+  head.addEventListener('mousedown', e => {
+    if (e.target.closest('.cpn-x')) return;
+    e.preventDefault(); const r = p.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const mv = ev => { p.style.left = (ev.clientX - dx) + 'px'; p.style.top = (ev.clientY - dy) + 'px'; };
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+  });
+  setTimeout(() => ta.focus(), 30);
+}
+// the status shows on the comment card
+const _renderCommentListST = renderCommentList;
+renderCommentList = function () {
+  const r = _renderCommentListST.apply(this, arguments);
+  document.querySelectorAll('.cmp-card').forEach(c => {
+    const a = state.annotations.find(x => x.id === c.dataset.id);
+    if (a && a.status && !c.querySelector('.cmp-status')) { const s = document.createElement('div'); s.className = 'cmp-status st-' + a.status.toLowerCase(); s.textContent = a.status; const r2 = c.querySelector('.cmp-row2'); if (r2) r2.appendChild(s); }
+  });
+  return r;
+};
+
+// ================================================================
+//  Edit PDF › right-click on a picture: everything that was there stays, plus Acrobat's
+//  Select All / Deselect All, Create Link…, Crop, Flip Horizontal / Vertical, Rotate Clockwise,
+//  Arrange ▸ (Bring to Front / Forward / Backward / Send to Back), Edit Using ▸, Redact Image.
+//  Also: links (Edit PDF › Link draws one; right-click › Create Link… puts one on an object).
+// ================================================================
+function cmSub(row, list) {   // a ▸ submenu on a context-menu row
+  const m = ctxMenuEl; if (!m || !row) return;
+  row.classList.add('cm-hassub'); row.querySelector('.cm-key').textContent = '▸';
+  const open = () => {
+    m.querySelectorAll('.cm-submenu').forEach(s => s.remove());
+    const s = document.createElement('div'); s.className = 'cm-submenu';
+    list.forEach(it => { const d = document.createElement('div'); d.className = 'cm-item' + (it.disabled ? ' disabled' : ''); d.innerHTML = `<span class="cm-ico">${it.checked ? '✓' : ''}</span><span class="cm-lbl"></span><span class="cm-key">${it.key || ''}</span>`; d.querySelector('.cm-lbl').textContent = it.label; if (!it.disabled) d.onclick = ev => { ev.stopPropagation(); closeCtxMenu(); it.action(); }; s.appendChild(d); });
+    m.appendChild(s);
+    const r = row.getBoundingClientRect(), w = Math.max(190, s.offsetWidth);
+    Object.assign(s.style, { left: (r.right + w > innerWidth ? r.left - w : r.right - 2) + 'px', top: Math.min(r.top - 4, innerHeight - s.offsetHeight - 6) + 'px', minWidth: w + 'px' });
+  };
+  row.addEventListener('mouseenter', open);
+  row.addEventListener('click', ev => { ev.stopImmediatePropagation(); open(); }, true);
+  m.querySelectorAll(':scope > .cm-item').forEach(d => { if (d !== row && !d.classList.contains('cm-hassub')) d.addEventListener('mouseenter', () => m.querySelectorAll('.cm-submenu').forEach(s => s.remove())); });
+}
+const cmRow = label => ctxMenuEl && [...ctxMenuEl.querySelectorAll(':scope > .cm-item')].find(d => d.querySelector('.cm-lbl').textContent === label);
+
+const _objectContextMenuIM = objectContextMenu;
+objectContextMenu = function (e, a, n, vx, vy) {
+  if (!a || a.type !== 'page-image') return _objectContextMenuIM.apply(this, arguments);
+  const realOpen = openCtxMenu; let items = null;
+  openCtxMenu = (x, y, it) => { items = it; };
+  try { _objectContextMenuIM.apply(this, arguments); } finally { openCtxMenu = realOpen; }
+  if (!items) return;
+  items = items.slice();
+  const at = lbl => items.findIndex(it => it && it.label === lbl);
+  const del = at('Delete');
+  items.splice(del + 1, 0, '-',
+    { icon: '', label: 'Select All', key: 'Ctrl+A', action: () => mselSet(mqCandidates(n).map(x => x.id)) },
+    { icon: '', label: 'Deselect All', action: () => { mselSet([]); selectAnnot(null); } },
+    '-', { icon: '🔗', label: 'Create Link...', action: () => linkDialog(n, a.pts, a) },
+    '-', { icon: '⌗', label: 'Crop', action: () => imgCropStart(a) });
+  items.push('-',
+    { icon: '⇋', label: 'Flip Horizontal', action: () => imgTransform(a, 'h') },
+    { icon: '⇵', label: 'Flip Vertical', action: () => imgTransform(a, 'v') },
+    { icon: '↻', label: 'Rotate Clockwise', action: () => imgTransform(a, 'cw') },
+    '-', { icon: '', label: 'Arrange', action: () => {} },
+    '-', { icon: '', label: 'Edit Using', action: () => {} },
+    '-', { icon: '⬛', label: 'Redact Image', action: () => imgRedact(a) });
+  realOpen(e.clientX, e.clientY, items);
+  cmSub(cmRow('Arrange'), [
+    { label: 'Bring to Front', action: () => reorderAnnot(a, true) },
+    { label: 'Bring Forward', action: () => imgStep(a, 1) },
+    { label: 'Send Backward', action: () => imgStep(a, -1) },
+    { label: 'Send to Back', action: () => reorderAnnot(a, false) }]);
+  cmSub(cmRow('Edit Using'), [
+    { label: 'Save Picture to Edit in Another App…', action: () => saveImageOf(a) },
+    { label: 'Replace with the Edited Picture…', action: () => { selectAnnot(a.id); replaceImage(); } }]);
+};
+function imgStep(a, dir) {
+  const same = state.annotations.filter(x => x.page === a.page);
+  const j = same.indexOf(a) + dir; if (j < 0 || j >= same.length) return;
+  const other = same[j], i1 = state.annotations.indexOf(a), i2 = state.annotations.indexOf(other);
+  touchNative(a); state.annotations[i1] = other; state.annotations[i2] = a;
+  renderPageAnnots(a.page); pushHistory();
+}
+function imgRedact(a) {
+  const r = { id: uid('annot'), page: a.page, type: 'redact-area', pts: JSON.parse(JSON.stringify(a.pts)), color: '#ffffff', imgRedact: a.id };   // the picture just goes away
+  addAnnotation(r); selectAnnot(r.id);
+  toast('Picture marked for redaction. Use Redact › Apply to remove it for good.');
+}
+
+// ---------- the picture as it looks now, as pixels (scale-1 page coordinates) ----------
+async function imgVisual(a) {
+  if (a.untouched && !(await ensureImageReady(a))) return null;
+  const ps = state.pages[a.page], vp = ps.page.getViewport({ scale: 1, rotation: effRot(a.page) });
+  const p = annotGeometry(a, vp).find(x => x.k === 'image' || x.k === 'mimage'); if (!p) return null;
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = p.href; });
+  const box = p.k === 'image' ? { x: p.x, y: p.y, w: p.w, h: p.h } : p.box;
+  const k = Math.max(1, Math.min(4, img.naturalWidth / Math.max(1, Math.hypot(p.m ? p.m[0] : box.w, p.m ? p.m[1] : 0))));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(box.w * k)); c.height = Math.max(1, Math.round(box.h * k));
+  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+  g.scale(k, k); g.translate(-box.x, -box.y);
+  if (p.k === 'mimage') { g.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); g.drawImage(img, 0, 0, 1, 1); }
+  else g.drawImage(img, box.x, box.y, box.w, box.h);
+  return { c, box, k, vp };
+}
+function imgApply(a, canvas, box, vp) {
+  const key = uid('newimg'); state.imgCache[key] = canvas.toDataURL('image/png');
+  if (!touchNative(a)) return;
+  a.untouched = false; a.newImg = key;
+  a.pts = [vp.convertToPdfPoint(box.x, box.y), vp.convertToPdfPoint(box.x + box.w, box.y + box.h)];
+  syncImageVisibility(); renderPageAnnots(a.page); pushHistory(); markDirty();
+}
+async function imgTransform(a, how) {
+  const v = await imgVisual(a); if (!v) { toast('This picture can\'t be changed here.'); return; }
+  const { c, box, vp } = v, o = document.createElement('canvas'), g = o.getContext('2d');
+  let nb = box;
+  if (how === 'cw') {
+    o.width = c.height; o.height = c.width;
+    g.translate(o.width, 0); g.rotate(Math.PI / 2); g.drawImage(c, 0, 0);
+    const cx = box.x + box.w / 2, cy = box.y + box.h / 2; nb = { x: cx - box.h / 2, y: cy - box.w / 2, w: box.h, h: box.w };
+  } else {
+    o.width = c.width; o.height = c.height;
+    if (how === 'h') { g.translate(o.width, 0); g.scale(-1, 1); } else { g.translate(0, o.height); g.scale(1, -1); }
+    g.drawImage(c, 0, 0);
+  }
+  imgApply(a, o, nb, vp);
+}
+
+// ---------- Crop: drag the edges in, Enter (or double-click) to crop, Esc to cancel ----------
+const icrop = { a: null, r: null, lim: null, drag: null };
+async function imgCropStart(a) {
+  const ps = state.pages[a.page]; if (!ps) return;
+  const b = annotBBox(a, ps.vp); if (!b) return;
+  icrop.a = a; icrop.lim = { ...b }; icrop.r = { ...b };
+  selectAnnot(null);
+  icropDraw();
+  toast('Drag the handles to crop, then press Enter (Esc to cancel).');
+}
+function icropDraw() {
+  document.querySelectorAll('.icrop-layer').forEach(x => x.remove());
+  if (!icrop.a) return;
+  const ps = state.pages[icrop.a.page], L = document.createElement('div');
+  L.className = 'crop-layer icrop-layer';
+  L.innerHTML = '<div class="crop-sel">' + ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(h => `<i class="crop-h" data-h="${h}"></i>`).join('') + '</div>';
+  ps.wrapper.appendChild(L);
+  const r = icrop.r; Object.assign(L.firstChild.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' });
+}
+function icropEnd() { icrop.a = null; icrop.drag = null; document.querySelectorAll('.icrop-layer').forEach(x => x.remove()); }
+async function icropApply() {
+  const a = icrop.a; if (!a) return;
+  const ps = state.pages[a.page], s = ps.vp.scale, L = icrop.lim, r = icrop.r;
+  icropEnd();
+  if (Math.abs(r.w - L.w) < 1 && Math.abs(r.h - L.h) < 1) return;
+  const v = await imgVisual(a); if (!v) { toast('This picture can\'t be cropped here.'); return; }
+  // screen box → scale-1 box → pixels
+  const fx = (r.x - L.x) / L.w, fy = (r.y - L.y) / L.h, fw = r.w / L.w, fh = r.h / L.h;
+  const o = document.createElement('canvas'); o.width = Math.max(1, Math.round(v.c.width * fw)); o.height = Math.max(1, Math.round(v.c.height * fh));
+  o.getContext('2d').drawImage(v.c, Math.round(v.c.width * fx), Math.round(v.c.height * fy), o.width, o.height, 0, 0, o.width, o.height);
+  const nb = { x: v.box.x + v.box.w * fx, y: v.box.y + v.box.h * fy, w: v.box.w * fw, h: v.box.h * fh };
+  imgApply(a, o, nb, v.vp);
+  selectAnnot(a.id);
+  void s;
+}
+window.addEventListener('mousedown', e => {
+  if (!icrop.a || e.button !== 0) return;
+  const L = e.target.closest && e.target.closest('.icrop-layer');
+  if (!L) { if (!(e.target.closest && e.target.closest('#ctx-menu'))) { icropApply(); } return; }
+  e.preventDefault(); e.stopPropagation();
+  const ps = state.pages[icrop.a.page], [vx, vy] = viewPoint(e, ps), h = e.target.closest('.crop-h');
+  icrop.drag = { mode: h ? h.dataset.h : 'move', start: [vx, vy], r0: { ...icrop.r } };
+}, true);
+window.addEventListener('mousemove', e => {
+  const d = icrop.drag; if (!d || !icrop.a) return;
+  e.stopPropagation();
+  const ps = state.pages[icrop.a.page], [vx, vy] = viewPoint(e, ps), L = icrop.lim, o = d.r0, dx = vx - d.start[0], dy = vy - d.start[1];
+  let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+  if (d.mode === 'move') { const w = o.w, h = o.h; x0 = clamp(o.x + dx, L.x, L.x + L.w - w); y0 = clamp(o.y + dy, L.y, L.y + L.h - h); x1 = x0 + w; y1 = y0 + h; }
+  else {
+    if (d.mode.includes('w')) x0 = clamp(x0 + dx, L.x, x1 - 4);
+    if (d.mode.includes('e')) x1 = clamp(x1 + dx, x0 + 4, L.x + L.w);
+    if (d.mode.includes('n')) y0 = clamp(y0 + dy, L.y, y1 - 4);
+    if (d.mode.includes('s')) y1 = clamp(y1 + dy, y0 + 4, L.y + L.h);
+  }
+  icrop.r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; icropDraw();
+}, true);
+window.addEventListener('mouseup', () => { icrop.drag = null; }, true);
+window.addEventListener('dblclick', e => { if (icrop.a && e.target.closest && e.target.closest('.icrop-layer')) { e.preventDefault(); e.stopPropagation(); icropApply(); } }, true);
+document.addEventListener('keydown', e => {
+  if (!icrop.a) return;
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); icropApply(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); icropEnd(); }
+}, true);
+// the Format panel's Crop button works too
+(function () { const b = document.querySelector('#rp-format .fp-btn[title="Crop image"]'); if (b) { b.classList.remove('dis'); b.onclick = () => { const a = selectedImage(); if (a) imgCropStart(a); else toast('Click a picture first.'); }; } })();
+(function () {
+  const map = { 'Flip horizontal': 'h', 'Flip vertical': 'v', 'Rotate clockwise': 'cw' };
+  Object.entries(map).forEach(([t, how]) => { const b = document.querySelector(`#rp-format .fp-btn[title="${t}"]`); if (b) { b.classList.remove('dis'); b.onclick = () => { const a = selectedImage(); if (a) imgTransform(a, how); else toast('Click a picture first.'); }; } });
+  const ccw = document.querySelector('#rp-format .fp-btn[title="Rotate counterclockwise"]');
+  if (ccw) { ccw.classList.remove('dis'); ccw.onclick = async () => { const a = selectedImage(); if (!a) return toast('Click a picture first.'); await imgTransform(a, 'cw'); await imgTransform(a, 'cw'); await imgTransform(a, 'cw'); }; }
+})();
+
+// ================================================================
+//  LINKS
+// ================================================================
+const _annotGeometryLK = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (a.type !== 'link') return _annotGeometryLK.apply(this, arguments);
+  const V = a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])), b = bboxOf(V);
+  if (forPdf) return [];
+  const show = a.visible || state.activeToolGroup === 'edit' || a.id === state.selectedId;
+  return [{ k: 'poly', pts: rectPts(b), fill: 'rgba(0,0,0,0.001)', stroke: show ? (a.visible ? a.color || '#0000ff' : '#1473e6') : 'rgba(0,0,0,0.001)', width: 1, dash: a.visible ? null : [3, 2] }];
+};
+const _commentItemsLK = commentItems;
+commentItems = function () { return _commentItemsLK.apply(this, arguments).filter(a => a.type !== 'link'); };
+function linkDialog(n, pts, onObj, existing) {
+  const L = existing || {};
+  const body = `<div class="lk-dlg">
+    <fieldset class="exp-grp"><legend>Link Appearance</legend>
+      <label class="lk-row">Link Type: <select class="lk-vis"><option value="0">Invisible Rectangle</option><option value="1" ${L.visible ? 'selected' : ''}>Visible Rectangle</option></select></label>
+      <label class="lk-row">Color: <input type="color" class="lk-col" value="${L.color || '#0000ff'}"></label></fieldset>
+    <fieldset class="exp-grp"><legend>Link Action</legend>
+      <label class="lk-row"><input type="radio" name="lk-a" value="uri" ${L.dest ? '' : 'checked'}> Open a web page</label>
+      <input class="lk-url" placeholder="https://" value="${escapeHtml(L.url || '')}">
+      <label class="lk-row"><input type="radio" name="lk-a" value="page" ${L.dest ? 'checked' : ''}> Go to a page in this document</label>
+      <label class="lk-row lk-ind">Page: <input class="lk-pg" type="number" min="1" max="${state.totalPages}" value="${L.dest || 1}"> of ${state.totalPages}</label></fieldset></div>`;
+  esDialog('lk-ov', existing ? 'Link Properties' : 'Create Link', body, [
+    { label: 'OK', primary: true, run: ov => {
+      const kind = ov.querySelector('[name=lk-a]:checked').value;
+      let url = ov.querySelector('.lk-url').value.trim(); const pg = clamp(parseInt(ov.querySelector('.lk-pg').value) || 1, 1, state.totalPages);
+      if (kind === 'uri') { if (!url) { alert('Type the web address.'); return false; } if (!/^[a-z][\w+.-]*:/i.test(url)) url = (/@/.test(url) && !/\//.test(url) ? 'mailto:' : 'https://') + url; }
+      const vis = ov.querySelector('.lk-vis').value === '1', col = ov.querySelector('.lk-col').value;
+      if (existing) { touchNative(existing); Object.assign(existing, { url: kind === 'uri' ? url : '', dest: kind === 'page' ? pg : 0, visible: vis, color: col }); renderPageAnnots(existing.page); pushHistory(); markDirty(); return; }
+      const a = { id: uid('link'), page: n, type: 'link', pts: JSON.parse(JSON.stringify(pts)), url: kind === 'uri' ? url : '', dest: kind === 'page' ? pg : 0, visible: vis, color: col, origin: 'edit' };
+      addAnnotation(a); markDirty(); toast('Link created.' + (onObj ? '' : ' Ctrl+click it to test.'));
+    } }, { label: 'Cancel' }], 440);
+  const ov = $('lk-ov'); ov.querySelector('.lk-url').addEventListener('focus', () => ov.querySelector('[name=lk-a][value=uri]').checked = true); ov.querySelector('.lk-pg').addEventListener('focus', () => ov.querySelector('[name=lk-a][value=page]').checked = true);
+}
+// following a link: click (Select / Hand tool) or Ctrl+click
+document.addEventListener('click', e => {
+  if (!state.pdfDoc || !e.target.closest || !e.target.closest('.page-wrapper')) return;
+  const edit = state.activeToolGroup === 'edit';
+  if (!(['select', 'hand'].includes(state.activeTool) && !edit) && !e.ctrlKey) return;
+  const w = e.target.closest('.page-wrapper'), n = +w.dataset.page, ps = state.pages[n], [vx, vy] = viewPoint(e, ps);
+  const lk = state.annotations.find(a => a.type === 'link' && a.page === n && (() => { const b = annotBBox(a, ps.vp); return b && vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h; })());
+  if (!lk) return;
+  if (lk.dest) goToPage(lk.dest);
+  else if (lk.url && confirm('Open this link?\n\n' + lk.url)) window.open(lk.url, '_blank', 'noopener');
+}, true);
+// double-click a link in Edit PDF to change it
+window.addEventListener('dblclick', e => {
+  if (state.activeToolGroup !== 'edit' || !e.target.closest || !e.target.closest('.page-wrapper')) return;
+  const w = e.target.closest('.page-wrapper'), n = +w.dataset.page, ps = state.pages[n], [vx, vy] = viewPoint(e, ps), h = hitTest(n, vx, vy);
+  if (h && h.annot.type === 'link') { e.preventDefault(); e.stopPropagation(); linkDialog(n, h.annot.pts, null, h.annot); }
+}, true);
+// Edit PDF › Link: drag a rectangle where the link goes
+const lkDraw = { on: false, d: null };
+function linkToolStart() { if (!requireDoc()) return; setActiveTool('select'); lkDraw.on = true; document.body.classList.add('crop-mode'); toast('Drag a rectangle where the link should go. (Esc to stop)'); }
+function linkToolEnd() { lkDraw.on = false; lkDraw.d = null; document.body.classList.remove('crop-mode'); document.querySelectorAll('.lk-draw').forEach(x => x.remove()); }
+window.addEventListener('mousedown', e => {
+  if (!lkDraw.on || e.button !== 0) return;
+  const w = e.target.closest && e.target.closest('.page-wrapper'); if (!w) return;
+  e.preventDefault(); e.stopPropagation();
+  const n = +w.dataset.page, ps = state.pages[n], [vx, vy] = viewPoint(e, ps);
+  const box = document.createElement('div'); box.className = 'lk-draw'; w.appendChild(box);
+  lkDraw.d = { n, ps, start: [vx, vy], box };
+}, true);
+window.addEventListener('mousemove', e => {
+  const d = lkDraw.d; if (!d) return; e.stopPropagation();
+  const [vx, vy] = viewPoint(e, d.ps); d.cur = [vx, vy];
+  Object.assign(d.box.style, { left: Math.min(vx, d.start[0]) + 'px', top: Math.min(vy, d.start[1]) + 'px', width: Math.abs(vx - d.start[0]) + 'px', height: Math.abs(vy - d.start[1]) + 'px' });
+}, true);
+window.addEventListener('mouseup', () => {
+  const d = lkDraw.d; if (!d) return; lkDraw.d = null; d.box.remove();
+  if (!d.cur || Math.abs(d.cur[0] - d.start[0]) < 4 || Math.abs(d.cur[1] - d.start[1]) < 4) return;
+  linkToolEnd();
+  linkDialog(d.n, toPdfPts(d.ps, [d.start, d.cur]));
+}, true);
+document.addEventListener('keydown', e => { if (lkDraw.on && e.key === 'Escape') { e.preventDefault(); linkToolEnd(); } }, true);
+document.querySelectorAll('.ctx-btn').forEach(b => { if (/Draw a rectangle where the link/.test(b.getAttribute('onclick') || '')) b.setAttribute('onclick', 'linkToolStart()'); });
+const _activateToolGroupLK = activateToolGroup;
+activateToolGroup = function () { const r = _activateToolGroupLK.apply(this, arguments); document.querySelectorAll('.ctx-btn').forEach(b => { if (/Draw a rectangle where the link/.test(b.getAttribute('onclick') || '')) b.setAttribute('onclick', 'linkToolStart()'); }); return r; };
+// saving: real PDF link annotations
+const _dpApplyLK = dpApply;
+dpApply = function (doc) {
+  const r = _dpApplyLK.apply(this, arguments);
+  if (typeof hfWriting === 'undefined' || !hfWriting) return r;
+  const pages = doc.getPages(), ctx = doc.context, N = k => PDFLib.PDFName.of(k);
+  state.annotations.filter(a => a.type === 'link').forEach(a => {
+    const lp = pages[a.page - 1]; if (!lp) return;
+    const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]);
+    const col = a.visible ? hexToRgb01(a.color || '#0000ff') : null;
+    const dict = { Type: 'Annot', Subtype: 'Link', Rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], Border: [0, 0, a.visible ? 1 : 0], F: 4, ...(col ? { C: col } : {}) };
+    if (a.dest && pages[a.dest - 1]) dict.Dest = [pages[a.dest - 1].ref, N('Fit')];
+    else dict.A = { S: 'URI', URI: PDFLib.PDFString.of(a.url) };
+    const ref = ctx.register(ctx.obj(dict));
+    let an = lp.node.lookup(N('Annots'));
+    if (!an) { lp.node.set(N('Annots'), ctx.obj([ref])); } else an.push(ref);
+  });
+  return r;
+};
+
+// ================================================================
+//  ROTATE HANDLE on pictures in Edit PDF (like Acrobat): the round ↻ handle above the top edge.
+//  Drag it to turn the picture to any angle (hold Shift for 15° steps). Saved into the page.
+// ================================================================
+const ROT_ICON = '<path d="M12.5 5.2A5 5 0 1 0 13 9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 2.8l2.4 2.5-2.9 1.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+const rotable = a => a && a.type === 'page-image';
+function rotMatrixView(deg, cx, cy) {
+  const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+  return [c, s, -s, c, cx - (c * cx - s * cy), cy - (s * cx + c * cy)];
+}
+// on screen: turn the picture about its middle
+const _pageImageGeometryRT = pageImageGeometry;
+pageImageGeometry = function (a, vp, V, box) {
+  const prims = _pageImageGeometryRT.apply(this, arguments);
+  if (!a.rot) return prims;
+  return prims.map(p => {
+    let m;
+    if (p.k === 'image') m = [p.w, 0, 0, p.h, p.x, p.y];
+    else if (p.k === 'mimage') m = p.m;
+    else return p;
+    const b0 = p.k === 'image' ? p : p.box, cx = b0.x + b0.w / 2, cy = b0.y + b0.h / 2;
+    const M = mMul(m, rotMatrixView(a.rot, cx, cy));
+    const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => mApply(M, u, v));
+    return { k: 'mimage', href: p.href, m: M, box: bboxOf(pts), rot: true };
+  });
+};
+// saved file: the same turn, in page space
+function imgRotatePdf(a, P) {
+  if (!a.rot) return P;
+  const ps = state.pages[a.page]; if (!ps) return P;
+  const vp = ps.page.getViewport({ scale: 1, rotation: effRot(a.page) }), T = vp.transform, Ti = mInv(T);
+  // centre of the picture as it sits on the page
+  const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => { const q = mApply(P, u, v); return mApply(T, q[0], q[1]); });
+  const b = bboxOf(pts), R = rotMatrixView(a.rot, b.x + b.w / 2, b.y + b.h / 2);
+  return mMul(P, mMul(mMul(T, R), Ti));
+}
+// added pictures (drawn by the app into the saved page) when turned
+const _drawPrimPDFRT = drawPrimPDF;
+drawPrimPDF = async function (doc, lp, p, vp1) {
+  if (!p || p.k !== 'mimage') return _drawPrimPDFRT.apply(this, arguments);
+  const img = await embedReplacement(doc, p.href);
+  const name = lp.node.newXObject('ImgT', img.ref).asString().slice(1);
+  const Fl = [1, 0, 0, -1, 0, 1];   // the picture's top row is at the top
+  const P = mMul(mMul(Fl, p.m), mInv(vp1.transform));
+  lp.pushOperators(PDFLib.pushGraphicsState(), PDFLib.concatTransformationMatrix(...P), PDFLib.drawObject(name), PDFLib.popGraphicsState());
+};
+// pixels baked by Flip / Crop already include the turn
+const _imgApplyRT = imgApply;
+imgApply = function (a) { a.rot = 0; return _imgApplyRT.apply(this, arguments); };
+
+// ---------- the handle ----------
+function rotHandlePos(a, vp) {
+  const b = annotBBox(a, vp); if (!b) return null;
+  const above = b.y - 24 >= 10;   // no room above (top of the page): put it under the picture
+  return { x: b.x + b.w / 2, y: above ? b.y - 24 : b.y + b.h + 24, cx: b.x + b.w / 2, cy: b.y + b.h / 2, top: above ? b.y : b.y + b.h, below: !above };
+}
+const _drawSelectionRT = drawSelection;
+drawSelection = function (a, vp, g) {
+  const r = _drawSelectionRT.apply(this, arguments);
+  if (!rotable(a) || state.activeToolGroup !== 'edit' || (a.locked)) return r;
+  const h = rotHandlePos(a, vp); if (!h) return r;
+  svgEl('line', { x1: h.x, y1: h.top, x2: h.x, y2: h.below ? h.y - 8 : h.y + 8, stroke: '#1473e6', 'stroke-width': 1.2 }, g);
+  svgEl('circle', { cx: h.x, cy: h.y, r: 8, fill: '#1473e6', stroke: '#fff', 'stroke-width': 1.2 }, g);
+  const ic = svgEl('g', { transform: `translate(${h.x - 8} ${h.y - 8})` }, g); ic.innerHTML = ROT_ICON;
+  return r;
+};
+let rotDrag = null;
+window.addEventListener('mousedown', e => {
+  if (e.button !== 0 || state.activeToolGroup !== 'edit') return;
+  const a = state.annotations.find(x => x.id === state.selectedId); if (!rotable(a) || a.locked) return;
+  const ps = state.pages[a.page]; if (!ps) return;
+  const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top, h = rotHandlePos(a, ps.vp);
+  if (!h || Math.hypot(vx - h.x, vy - h.y) > 11) return;
+  e.preventDefault(); e.stopPropagation();
+  if (!touchNative(a)) return;
+  rotDrag = { a, ps, cx: h.cx, cy: h.cy, a0: Math.atan2(vy - h.cy, vx - h.cx), rot0: a.rot || 0 };
+  document.body.classList.add('rotating');
+}, true);
+window.addEventListener('mousemove', e => {
+  const d = rotDrag; if (!d) return;
+  e.stopPropagation();
+  const r = d.ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top;
+  let deg = d.rot0 + (Math.atan2(vy - d.cy, vx - d.cx) - d.a0) * 180 / Math.PI;
+  deg = ((deg % 360) + 360) % 360;
+  if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+  else for (const s of [0, 90, 180, 270, 360]) if (Math.abs(deg - s) < 2) deg = s;   // a light snap to square angles
+  d.a.rot = deg % 360 || 0;
+  renderPageAnnots(d.a.page);
+  rotTip(e, d.a.rot);
+}, true);
+window.addEventListener('mouseup', () => {
+  const d = rotDrag; if (!d) return; rotDrag = null;
+  document.body.classList.remove('rotating');
+  const t = $('rot-tip'); if (t) t.remove();
+  if (typeof syncImageVisibility === 'function') syncImageVisibility();
+  renderPageAnnots(d.a.page); pushHistory(); markDirty();
+}, true);
+function rotTip(e, deg) {
+  let t = $('rot-tip'); if (!t) { t = document.createElement('div'); t.id = 'rot-tip'; document.body.appendChild(t); }
+  t.textContent = Math.round(deg) + '°'; Object.assign(t.style, { left: e.clientX + 14 + 'px', top: e.clientY + 14 + 'px' });
+}
+// hovering the handle shows the rotate cursor
+window.addEventListener('mousemove', e => {
+  if (rotDrag || state.activeToolGroup !== 'edit') return;
+  const a = state.annotations.find(x => x.id === state.selectedId), ps = a && state.pages[a.page];
+  if (!rotable(a) || !ps) { document.body.classList.remove('rot-hover'); return; }
+  const r = ps.wrapper.getBoundingClientRect(), h = rotHandlePos(a, ps.vp);
+  document.body.classList.toggle('rot-hover', !!h && Math.hypot(e.clientX - r.left - h.x, e.clientY - r.top - h.y) <= 11);
+}, { passive: true });
+
+// ================================================================
+//  Redaction marks look like Acrobat's: the marked area already looks redacted (covered in the
+//  redaction color — a redacted picture just disappears); point at it and what's underneath shows
+// ================================================================
+state.redactHover = null;
+const _annotGeometryRH = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  const prims = _annotGeometryRH.apply(this, arguments);
+  if (forPdf || a.type !== 'redact-area') return prims;
+  // like Acrobat: the marked area looks redacted (covered); point at it to see what's underneath
+  const under = a.id === state.redactHover && a.id !== 'preview';
+  return prims.map(p => p.k === 'poly' ? { ...p, fillOpacity: under ? 0.001 : 1, stroke: under ? '#ff0000' : null, width: 1.2 } : p);
+};
+$('canvas-area').addEventListener('mousemove', e => {
+  if (!state.pdfDoc || !state.annotations.some(a => a.type === 'redact-area')) { if (state.redactHover) { const p = (state.annotations.find(a => a.id === state.redactHover) || {}).page; state.redactHover = null; if (p) renderPageAnnots(p); } return; }
+  const w = e.target.closest && e.target.closest('.page-wrapper');
+  let id = null, n = 0;
+  if (w) {
+    n = +w.dataset.page; const ps = state.pages[n], r = w.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top;
+    const hit = state.annotations.filter(a => a.type === 'redact-area' && a.page === n).reverse().find(a => { const b = annotBBox(a, ps.vp); return b && vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h; });
+    id = hit ? hit.id : null;
+  }
+  if (id === state.redactHover) return;
+  const old = state.annotations.find(a => a.id === state.redactHover);
+  state.redactHover = id;
+  if (old) renderPageAnnots(old.page);
+  if (id && (!old || old.page !== n)) renderPageAnnots(n);
+}, { passive: true });
+$('canvas-area').addEventListener('mouseleave', () => { const old = state.annotations.find(a => a.id === state.redactHover); state.redactHover = null; if (old) renderPageAnnots(old.page); });
 </script>
 </body>
 </html>
