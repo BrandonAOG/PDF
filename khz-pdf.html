@@ -4662,7 +4662,7 @@ function pageContentString(doc, lp) {
   return arr.map(r => {
     const s = doc.context.lookup(r);
     if (!s) return '';
-    try { return bytesToLatin1(s instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(s).decode() : s.getContents()); } catch (e) { return ''; }
+    try { return bytesToLatin1(s instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(s).decode() : (s.getUnencodedContents ? s.getUnencodedContents() : s.getContents())); } catch (e) { return ''; }
   }).join('\n');
 }
 function imageNamesOf(doc, lp) {
@@ -5535,12 +5535,18 @@ function writeContentRemovals(doc, want) {
   });
 }
 function applyContentReplacements(doc, lp, reps) {
-  let content = pageContentString(doc, lp);
+  // streams added during this save (e.g. q/Q wrappers pdf-lib puts around the page when something is drawn)
+  // weren't there when the page was scanned, so they're kept aside and the scanned positions still line up
+  const c0 = lp.node.Contents(), arr0 = c0 ? (c0 instanceof PDFLib.PDFArray ? c0.asArray() : [c0]) : [];
+  const isOrig = r => doc.context.lookup(r) instanceof PDFLib.PDFRawStream;
+  const firstO = arr0.findIndex(isOrig), lastO = arr0.length - 1 - arr0.slice().reverse().findIndex(isOrig);
+  const pre = firstO > 0 ? arr0.slice(0, firstO) : [], post = firstO >= 0 && lastO < arr0.length - 1 ? arr0.slice(lastO + 1) : [];
+  let content = firstO < 0 ? '' : arr0.slice(firstO, lastO + 1).map(r => { const st = doc.context.lookup(r); try { return bytesToLatin1(st instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(st).decode() : (st.getUnencodedContents ? st.getUnencodedContents() : st.getContents())); } catch (e) { return ''; } }).join('\n');
   const seen = new Set();
   reps.filter(r => { const k = r.start + ':' + r.end; if (seen.has(k)) return false; seen.add(k); return true; })
     .sort((x, y) => y.start - x.start)
     .forEach(r => { content = content.slice(0, r.start) + r.text + content.slice(r.end); });
-  lp.node.set(PDFLib.PDFName.of('Contents'), doc.context.obj([doc.context.register(doc.context.flateStream(latin1ToBytes(content)))]));
+  lp.node.set(PDFLib.PDFName.of('Contents'), doc.context.obj([...pre, doc.context.register(doc.context.flateStream(latin1ToBytes(content))), ...post]));
 }
 
 // Saving: pictures moved/resized/replaced/deleted + page text moved/edited/deleted, written into the page itself.
@@ -21566,7 +21572,7 @@ dpApply = function (doc) {
 //  Drag it to turn the picture to any angle (hold Shift for 15° steps). Saved into the page.
 // ================================================================
 const ROT_ICON = '<path d="M12.5 5.2A5 5 0 1 0 13 9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 2.8l2.4 2.5-2.9 1.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
-const rotable = a => a && a.type === 'page-image';
+const rotable = a => a && (a.type === 'page-image' || a.type === 'text-block');
 function rotMatrixView(deg, cx, cy) {
   const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
   return [c, s, -s, c, cx - (c * cx - s * cy), cy - (s * cx + c * cy)];
@@ -23573,6 +23579,197 @@ startPrepareForm = async function () {
   if (added) { try { await ffReadExisting(); } catch (e) {} renderAllAnnots(); ffRenderPane(); }
   return r;
 };
+
+// ================================================================
+//  EDIT PDF on a scanned page after Recognize Text — like Acrobat:
+//  • every recognized line is its own text object (click a line, get that line)
+//  • the scan is split into pictures: each sign, icon or drawing can be clicked, moved, resized or turned;
+//    clicking the plain background still picks the whole page picture
+//  • text objects get the round rotate handle too (pictures already had it)
+// ================================================================
+
+// ---------- 1. one object per recognized line ----------
+const _buildTextBlockObjectsOL = buildTextBlockObjects;
+buildTextBlockObjects = async function (n) {
+  const r = await _buildTextBlockObjectsOL.apply(this, arguments);
+  try { await olSplitLines(n); } catch (e) { console.warn('split OCR lines', e); }
+  return r;
+};
+async function olSplitLines(n) {
+  const ps = state.pages[n]; if (!ps) return;
+  const list = state.annotations.filter(a => a.page === n && a.type === 'text-block' && a.invisible && a.untouched && !a.link && String(a.text).includes('\n'));
+  if (!list.length) return;
+  const tc = await getTextContent(n), ops = (state.pageTextOps && state.pageTextOps[n]) || [];
+  const vp1 = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) });
+  const blocks = (state.textBlocks[n] && state.textBlocks[n].blocks) || [];
+  const same = (p, q) => Math.abs(p[0][0] - q[0][0]) < 0.01 && Math.abs(p[0][1] - q[0][1]) < 0.01 && Math.abs(p[1][0] - q[1][0]) < 0.01;
+  for (const a of list) {
+    const b = blocks.find(x => same(x.pts, a.origPts)); if (!b) continue;
+    const texts = String(a.text).split('\n');
+    // the block's pieces of text, grouped back into their lines
+    const its = b.idxs.map(i => tc.items[i]).filter(it => it && it.str && it.str.trim()).map(it => { const t = pdfjsLib.Util.transform(vp1.transform, it.transform); return { x: t[4], base: t[5], w: it.width, fh: Math.abs(t[3]) || a.fontSize }; });
+    const lines = [];
+    its.sort((p, q) => p.base - q.base).forEach(it => { const L = lines.find(l => Math.abs(l.base - it.base) < 0.45 * Math.max(l.fh, it.fh)); if (L) { L.x = Math.min(L.x, it.x); L.right = Math.max(L.right, it.x + it.w); L.fh = Math.max(L.fh, it.fh); } else lines.push({ base: it.base, x: it.x, right: it.x + it.w, fh: it.fh }); });
+    lines.sort((p, q) => p.base - q.base);
+    if (lines.length !== texts.length) continue;
+    const idx = state.textBlockIndex.findIndex(t => t.id === a.id); if (idx < 0) continue;
+    const myOps = (a.ops || []).slice();
+    const opLine = k => { const op = ops[k]; if (!op) return -1; const [, vy] = vp1.convertToViewportPoint(op.pt[0], op.pt[1]); let best = -1, bd = Infinity; lines.forEach((L, i) => { const d = Math.abs(L.base - vy); if (d < bd) { bd = d; best = i; } }); return bd < L0(lines, best) ? best : -1; };
+    const L0 = (ls, i) => i >= 0 ? 0.6 * ls[i].fh : 0;
+    const per = lines.map(() => []); let lost = false;
+    myOps.forEach(k => { const i = opLine(k); if (i < 0) lost = true; else per[i].push(k); });
+    if (lost || per.some(p => !p.length)) continue;
+    const made = lines.map((L, i) => {
+      const fh = a.fontSize, top = L.base - fh * 0.95, bottom = L.base + fh * 0.28;
+      const pts = [vp1.convertToPdfPoint(L.x - 1, top - 1), vp1.convertToPdfPoint(L.right + 1, bottom + 1)];
+      const id = uid('txt');
+      return { ann: { ...JSON.parse(JSON.stringify(a)), id, text: texts[i], origText: texts[i], pts, origPts: JSON.parse(JSON.stringify(pts)), ops: per[i], lineH: fh * 1.2, baseOff: (L.base - (top - 1)) / fh, align: 'left', ocrLine: true },
+        idx: { id, page: n, ops: per[i], origPts: JSON.parse(JSON.stringify(pts)) } };
+    });
+    const ai = state.annotations.indexOf(a);
+    state.annotations.splice(ai, 1, ...made.map(m => m.ann));
+    state.textBlockIndex.splice(idx, 1, ...made.map(m => m.idx));
+  }
+}
+
+// ---------- 2. rotate handle on text objects ----------
+const olRot = a => a && a.type === 'text-block' && a.rot;
+const _annotGeometryOL = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  const prims = _annotGeometryOL.apply(this, arguments);
+  if (!olRot(a) || state.editingId === a.id) return prims;
+  const keep = prims.filter(p => p.mask), turn = prims.filter(p => !p.mask);
+  const main = turn.find(p => p.main) || turn[0]; if (!main) return prims;
+  const b = primBBox(main), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const M = rotMatrixView(a.rot, cx, cy);
+  const corners = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([x, y]) => mApply(M, x, y));
+  const bb = bboxOf(corners);
+  return [...keep, { k: 'group', m: M, prims: turn.map(p => ({ ...p, main: false })), main: true, x: bb.x, y: bb.y, w: bb.w, h: bb.h }];
+};
+// typing in turned text: it straightens while you type, then turns back
+const _editAnnotTextOLR = editAnnotText;
+editAnnotText = async function (a) {
+  if (!olRot(a)) return _editAnnotTextOLR.apply(this, arguments);
+  return _editAnnotTextOLR.apply(this, arguments).finally(() => renderPageAnnots(a.page));
+};
+
+// ---------- 3. the scan split into pictures ----------
+state.olSeg = {};
+const olPieceOf = a => a && a.type === 'page-image' && a.olPiece;
+function olBaseOf(n) {
+  const ps = state.pages[n]; if (!ps) return null;
+  const vp = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) }), area = vp.width * vp.height;
+  return state.annotations.find(a => a.page === n && a.type === 'page-image' && !a.isNew && (() => { const b = bboxOf(a.pts); return b.w * b.h > area * 0.6; })()) || null;
+}
+const olIsScanPage = n => state.annotations.some(a => a.page === n && a.type === 'text-block' && a.invisible);
+async function olSegment(n) {
+  if (state.olSeg[n]) return; state.olSeg[n] = 'busy';
+  try {
+    const base = olBaseOf(n); if (!base || !olIsScanPage(n)) { state.olSeg[n] = 'none'; return; }
+    const v = await imgVisual(base); if (!v) { state.olSeg[n] = 'none'; return; }
+    const { c, box, k } = v, W = Math.ceil(box.w), H = Math.ceil(box.h);
+    const g = c.getContext('2d', { willReadFrequently: true }), px = g.getImageData(0, 0, c.width, c.height).data;
+    // 1 cell = 1 point: is there ink (dark or strongly coloured) in it?
+    const ink = new Uint8Array(W * H), step = Math.max(1, Math.floor(k / 2));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const x0 = Math.floor(x * k), y0 = Math.floor(y * k), x1 = Math.min(c.width, Math.floor((x + 1) * k)), y1 = Math.min(c.height, Math.floor((y + 1) * k));
+      let hit = 0;
+      for (let yy = y0; yy < y1 && !hit; yy += step) for (let xx = x0; xx < x1; xx += step) { const i = (yy * c.width + xx) * 4, r = px[i], gg = px[i + 1], bb = px[i + 2], lum = 0.3 * r + 0.59 * gg + 0.11 * bb, sat = Math.max(r, gg, bb) - Math.min(r, gg, bb); if (lum < 150 || (sat > 70 && lum < 235)) { hit = 1; break; } }
+      ink[y * W + x] = hit;
+    }
+    // the recognized words are text objects, not picture
+    const ps = state.pages[n], vp1 = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) });
+    state.annotations.filter(a => a.page === n && a.type === 'text-block' && a.invisible).forEach(a => {
+      const tb = bboxOf(a.origPts.map(p => vp1.convertToViewportPoint(p[0], p[1])));
+      for (let y = Math.max(0, Math.floor(tb.y - box.y)); y < Math.min(H, Math.ceil(tb.y + tb.h - box.y)); y++) for (let x = Math.max(0, Math.floor(tb.x - box.x)); x < Math.min(W, Math.ceil(tb.x + tb.w - box.x)); x++) ink[y * W + x] = 0;
+    });
+    // join marks that are close together (2 pt) into one picture
+    const R = 2, dil = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ink[y * W + x]) for (let dy = -R; dy <= R; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -R; dx <= R; dx++) { const xx = x + dx; if (xx >= 0 && xx < W) dil[yy * W + xx] = 1; } }
+    const lab = new Int32Array(W * H), comps = []; let next = 1; const q = new Int32Array(W * H);
+    for (let s = 0; s < W * H; s++) {
+      if (!dil[s] || lab[s]) continue;
+      let qh = 0, qt = 0; q[qt++] = s; lab[s] = next;
+      let x0 = W, y0 = H, x1 = -1, y1 = -1, cnt = 0;
+      while (qh < qt) {
+        const p = q[qh++], x = p % W, y = (p / W) | 0;
+        if (ink[p]) { cnt++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        if (x > 0 && dil[p - 1] && !lab[p - 1]) { lab[p - 1] = next; q[qt++] = p - 1; }
+        if (x < W - 1 && dil[p + 1] && !lab[p + 1]) { lab[p + 1] = next; q[qt++] = p + 1; }
+        if (y > 0 && dil[p - W] && !lab[p - W]) { lab[p - W] = next; q[qt++] = p - W; }
+        if (y < H - 1 && dil[p + W] && !lab[p + W]) { lab[p + W] = next; q[qt++] = p + W; }
+      }
+      if (cnt) comps.push({ x0, y0, x1: x1 + 1, y1: y1 + 1, cnt });
+      next++;
+    }
+    const pageA = W * H;
+    const pieces = comps.filter(cm => { const w = cm.x1 - cm.x0, h = cm.y1 - cm.y0; return w >= 4 && h >= 4 && w * h >= 30 && w * h < pageA * 0.3 && cm.cnt >= 8 && !(h <= 4 && w > W * 0.5) && !(w <= 4 && h > H * 0.5); }).slice(0, 80);
+    if (base !== olBaseOf(n)) { state.olSeg[n] = 'none'; return; }
+    pieces.forEach(cm => {
+      const pad = 2, bx = Math.max(0, cm.x0 - pad), by = Math.max(0, cm.y0 - pad), bw = Math.min(W, cm.x1 + pad) - bx, bh = Math.min(H, cm.y1 + pad) - by;
+      const o = document.createElement('canvas'); o.width = Math.max(1, Math.round(bw * k)); o.height = Math.max(1, Math.round(bh * k));
+      o.getContext('2d').drawImage(c, Math.round(bx * k), Math.round(by * k), o.width, o.height, 0, 0, o.width, o.height);
+      const key = uid('newimg'); state.imgCache[key] = o.toDataURL('image/png');
+      const vb = { x: box.x + bx, y: box.y + by, w: bw, h: bh };
+      state.annotations.push({ id: uid('img'), page: n, type: 'page-image', isNew: true, newImg: key, olPiece: true, olBase: base.id, untouched: true,
+        pts: [vp1.convertToPdfPoint(vb.x, vb.y), vp1.convertToPdfPoint(vb.x + vb.w, vb.y + vb.h)], olRect: vb });
+    });
+    state.olSeg[n] = { base: base.id, canvas: c, box, k, ids: state.annotations.filter(a => a.olPiece && a.page === n).map(a => a.id), cutSig: '' };
+    renderPageAnnots(n);
+  } catch (e) { console.warn('split scan into pictures', e); state.olSeg[n] = 'none'; }
+}
+// a piece that's moved, resized, turned or deleted leaves the page background behind it
+function olSyncCuts(n) {
+  const S = state.olSeg[n]; if (!S || typeof S !== 'object') return;
+  const base = state.annotations.find(a => a.id === S.base); if (!base) return;
+  const cut = S.ids.map(id => state.annotations.find(a => a.id === id)).map((a, i) => (!a || !a.untouched) ? S.ids[i] : null).filter(Boolean);
+  const sig = cut.join(','); if (sig === S.cutSig) return; S.cutSig = sig;
+  if (!cut.length) { if (base.olAuto) { delete base.newImg; base.untouched = true; base.olAuto = false; syncContent(); renderPageAnnots(n); } return; }
+  const o = document.createElement('canvas'); o.width = S.canvas.width; o.height = S.canvas.height;
+  const g = o.getContext('2d'); g.drawImage(S.canvas, 0, 0);
+  // paper colour: the brightest common colour around the page edge
+  const d = S.canvas.getContext('2d').getImageData(0, 0, S.canvas.width, Math.min(8, S.canvas.height)).data; let r = 0, gg = 0, b = 0, m = 0;
+  for (let i = 0; i < d.length; i += 16) { if (d[i] + d[i + 1] + d[i + 2] > 600) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; m++; } }
+  g.fillStyle = m ? `rgb(${Math.round(r / m)},${Math.round(gg / m)},${Math.round(b / m)})` : '#fff';
+  cut.forEach(id => { const rect = olRectOf(id); if (rect) g.fillRect((rect.x - S.box.x) * S.k, (rect.y - S.box.y) * S.k, rect.w * S.k, rect.h * S.k); });
+  const key = uid('newimg'); state.imgCache[key] = o.toDataURL('image/jpeg', 0.92);
+  base.newImg = key; base.untouched = false; base.olAuto = true;
+  const ps = state.pages[n], vp1 = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) });
+  base.pts = [vp1.convertToPdfPoint(S.box.x, S.box.y), vp1.convertToPdfPoint(S.box.x + S.box.w, S.box.y + S.box.h)];
+  syncContent(); renderPageAnnots(n);
+}
+const olRects = {};
+function olRectOf(id) { const a = state.annotations.find(x => x.id === id); if (a && a.olRect) olRects[id] = a.olRect; return olRects[id]; }
+const _touchNativeOL = touchNative;
+touchNative = function (a) {
+  if (olPieceOf(a) && a.untouched) { a.untouched = false; olRectOf(a.id); setTimeout(() => olSyncCuts(a.page), 0); return true; }
+  return _touchNativeOL.apply(this, arguments);
+};
+const _deleteAnnotOL = deleteAnnot;
+deleteAnnot = function (id) {
+  const a = state.annotations.find(x => x.id === id); if (olPieceOf(a)) olRectOf(id);
+  const r = _deleteAnnotOL.apply(this, arguments);
+  if (olPieceOf(a)) olSyncCuts(a.page);
+  return r;
+};
+const _pushHistoryOL = pushHistory;
+pushHistory = function () {
+  Object.keys(state.olSeg).forEach(n => { const S = state.olSeg[n]; if (S && typeof S === 'object') { S.ids.forEach(olRectOf); olSyncCuts(+n); } });
+  return _pushHistoryOL.apply(this, arguments);
+};
+// split the scanned pages when Edit PDF is opened (and as pages come into view)
+async function olQueue() {
+  if (state.activeToolGroup !== 'edit' || olQueue.busy) return; olQueue.busy = true;
+  try {
+    const vis = Object.values(state.pages).filter(ps => ps.visible).map(ps => ps.n);
+    for (const n of vis.concat(Object.keys(state.pages).map(Number))) { if (state.activeToolGroup !== 'edit') break; if (!state.olSeg[n] && olIsScanPage(n)) await olSegment(n); }
+  } finally { olQueue.busy = false; }
+}
+const _activateToolGroupOL = activateToolGroup;
+activateToolGroup = function (group) { const r = _activateToolGroupOL.apply(this, arguments); if (group === 'edit') setTimeout(olQueue, 50); return r; };
+// a new document (or a reload) starts over
+const _loadBytesOL = loadBytes;
+loadBytes = async function () { state.olSeg = {}; const r = await _loadBytesOL.apply(this, arguments); if (state.activeToolGroup === 'edit') setTimeout(olQueue, 300); return r; };
 </script>
 </body>
 </html>
