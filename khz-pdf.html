@@ -1617,6 +1617,99 @@
   #rot-tip { position:fixed; z-index:100005; background:#1473e6; color:#fff; font:12px 'Segoe UI',Arial,sans-serif; padding:2px 6px; border-radius:3px; pointer-events:none; }
 
   .vt-edit { transform-origin:0 0 !important; transform:rotate(90deg) translateY(-100%) !important; }
+
+  /* ---------- Prepare Form ---------- */
+  #tools-center.pfs-on { padding:0; display:block; }
+  .pfs { color:#e8e8e8; padding:70px 20px 40px; font-family:inherit; }
+  .pfs-h { text-align:center; font-size:30px; font-weight:300; margin-bottom:46px; }
+  .pfs-body { display:flex; justify-content:center; gap:0; }
+  .pfs-left { width:260px; border-right:1px solid #8a8a8a; padding:12px 30px 260px 0; text-align:right; position:relative; }
+  .pfs-it { font-size:20px; font-weight:300; padding:12px 0; cursor:pointer; color:#e6e6e6; position:relative; }
+  .pfs-it.on { color:#3d9bff; }
+  .pfs-it.on::after { content:''; position:absolute; right:-37px; top:50%; width:12px; height:12px; background:#323232; border-left:1px solid #8a8a8a; border-bottom:1px solid #8a8a8a; transform:translateY(-50%) rotate(45deg); }
+  .pfs-right { width:420px; padding:0 0 0 80px; display:flex; flex-direction:column; align-items:flex-start; gap:12px; }
+  .pfs-thumb { width:146px; height:190px; border:2px solid #3d9bff; border-radius:3px; display:flex; align-items:center; justify-content:center; background:#4a4a4a; margin-left:0; }
+  .pfs-thumb canvas { box-shadow:0 1px 3px rgba(0,0,0,.5); background:#fff; }
+  .pfs-fn { font-size:15px; } .pfs-link { color:#3d9bff; font-size:14px; text-decoration:none; } .pfs-link:hover { text-decoration:underline; }
+  .pfs-msg { font-size:14px; color:#cfcfcf; line-height:1.6; max-width:330px; }
+  .pfs-pick { background:none; border:1.5px solid #c2c2c2; color:#eee; border-radius:16px; padding:6px 16px; font-size:14px; cursor:pointer; }
+  .pfs-chk { font-size:13px; display:flex; align-items:center; gap:8px; margin-top:22px; }
+  .pfs-start { background:#1473e6; color:#fff; border:none; border-radius:18px; font-size:15px; font-weight:700; padding:8px 30px; cursor:pointer; margin:8px 0 18px 70px; }
+  .pfs-start:hover { background:#0d66d0; }
+  .pfs-auto { font-size:12.5px; color:#ddd; } .pfs-auto a { color:#3d9bff; text-decoration:none; }
+  .pfs-help { margin:18px 0 0 100px; }
+  #ctx-content.ffbar { flex:1; justify-content:center; display:flex; align-items:center; gap:2px; }
+  .ctx-btn.ff-tb { padding:5px 7px; color:#ddd; border-radius:4px; }
+  .ctx-btn.ff-tb.on { color:#3d9bff; background:rgba(61,155,255,.12); }
+  .ctx-btn.ff-tb svg { display:block; width:22px !important; height:22px !important; }
+  .ff-preview { background:#1473e6; color:#fff; border:none; border-radius:18px; font-size:15px; font-weight:700; padding:6px 20px; margin-right:10px; cursor:pointer; }
+  .ff-preview:hover { background:#0d66d0; }
+  #rp-prepare { padding:14px 12px 10px; display:flex; flex-direction:column; flex:1; min-height:0; color:#ddd; font-size:12px; }
+  #rp-prepare.hidden { display:none; }
+  .ffp-cols { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-bottom:10px; }
+  .ffp-h { font-size:11.5px; font-weight:700; letter-spacing:.3px; margin:4px 0 8px; color:#e6e6e6; }
+  .ffp-row { display:flex; gap:4px; margin-bottom:6px; }
+  .ffp-ib { background:none; border:none; color:#cfcfcf; padding:3px; border-radius:3px; cursor:pointer; display:inline-flex; align-items:center; }
+  .ffp-ib:hover:not(:disabled) { background:#454545; color:#fff; } .ffp-ib:disabled { opacity:.38; cursor:default; }
+  .ffp-ib.sm { padding:2px 3px; } .ffp-caret { font-size:9px; margin-left:2px; color:#aaa; }
+  .ffp-sep { height:1px; background:#444; margin:6px 0 10px; }
+  .ffp-more { display:flex; align-items:center; gap:8px; background:none; border:none; color:#ddd; font-size:13px; cursor:pointer; padding:4px 2px; width:100%; }
+  .ffp-more .ffp-caret { margin-left:auto; }
+  .ffp-fh { display:flex; align-items:center; font-size:11.5px; font-weight:700; margin:6px 0 8px; } .ffp-tools { margin-left:auto; display:flex; gap:6px; }
+  .ffp-tree { flex:1; overflow:auto; min-height:80px; }
+  .ffp-pg, .ffp-fld { display:flex; align-items:center; gap:6px; padding:4px 4px; border-radius:3px; cursor:pointer; white-space:nowrap; }
+  .ffp-pg:hover, .ffp-fld:hover { background:#3d3d3d; } .ffp-fld { padding-left:30px; } .ffp-fld.on { background:#1d4e9a; color:#fff; }
+  .ffp-chev { width:10px; color:#aaa; font-size:10px; } .ffp-fld span { overflow:hidden; text-overflow:ellipsis; }
+  .ffp-tn { font-style:normal; background:#ffe14d; color:#000; padding:0 4px; border-radius:2px; margin-right:5px; font-size:10px; }
+  .ffp-ev { color:#999; font-style:normal; }
+  .ffp-foot { display:flex; flex-direction:column; gap:10px; padding-top:10px; }
+  .ffp-pill { background:none; border:1.5px solid #c2c2c2; color:#e6e6e6; border-radius:16px; padding:6px 0; font-size:13.5px; font-weight:600; cursor:pointer; }
+  .ffp-pill:hover { background:#3d3d3d; }
+  .ff-pop { position:fixed; background:#fdf98f; color:#111; border:1px solid #d8d27a; box-shadow:0 2px 8px rgba(0,0,0,.35); padding:9px 12px 10px; width:260px; font:12px 'Segoe UI',Tahoma,Arial,sans-serif; border-radius:2px; }
+  .ff-pop label { display:block; margin:2px 0 3px; } .ff-pop input:not([type]) { width:100%; border:1px solid #9a9a9a; padding:3px 4px; font:12px inherit; background:#fff; color:#111; margin-bottom:6px; }
+  .ff-pop .ffq-row { display:flex; align-items:center; justify-content:space-between; } .ff-pop .ffq-req { display:flex; align-items:center; gap:5px; margin:0; }
+  .ff-pop a { color:#0645ad; } .ff-pop .ffq-add { display:block; margin-top:6px; }
+  .ff-grid { position:absolute; inset:0; pointer-events:none; z-index:4; background-image:linear-gradient(to right, rgba(0,0,0,.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,.08) 1px, transparent 1px), linear-gradient(to right, rgba(0,0,0,.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,.2) 1px, transparent 1px); }
+  /* properties dialog (light, like Windows) */
+  .ffp-ov { position:fixed; inset:0; background:rgba(0,0,0,.08); display:flex; align-items:center; justify-content:center; }
+  .ffd { background:#f0f0f0; color:#111; width:640px; max-width:96vw; border:1px solid #9a9a9a; box-shadow:0 6px 24px rgba(0,0,0,.45); font:12px 'Segoe UI',Tahoma,Arial,sans-serif; }
+  .ffd-t { display:flex; align-items:center; padding:8px 10px; background:#fff; cursor:move; user-select:none; } .ffd-t span { flex:1; font-size:12.5px; }
+  .ffd-x { background:#c42b1c; color:#fff; border:none; width:22px; height:18px; font-size:13px; line-height:1; cursor:pointer; } .ffd-x:hover { background:#e81123; }
+  .ffd-tabs { display:flex; padding:12px 14px 0; gap:0; } .ffd-tab { background:#f0f0f0; border:1px solid #c4c4c4; border-bottom:none; padding:3px 7px; font:12px inherit; color:#111; cursor:pointer; margin-right:-1px; }
+  .ffd-tab.on { background:#f9f9f9; position:relative; top:1px; padding-bottom:5px; margin-top:-2px; }
+  .ffd-pane { margin:0 14px; border:1px solid #c4c4c4; background:#f9f9f9; padding:14px 18px; height:430px; overflow:auto; }
+  .ffd-foot { display:flex; align-items:center; padding:12px 14px; } .ffd-lock { display:flex; align-items:center; gap:5px; }
+  .ffd-close { margin-left:auto; min-width:108px; padding:5px 0; border:1px solid #adadad; background:#fdfdfd; font:12px inherit; cursor:pointer; } .ffd-close:hover { background:#e5f1fb; border-color:#0078d7; }
+  .ffd input:not([type=checkbox]):not([type=radio]), .ffd select, .ffd textarea { font:12px inherit; color:#111; background:#fff; border:1px solid #7a7a7a; padding:2px 4px; }
+  .ffd input:not([type=checkbox]):not([type=radio]):disabled, .ffd select:disabled, .ffd textarea:disabled { background:#f0f0f0; color:#8a8a8a; border-color:#c4c4c4; }
+  .ffd select.sm, .ffd input.sm { width:60px; } .ffd select.sm2 { width:118px; } .ffd select.wide { width:100%; flex:1; }
+  .ffd-r { display:flex; align-items:center; gap:10px; margin:8px 0; } .ffd-r > label:first-child { min-width:96px; text-align:right; } .ffd-r.top { align-items:flex-start; } .ffd-r.right { justify-content:flex-end; }
+  .ffd-g .ffd-r input { width:240px; }
+  .ffd-fs { border:1px solid #d5d5d5; padding:10px 14px; margin:8px 0 14px; } .ffd-fs legend { padding:0 4px; color:#111; }
+  .ffd-common { margin-top:150px; } .ffd-cp { display:grid; grid-template-columns:1fr auto; gap:6px 30px; align-items:start; }
+  .ffd-cb { display:flex; align-items:center; gap:6px; margin:6px 0; } .ffd-cb.dis { color:#8a8a8a; }
+  .ffd-ap { display:grid; grid-template-columns:auto auto auto 1fr; gap:10px 12px; align-items:center; } .ffd-ap > label { text-align:right; }
+  .ffd-sw { width:24px; height:22px; border:1px solid #7a7a7a; background:#fff; padding:2px; cursor:pointer; } .ffd-sw i { display:block; width:100%; height:100%; }
+  .ffd-sw i.none { background:linear-gradient(45deg, transparent 45%, #d00 45%, #d00 55%, transparent 55%), #fff; border:1px solid #999; }
+  .ffd-pos { display:grid; grid-template-columns:auto auto auto auto; gap:10px 14px; align-items:center; } .ffd-pos > label { text-align:right; min-width:50px; }
+  .ffd-spin { display:inline-flex; border:1px solid #7a7a7a; background:#fff; } .ffd-spin input { border:none !important; width:110px; } .ffd-spin span { display:flex; flex-direction:column; }
+  .ffd-spin button { border:none; border-left:1px solid #c4c4c4; background:#f0f0f0; font-size:7px; padding:0 4px; height:10px; cursor:pointer; line-height:1; }
+  .ffd textarea.op-dv { width:180px; height:80px; resize:none; } .ffd-opts { margin:16px 0 0 110px; } .ffd-lim { display:flex; align-items:center; gap:10px; } .ffd-lim .ffd-cb { margin:6px 0; } .ffd-lim input { width:50px; }
+  .ffd-items select.op-list { width:260px; } .ffd-items input { width:200px; } .ffd-col { display:flex; flex-direction:column; gap:6px; }
+  .ffd-btn { min-width:80px; padding:3px 10px; border:1px solid #adadad; background:#fdfdfd; font:12px inherit; cursor:pointer; color:#111; } .ffd-btn:disabled { color:#a0a0a0; cursor:default; } .ffd-btn:hover:not(:disabled) { background:#e5f1fb; border-color:#0078d7; }
+  .ffd-note { color:#555; margin:6px 0; } .ffd-icon { max-width:60px; max-height:40px; border:1px solid #ccc; }
+  .ffd-acts { background:#fff; border:1px solid #7a7a7a; height:150px; overflow:auto; padding:3px; outline:none; } .ffd-at { font-weight:600; padding:2px; } .ffd-ai { padding:2px 2px 2px 20px; cursor:default; } .ffd-ai.on { background:#0078d7; color:#fff; }
+  .ffd-arow { display:flex; gap:12px; justify-content:center; margin-top:10px; } .ffd-arow .ffd-btn { min-width:100px; }
+  .ffd-fbox { border:1px solid #d5d5d5; min-height:290px; padding:8px; margin:10px 0; } .ffd-fmt { display:grid; grid-template-columns:auto 1fr; gap:10px 12px; align-items:center; } .ffd-fmt > label { text-align:right; } .ffd-fmt label.top { align-self:start; }
+  .ffd-fbox select[size] { width:100%; } .ffd-hint { border:1px solid #d5d5d5; padding:14px 16px; display:flex; gap:14px; align-items:center; } .ffd-bulb { font-size:24px; }
+  .ffd-val { display:flex; flex-direction:column; gap:6px; } .ffd-rb { display:flex; align-items:center; gap:6px; margin:6px 0 2px; } .ffd-rb.dis, .ffd .dis { color:#8a8a8a; }
+  .ffd-rng { display:flex; gap:8px; align-items:center; margin-left:24px; } .ffd-sc { display:flex; gap:16px; align-items:flex-start; margin-left:24px; } .ffd-sc textarea { width:220px; height:58px; resize:none; background:#f0f0f0 !important; }
+  .ffd .mono, textarea.mono { font-family:Consolas,'Courier New',monospace !important; }
+  .ffd-colmenu { position:fixed; background:#f6f6f6; border:1px solid #999; padding:6px; box-shadow:0 3px 10px rgba(0,0,0,.3); width:180px; font:12px 'Segoe UI',Arial,sans-serif; }
+  .ffd-colmenu .cm-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:3px; margin:6px 0; } .ffd-colmenu .cm-grid button { height:22px; border:1px solid #888; cursor:pointer; }
+  .ffd-colmenu .cm-none, .ffd-colmenu .cm-other { width:100%; background:#fff; border:1px solid #aaa; padding:3px; cursor:pointer; font:12px inherit; }
+  .ffpk { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:4px; padding:4px; background:rgba(255,255,255,.04); }
+  .ffm-r { display:flex; align-items:center; gap:10px; margin:8px 0; } .ffm-r label { flex:1; } .ffm-r input[type=number] { width:70px; }
 </style>
 </head>
 <body>
@@ -8260,7 +8353,7 @@ async function startPrepareForm() {
   renderAllAnnots();
   updateFormLayerMode();
   const total = state.annotations.filter(a => a.type === 'form-field').length;
-  toast(added ? `Found ${added} new field(s). Adjust them, then click "Close Form Editing".` : total ? `${total} field(s). Add, move or edit fields, then click "Close Form Editing".` : 'No fields detected — use the field tools in the bottom toolbar to add them.');
+  toast(added ? `Found ${added} new field(s). Adjust them, then click "Close Form Editing".` : total ? `${total} field(s). Add, move or edit fields, then click "Close Form Editing".` : 'No fields detected — pick a field type on the toolbar and click or drag on the page.');
   pushHistory();
 }
 
@@ -22048,6 +22141,1430 @@ loadLeftPanel = function (mode) {
   sigs.forEach(s => { if (state.sigLocks && state.sigLocks[s.field]) tail.appendChild(leaf(`<b>Document Locked by ${escapeHtml(s.field)}</b>`, 'spt-doc')); });
   wrap.appendChild(tail);
   wrap.addEventListener('click', e => { if (e.target.closest('.spt-addca')) { e.preventDefault(); sigAddIssuer(); } });
+};
+
+// ================================================================
+//  PREPARE FORM like Acrobat
+//  • start page: Single File / Scanner / Create New / Create a Web Form, thumbnail, Change File,
+//    "This document requires signatures", Start, "Form field auto detection is ON. Change", Help
+//  • field toolbar (Select, Auto detect, Add Text, Text Field, Check Box, Radio Button, List Box, Dropdown,
+//    Button, Image Field, Date Field, Digital Signature, Barcode, keep tool selected, Help) + Preview / Close
+//  • right pane: ALIGN · CENTER · MATCH SIZE · DISTRIBUTE · More · FIELDS tree · Distribute… · Track…
+//  • fields look like Acrobat's (light-blue box, name tag); yellow "Field Name" pop-up when you add one
+//  • right-click menus on a field and on the empty page
+// ================================================================
+const FFI = {
+  select: '<path d="M6 3l12 9-5.5 1 3 6-2.2 1-3-6L6 18z" fill="currentColor"/>',
+  detect: '<rect x="3.5" y="3.5" width="13" height="17" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 8h7M6.5 11.5h5" stroke="currentColor" stroke-width="1.5"/><path d="M13 19l7-7 2 2-7 7h-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  addtext: '<path d="M5 5h14M12 5v15M9 20h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  text: '<rect x="2.5" y="5.5" width="19" height="13" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 9h5M8.5 9v6M13.5 9v6M12.3 9h2.4M12.3 15h2.4" stroke="currentColor" stroke-width="1.4"/>',
+  checkbox: '<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 12.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  radio: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4" fill="currentColor"/>',
+  list: '<rect x="2.5" y="4.5" width="19" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h9M5.5 12h9M5.5 15.5h9M17.5 4.5v15" stroke="currentColor" stroke-width="1.4"/><path d="M18.3 7.5l1.2-1.4 1.2 1.4M18.3 16.5l1.2 1.4 1.2-1.4" fill="none" stroke="currentColor" stroke-width="1"/>',
+  dropdown: '<rect x="2.5" y="4.5" width="19" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 4.5v7" stroke="currentColor" stroke-width="1.4"/><path d="M17.3 7l1.2 1.4 1.2-1.4" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="2.5" y="13.5" width="13" height="7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 16h7M5 18.3h5" stroke="currentColor" stroke-width="1"/>',
+  button: '<rect x="2.5" y="6.5" width="19" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="12" y="14.6" text-anchor="middle" font-size="7" font-family="Arial" font-weight="bold" fill="currentColor">OK</text>',
+  image: '<rect x="3" y="4.5" width="18" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 17.5l4.5-5 3.5 3.5 2.5-2.5 3.5 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="15.5" cy="9" r="1.6" fill="currentColor"/>',
+  date: '<rect x="3.5" y="5" width="17" height="15.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.5"/><path d="M7 13h2M11 13h2M15 13h2M7 16.5h2M11 16.5h2" stroke="currentColor" stroke-width="1.8"/>',
+  signature: '<rect x="2.5" y="5.5" width="19" height="13" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 15.5c1.5-1 2.3-3.5 3.3-3.5s.2 2.6 1.2 2.6 1.6-1.6 2.6-1.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M13 13.5l5-5 1.5 1.5-5 5-2 .5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>',
+  barcode: '<rect x="2.5" y="4.5" width="19" height="15" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 7.5v9M8 7.5v9M11 7.5v9M12.5 7.5v9M15 7.5v9M18 7.5v9" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 7.5v9M16.5 7.5v9" stroke="currentColor" stroke-width=".7"/>',
+  pin: '<path d="M9 3h6l-1 6 3 3v1.5H7V12l3-3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 13.5V21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  help: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/>',
+  // right pane
+  alL: '<path d="M4 3v18" stroke="currentColor" stroke-width="1.5"/><rect x="6.5" y="6" width="9" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6.5" y="14" width="13" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  alC: '<path d="M12 3v18" stroke="currentColor" stroke-width="1.5"/><rect x="7.5" y="6" width="9" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5.5" y="14" width="13" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  alR: '<path d="M20 3v18" stroke="currentColor" stroke-width="1.5"/><rect x="8.5" y="6" width="9" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="4.5" y="14" width="13" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  alT: '<path d="M3 4h18" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="6.5" width="4" height="9" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="14" y="6.5" width="4" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  alM: '<path d="M3 12h18" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="7.5" width="4" height="9" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="14" y="5.5" width="4" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  alB: '<path d="M3 20h18" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="8.5" width="4" height="9" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="14" y="4.5" width="4" height="13" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  ceH: '<rect x="3" y="4" width="18" height="16" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="10" width="8" height="4" fill="currentColor"/><path d="M12 4v4M12 16v4" stroke="currentColor" stroke-width="1"/>',
+  ceV: '<rect x="3" y="4" width="18" height="16" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="10" y="7" width="4" height="10" fill="currentColor"/><path d="M3 12h5M16 12h5" stroke="currentColor" stroke-width="1"/>',
+  ceB: '<rect x="3" y="4" width="18" height="16" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="9" width="7" height="6" fill="currentColor"/>',
+  szW: '<rect x="3" y="6" width="18" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="3" y="14" width="18" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 3v18M21 3v18" stroke="currentColor" stroke-width="1"/>',
+  szH: '<rect x="6" y="3" width="4" height="18" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="14" y="3" width="4" height="18" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 3h18M3 21h18" stroke="currentColor" stroke-width="1"/>',
+  szB: '<rect x="4" y="4" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="13" y="13" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="13" y="4" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.5"/>',
+  diH: '<rect x="3" y="8" width="4" height="8" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="10" y="8" width="4" height="8" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="17" y="8" width="4" height="8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 4v2M12 4v2M19 4v2M5 18v2M12 18v2M19 18v2" stroke="currentColor" stroke-width="1"/>',
+  diV: '<rect x="8" y="3" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="10" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8" y="17" width="8" height="4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 5h2M4 12h2M4 19h2M18 5h2M18 12h2M18 19h2" stroke="currentColor" stroke-width="1"/>',
+  more: '<path d="M4 6h3l1 3h8l1-3h3M7 9v10M17 9v10M5 19h4M15 19h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  sortL: '<path d="M3 6h12M3 11h9M3 16h6" stroke="currentColor" stroke-width="1.6"/><path d="M18 5v12M15.5 14.5L18 17l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  sortA: '<text x="3" y="11" font-size="9" font-family="Arial" font-weight="bold" fill="currentColor">A</text><text x="3" y="21" font-size="9" font-family="Arial" font-weight="bold" fill="currentColor">Z</text><path d="M16 4v14M13.5 15.5L16 18l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  page: '<path d="M6 3h8l4 4v14H6z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.1"/>',
+};
+const ffIc = (k, s = 20) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}">${FFI[k] || ''}</svg>`;
+Object.assign(FF_TOOLS, { 'ff-button': 'button', 'ff-image': 'image', 'ff-date': 'date', 'ff-barcode': 'barcode' });
+Object.assign(FF_LABEL, { button: 'Button', image: 'Image Field', date: 'Date Field', barcode: 'Barcode', signature: 'Digital Signature' });
+['ff-button', 'ff-image', 'ff-date', 'ff-barcode'].forEach(t => { if (!DRAG_TOOLS.includes(t)) DRAG_TOOLS.push(t); });
+const FF_KINDS = [['text', 'ff-text', 'Text Field'], ['checkbox', 'ff-check', 'Check Box'], ['radio', 'ff-radio', 'Radio Button'], ['list', 'ff-list', 'List Box'], ['dropdown', 'ff-dropdown', 'Dropdown'],
+  ['date', 'ff-date', 'Date Field'], ['image', 'ff-image', 'Image Field'], ['button', 'ff-button', 'Button'], ['signature', 'ff-sig', 'Digital Signature'], ['barcode', 'ff-barcode', 'Barcode']];
+const FF_ICON_OF = { text: 'text', checkbox: 'checkbox', radio: 'radio', list: 'list', dropdown: 'dropdown', date: 'date', image: 'image', button: 'button', signature: 'signature', barcode: 'barcode' };
+const ffAll = () => state.annotations.filter(a => a.type === 'form-field');
+const ffOnPage = n => ffAll().filter(a => a.page === n);
+
+// ---------------------------------------------------------------- start page
+function ffPrefs() { return { detect: getPref('ffAutoDetect', true) !== false, sig: !!getPref('ffNeedsSig', false) }; }
+showPrepareForm = function (side) {
+  const tc = (() => { let t = $('tools-center'); if (!t) { t = document.createElement('div'); t.id = 'tools-center'; $('app-body').style.position = 'relative'; $('app-body').appendChild(t); } return t; })();
+  const P = ffPrefs(), mode = side || state.ffStartSide || 'single';
+  state.ffStartSide = mode;
+  const items = [['single', 'Single File'], ['scanner', 'Scanner'], ['new', 'Create New'], ['web', 'Create a Web Form']];
+  let right = '';
+  if (mode === 'single') right = state.pdfDoc
+    ? `<div class="pfs-thumb"><canvas id="pfs-cv"></canvas></div><div class="pfs-fn">${escapeHtml(state.fileName || 'Untitled.pdf')}</div><a href="#" class="pfs-link" data-a="change">Change File</a>`
+    : `<button class="pfs-pick" data-a="change">Select a file</button>`;
+  else if (mode === 'scanner') right = `<div class="pfs-msg">Scanners can't be reached from a web page.<br>Scan to a PDF or take a photo of the paper form, then choose it here. Text is recognized and fields are found automatically.</div><button class="pfs-pick" data-a="scan">Choose a scanned file</button>`;
+  else if (mode === 'new') right = `<div class="pfs-msg">Start a form on a blank page.</div>`;
+  else right = `<div class="pfs-msg">Turn this form into a web page people fill in from any browser.</div>`;
+  tc.innerHTML = `<div class="pfs"><div class="pfs-h">To begin select a file, scan a document or start from scratch</div>
+    <div class="pfs-body"><div class="pfs-left">${items.map(([k, l]) => `<div class="pfs-it ${k === mode ? 'on' : ''}" data-k="${k}">${l}</div>`).join('')}</div>
+      <div class="pfs-right">${right}
+        ${mode === 'web' ? '' : `<label class="pfs-chk"><input type="checkbox" id="pfs-sig" ${P.sig ? 'checked' : ''}> This document requires signatures</label>`}
+        <button class="pfs-start" data-a="start">${mode === 'web' ? 'Continue' : 'Start'}</button>
+        ${mode === 'web' ? '' : `<div class="pfs-auto">Form field auto detection is ${P.detect ? 'ON' : 'OFF'}. <a href="#" data-a="auto">Change</a></div>`}
+        <a href="#" class="pfs-link pfs-help" data-a="help">Help</a></div></div></div>`;
+  tc.classList.add('show'); tc.classList.add('pfs-on');
+  document.body.classList.add('center-view');
+  $('tab-home') && $('tab-home').classList.remove('on'); $('tab-tools') && $('tab-tools').classList.remove('on');
+  ffStripBar(true);
+  tc.querySelectorAll('.pfs-it').forEach(d => d.onclick = () => showPrepareForm(d.dataset.k));
+  const sig = $('pfs-sig'); if (sig) sig.onchange = () => setPrefs({ ffNeedsSig: sig.checked });
+  tc.onclick = async e => {
+    const t = e.target.closest('[data-a]'); if (!t) return; e.preventDefault();
+    const a = t.dataset.a;
+    if (a === 'change' || a === 'scan') { state.ffReturnToStart = mode; state.ffScanOCR = a === 'scan'; openFileDialog(); }
+    else if (a === 'auto') { setPrefs({ ffAutoDetect: !ffPrefs().detect }); showPrepareForm(mode); }
+    else if (a === 'help') ffHelp();
+    else if (a === 'start') {
+      if (mode === 'web') { ffLeaveStart(); showDocView(); if (typeof showWebForm === 'function') showWebForm(); return; }
+      if (mode === 'new') { ffLeaveStart(); showDocView(); state.ffStartAfterNew = true; await createBlankPdf(); return; }
+      if (mode === 'scanner') { state.ffReturnToStart = 'scanner'; state.ffScanOCR = true; openFileDialog(); return; }
+      if (!state.pdfDoc) { state.ffReturnToStart = 'single'; openFileDialog(); return; }
+      ffLeaveStart(); showDocView(); ffBegin(ffPrefs().detect);
+    }
+  };
+  if (mode === 'single' && state.pdfDoc) ffThumb();
+};
+function ffStripBar(on) { const s = $('ffs-strip'); document.body.classList.toggle('ffs-start', !!on); }
+function ffLeaveStart() { const tc = $('tools-center'); if (tc) { tc.classList.remove('show', 'pfs-on'); } document.body.classList.remove('center-view', 'ffs-start'); }
+async function ffThumb() {
+  try {
+    const cv = $('pfs-cv'); if (!cv) return;
+    const pg = await state.pdfDoc.getPage(1), vp0 = pg.getViewport({ scale: 1, rotation: effRot(1) }), s = Math.min(140 / vp0.width, 180 / vp0.height);
+    const vp = pg.getViewport({ scale: s * 2, rotation: effRot(1) });
+    cv.width = vp.width; cv.height = vp.height; cv.style.width = vp.width / 2 + 'px'; cv.style.height = vp.height / 2 + 'px';
+    await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+  } catch (e) {}
+}
+// after Change File / scanned file / Create New: come back to the right place
+const _loadBytesFF = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  const r = await _loadBytesFF.apply(this, arguments);
+  if (state.ffReturnToStart && !opts.keep) {
+    const side = state.ffReturnToStart, ocr = state.ffScanOCR; state.ffReturnToStart = null; state.ffScanOCR = false;
+    if (ocr) { ffLeaveStart(); showDocView(); try { if (typeof runOCR === 'function' && !(await pageHasText())) await runOCR({ silent: true }); } catch (e) {} ffBegin(true); }
+    else setTimeout(() => showPrepareForm(side === 'scanner' ? 'single' : side), 50);
+  } else if (state.ffStartAfterNew && !opts.keep) { state.ffStartAfterNew = false; setTimeout(() => ffBegin(false), 50); }
+  return r;
+};
+async function pageHasText() { try { const tc = await getTextContent(1); return tc.items.some(i => i.str && i.str.trim()); } catch (e) { return true; } }
+function ffBegin(detect) {
+  const sel = $('form-detect'); if (sel) sel.value = detect ? 'auto' : 'manual';
+  state.ffPreview = false;
+  return startPrepareForm();
+}
+function ffHelp() {
+  const ov = esDialog('ff-help', 'Prepare Form — Help', `<div class="es-note" style="line-height:1.7">
+    <b>Add a field:</b> pick a field type on the toolbar, then click or drag on the page. Type its name in the yellow box.<br>
+    <b>Change a field:</b> double-click it (or right-click › Properties) to set its look, options, actions, format, validation and calculation.<br>
+    <b>Line fields up:</b> select several (Shift-click or drag a box), then use ALIGN, CENTER, MATCH SIZE and DISTRIBUTE on the right.<br>
+    <b>Tab order:</b> the FIELDS list shows the order people move through the form with Tab; right-click a field › Move Up / Down in Tab Order.<br>
+    <b>Preview:</b> try the form out, then click Edit to keep working. <b>Close</b> saves the fields into the document.</div>`, [{ label: 'OK', primary: true }], 560);
+  return ov;
+}
+
+// ---------------------------------------------------------------- toolbar
+const FF_BAR = [['select', 'select', 'Select object tool'], ['detect', 'detect', 'Auto detect form fields'], ['addtext', 'add-text', 'Add text'], '|',
+  ['text', 'ff-text', 'Add a text field'], ['checkbox', 'ff-check', 'Add a check box'], ['radio', 'ff-radio', 'Add a radio button'], ['list', 'ff-list', 'Add a list box'], ['dropdown', 'ff-dropdown', 'Add a dropdown list'],
+  ['button', 'ff-button', 'Add a button'], ['image', 'ff-image', 'Add an image field'], ['date', 'ff-date', 'Add a date field'], ['signature', 'ff-sig', 'Add a digital signature field'], ['barcode', 'ff-barcode', 'Add a barcode'], '|',
+  ['pin', 'pin', 'Keep tool selected'], ['help', 'help', 'Prepare Form help']];
+const _activateToolGroupFF = activateToolGroup;
+activateToolGroup = function (group) {
+  const r = _activateToolGroupFF.apply(this, arguments);
+  const tb = $('context-toolbar'), cc = $('ctx-content');
+  const pv = $('ff-preview'); if (pv) pv.remove();
+  if (cc) cc.classList.toggle('ffbar', group === 'prepare');
+  if (group === 'prepare' && cc) {
+    cc.innerHTML = FF_BAR.map(b => b === '|' ? '<div class="ctx-sep"></div>' : `<button class="ctx-btn ff-tb" data-t="${b[1]}" title="${b[2]}">${ffIc(b[0])}</button>`).join('');
+    cc.onclick = e => {
+      const b = e.target.closest('.ff-tb'); if (!b) return;
+      const t = b.dataset.t;
+      if (t === 'detect') redetectFields();
+      else if (t === 'pin') { state.ffKeepTool = !state.ffKeepTool; ffSyncBar(); }
+      else if (t === 'help') ffHelp();
+      else if (t === 'add-text') setActiveTool('add-text');
+      else setActiveTool(t);
+    };
+    const btn = document.createElement('button'); btn.id = 'ff-preview'; btn.className = 'ff-preview'; btn.textContent = state.ffPreview ? 'Edit' : 'Preview';
+    btn.onclick = ffTogglePreview;
+    tb.insertBefore(btn, tb.querySelector('.ctx-close'));
+    setRightPaneMode('prepare');
+    ffSyncBar();
+  } else if (state.rightPaneMode === 'prepare') setRightPaneMode('none');
+  return r;
+};
+function ffSyncBar() {
+  document.querySelectorAll('#ctx-content .ff-tb').forEach(b => {
+    const t = b.dataset.t;
+    b.classList.toggle('on', t === 'pin' ? !!state.ffKeepTool : t === state.activeTool || (t === 'select' && state.activeTool === 'select'));
+  });
+}
+const _setActiveToolFF = setActiveTool;
+setActiveTool = function () { const r = _setActiveToolFF.apply(this, arguments); if (state.activeToolGroup === 'prepare') ffSyncBar(); return r; };
+async function ffTogglePreview() {
+  if (!state.ffPreview) {
+    // try it out: write the fields into the document and make them fillable, keep Prepare Form open
+    state.ffPreview = true;
+    state._ffKeepGroup = true;
+    try { await closePrepareForm(); } finally { state._ffKeepGroup = false; }
+    activateToolGroup('prepare');
+    toast('Preview: fill in the form to try it. Click Edit to change the fields.');
+  } else {
+    state.ffPreview = false;
+    await ffBegin(false);
+  }
+}
+// Close in Prepare Form saves the fields and leaves the tool (Preview keeps it open)
+const _closePrepareFormFF = closePrepareForm;
+closePrepareForm = async function () {
+  const r = await _closePrepareFormFF.apply(this, arguments);
+  if (!state._ffKeepGroup) { ffClosePopup(); if (state.activeToolGroup === 'prepare') { state.activeToolGroup = null; $('context-toolbar').classList.add('hidden'); setRightPaneMode('none'); const pv = $('ff-preview'); if (pv) pv.remove(); setActiveTool('select'); } }
+  return r;
+};
+const _deactivateContextToolFF = deactivateContextTool;
+deactivateContextTool = function () {
+  if (state._ffKeepGroup) { state.activeToolGroup = null; $('context-toolbar').classList.add('hidden'); return; }   // Preview: Prepare Form comes straight back
+  if (state.activeToolGroup === 'prepare' && state.ffPreview) { state.ffPreview = false; const pv = $('ff-preview'); if (pv) pv.remove(); state.activeToolGroup = null; $('context-toolbar').classList.add('hidden'); setRightPaneMode('none'); setActiveTool('select'); return; }
+  return _deactivateContextToolFF.apply(this, arguments);
+};
+
+// ---------------------------------------------------------------- right pane
+const _setRightPaneModeFF = setRightPaneMode;
+setRightPaneMode = function (mode) {
+  let p = $('rp-prepare');
+  if (mode === 'prepare' && !p) { p = document.createElement('div'); p.id = 'rp-prepare'; $('right-panel').appendChild(p); }
+  _setRightPaneModeFF.call(this, mode === 'prepare' ? 'none' : mode);
+  state.rightPaneMode = mode;
+  if (p) p.classList.toggle('hidden', mode !== 'prepare');
+  if (mode === 'prepare') {
+    $('rp-tools').classList.add('hidden'); $('rp-format').classList.add('hidden');
+    $('right-panel').classList.remove('hidden'); document.body.classList.remove('rp-hidden');
+    ffRenderPane();
+  }
+};
+function ffRenderPane() {
+  const p = $('rp-prepare'); if (!p || p.classList.contains('hidden')) return;
+  const sel = ffSel(), many = sel.length > 1, one = sel.length >= 1;
+  const btn = (k, title, act, on) => `<button class="ffp-ib" title="${title}" data-act="${act}" ${on ? '' : 'disabled'}>${ffIc(k, 18)}</button>`;
+  const sortAlpha = state.ffSort === 'alpha';
+  const html = `<div class="ffp-sec"><div class="ffp-cols"><div><div class="ffp-h">ALIGN</div><div class="ffp-row">${btn('alL', 'Align left', 'al:L', many)}${btn('alC', 'Align horizontal centers', 'al:C', many)}${btn('alR', 'Align right', 'al:R', many)}</div>
+      <div class="ffp-row">${btn('alT', 'Align top', 'al:T', many)}${btn('alM', 'Align vertical centers', 'al:M', many)}${btn('alB', 'Align bottom', 'al:B', many)}</div></div>
+      <div><div class="ffp-h">CENTER</div><div class="ffp-row">${btn('ceH', 'Center horizontally on page', 'ce:H', one)}${btn('ceV', 'Center vertically on page', 'ce:V', one)}</div><div class="ffp-row">${btn('ceB', 'Center on page', 'ce:B', one)}</div></div></div>
+    <div class="ffp-cols"><div><div class="ffp-h">MATCH SIZE</div><div class="ffp-row">${btn('szW', 'Match width', 'sz:W', many)}${btn('szH', 'Match height', 'sz:H', many)}${btn('szB', 'Match width and height', 'sz:B', many)}</div></div>
+      <div><div class="ffp-h">DISTRIBUTE</div><div class="ffp-row">${btn('diH', 'Distribute horizontally', 'di:H', sel.length > 2)}${btn('diV', 'Distribute vertically', 'di:V', sel.length > 2)}</div></div></div></div>
+    <div class="ffp-sep"></div>
+    <button class="ffp-more" data-act="more">${ffIc('more', 20)}<span>More</span><span class="ffp-caret">▾</span></button>
+    <div class="ffp-sep"></div>
+    <div class="ffp-fh"><span>FIELDS</span><span class="ffp-tools"><button class="ffp-ib sm" data-act="tabs" title="Tab order">${ffIc('sortL', 18)}<span class="ffp-caret">▾</span></button><button class="ffp-ib sm" data-act="sort" title="Sort">${ffIc('sortA', 18)}<span class="ffp-caret">▾</span></button></span></div>
+    <div class="ffp-tree">${ffTreeHtml(sortAlpha)}</div>
+    <div class="ffp-foot"><button class="ffp-pill" data-act="distribute">Distribute...</button><button class="ffp-pill" data-act="track">Track...</button></div>`;
+  if (p._html === html) return;   // nothing changed: keep the buttons (a click may be in progress)
+  p._html = html; p.innerHTML = html;
+  p.onclick = e => {
+    const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    const [k, v] = b.dataset.act.split(':');
+    if (k === 'al') ffAlign(v); else if (k === 'ce') ffCenter(v); else if (k === 'sz') ffSize(v); else if (k === 'di') ffDistribute(v);
+    else if (k === 'more') ffMoreMenu(b); else if (k === 'tabs') ffTabsMenu(b); else if (k === 'sort') ffSortMenu(b);
+    else if (k === 'distribute') { if (typeof showRequestSign === 'function') showRequestSign(); }
+    else if (k === 'track') { if (typeof showAgreements === 'function') showAgreements(); }
+    else if (k === 'pg') { const n = +v; state.ffTreeOpen = state.ffTreeOpen || {}; state.ffTreeOpen[n] = state.ffTreeOpen[n] === false; ffRenderPane(); }
+    else if (k === 'fld') { const a = state.annotations.find(x => x.id === v); if (a) { if (e.shiftKey || e.ctrlKey || e.metaKey) ffToggleSel(a); else { mselSet([]); selectAnnot(a.id); } goToPage(a.page); } }
+  };
+  p.ondblclick = e => { const b = e.target.closest('[data-act^="fld:"]'); if (b) { const a = state.annotations.find(x => x.id === b.dataset.act.slice(4)); if (a) ffProps(a); } };
+}
+function ffTreeHtml(alpha) {
+  const fields = ffAll(); if (!fields.length && !state.totalPages) return '';
+  let html = '';
+  for (let n = 1; n <= state.totalPages; n++) {
+    let list = ffOnPage(n); if (!list.length && state.totalPages > 1) continue;
+    if (alpha) list = list.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const open = !(state.ffTreeOpen && state.ffTreeOpen[n] === false);
+    const sel = new Set(ffSel().map(a => a.id));
+    html += `<div class="ffp-pg" data-act="pg:${n}"><span class="ffp-chev">${list.length ? (open ? '▾' : '▸') : ''}</span>${ffIc('page', 15)}<span>Page ${n}</span></div>`;
+    if (open) html += list.map((a, i) => `<div class="ffp-fld ${sel.has(a.id) ? 'on' : ''}" data-act="fld:${a.id}" title="${escapeHtml(a.tooltip || a.name)}">${ffIc(FF_ICON_OF[a.kind] || 'text', 15)}<span>${state.ffShowTabs && !alpha ? `<i class="ffp-tn">${i + 1}</i>` : ''}${escapeHtml(a.name)}${a.kind === 'radio' && a.exportValue ? ' <i class="ffp-ev">(' + escapeHtml(a.exportValue) + ')</i>' : ''}</span></div>`).join('');
+  }
+  return html;
+}
+function ffMenuAt(btn, items) { const r = btn.getBoundingClientRect(); openCtxMenu(r.left, r.bottom + 2, items); }
+function ffMoreMenu(btn) {
+  ffMenuAt(btn, [
+    { label: 'Clear Form', action: () => { if (typeof clearForm === 'function') clearForm(); } },
+    { label: 'Set Field Calculation Order...', action: ffCalcOrderDialog },
+    { label: state.ffShowTabs ? 'Hide Tab Numbers' : 'Show Tab Numbers', action: ffToggleTabs },
+    { label: state.ffGrid ? 'Hide Grid' : 'Show Grid', key: 'Ctrl+U', action: ffToggleGrid },
+    '-', { label: 'Export Data...', action: () => exportFormData() }, { label: 'Import Data...', action: () => importFormData() },
+    '-', { label: 'Use Current Properties as New Defaults', disabled: !ffSel().length, action: () => ffMakeDefault(ffSel()[0]) },
+    '-', { label: 'Close Form Editing', action: () => closePrepareForm() }]);
+}
+function ffSortMenu(btn) { ffMenuAt(btn, [{ label: 'Sort by Tab Order', icon: state.ffSort !== 'alpha' ? '✓' : '', action: () => { state.ffSort = 'tab'; ffRenderPane(); } }, { label: 'Sort Alphabetically', icon: state.ffSort === 'alpha' ? '✓' : '', action: () => { state.ffSort = 'alpha'; ffRenderPane(); } }]); }
+function ffTabsMenu(btn) {
+  const n = state.currentPage || 1, cur = (state.ffTabs || {})[n] || 'S';
+  const o = (k, l) => ({ label: l, icon: cur === k ? '✓' : '', action: () => ffOrderTabs(k) });
+  ffMenuAt(btn, [o('R', 'Order Tabs by Row'), o('C', 'Order Tabs by Column'), o('S', 'Order Tabs by Structure'), o('M', 'Order Tabs Manually'), o('U', 'Order Tabs Unspecified'), '-', { label: state.ffShowTabs ? 'Hide Tab Numbers' : 'Show Tab Numbers', action: ffToggleTabs }]);
+}
+function ffOrderTabs(k) {
+  state.ffTabs = state.ffTabs || {};
+  for (let n = 1; n <= state.totalPages; n++) {
+    state.ffTabs[n] = k;
+    if (k !== 'R' && k !== 'C') continue;
+    const ps = state.pages[n], list = ffOnPage(n); if (!ps || list.length < 2) continue;
+    const vb = a => bboxOf(a.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+    const sorted = list.slice().sort((a, b) => { const A = vb(a), B = vb(b); return k === 'R' ? (Math.abs(A.y - B.y) > Math.min(A.h, B.h) * 0.5 ? A.y - B.y : A.x - B.x) : (Math.abs(A.x - B.x) > Math.min(A.w, B.w) * 0.5 ? A.x - B.x : A.y - B.y); });
+    ffReorder(n, sorted);
+  }
+  ffDirtyAll(); renderAllAnnots(); pushHistory(); ffRenderPane();
+}
+function ffReorder(n, sorted) {   // put this page's fields into `sorted` order inside state.annotations
+  const idx = state.annotations.map((a, i) => (a.type === 'form-field' && a.page === n) ? i : -1).filter(i => i >= 0);
+  idx.forEach((i, j) => { state.annotations[i] = sorted[j]; });
+}
+function ffDirtyAll() { ffAll().forEach(a => { a.untouched = false; }); state.ffOrderChanged = true; }
+function ffToggleTabs() { state.ffShowTabs = !state.ffShowTabs; renderAllAnnots(); ffRenderPane(); }
+function ffToggleGrid() { state.ffGrid = !state.ffGrid; renderAllAnnots(); }
+
+// ---------------------------------------------------------------- selection helpers
+function ffSel() {
+  const ids = new Set(state.msel || []); if (state.selectedId) ids.add(state.selectedId);
+  return ffAll().filter(a => ids.has(a.id));
+}
+function ffToggleSel(a) {
+  const ids = new Set(state.msel || []); if (state.selectedId && !ids.size) ids.add(state.selectedId);
+  ids.has(a.id) ? ids.delete(a.id) : ids.add(a.id);
+  mselSet([...ids]); if (ids.size) state.selectedId = a.id; renderPageAnnots(a.page); ffRenderPane();
+}
+const ffVB = a => { const ps = state.pages[a.page]; return bboxOf(a.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1]))); };
+function ffSetVB(a, b) { const ps = state.pages[a.page]; a.pts = toPdfPts(ps, [[b.x, b.y], [b.x + b.w, b.y + b.h]]); a.untouched = false; }
+function ffAnchor(sel) { return sel.find(a => a.id === state.ffAnchorId) || sel.find(a => a.id === state.selectedId) || sel[sel.length - 1]; }
+function ffDone(sel) { new Set(sel.map(a => a.page)).forEach(n => renderPageAnnots(n)); pushHistory(); ffRenderPane(); }
+function ffAlign(k) {
+  const sel = ffSel(); if (sel.length < 2) return; const A = ffVB(ffAnchor(sel));
+  sel.forEach(a => { const b = ffVB(a);
+    if (k === 'L') b.x = A.x; else if (k === 'R') b.x = A.x + A.w - b.w; else if (k === 'C') b.x = A.x + A.w / 2 - b.w / 2;
+    else if (k === 'T') b.y = A.y; else if (k === 'B') b.y = A.y + A.h - b.h; else if (k === 'M') b.y = A.y + A.h / 2 - b.h / 2;
+    ffSetVB(a, b); });
+  ffDone(sel);
+}
+function ffCenter(k) {
+  const sel = ffSel(); if (!sel.length) return;
+  const byPage = {}; sel.forEach(a => (byPage[a.page] = byPage[a.page] || []).push(a));
+  Object.entries(byPage).forEach(([n, list]) => {
+    const ps = state.pages[n], bs = list.map(ffVB), U = bboxOf(bs.flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]]));
+    const dx = k !== 'V' ? ps.vp.width / 2 - (U.x + U.w / 2) : 0, dy = k !== 'H' ? ps.vp.height / 2 - (U.y + U.h / 2) : 0;
+    list.forEach((a, i) => ffSetVB(a, { ...bs[i], x: bs[i].x + dx, y: bs[i].y + dy }));
+  });
+  ffDone(sel);
+}
+function ffSize(k) {
+  const sel = ffSel(); if (sel.length < 2) return; const A = ffVB(ffAnchor(sel));
+  sel.forEach(a => { const b = ffVB(a); if (k !== 'H') b.w = A.w; if (k !== 'W') b.h = A.h; ffSetVB(a, b); });
+  ffDone(sel);
+}
+function ffDistribute(k) {
+  const sel = ffSel(); if (sel.length < 3) return;
+  const items = sel.map(a => ({ a, b: ffVB(a) })).sort((p, q) => k === 'H' ? p.b.x + p.b.w / 2 - (q.b.x + q.b.w / 2) : p.b.y + p.b.h / 2 - (q.b.y + q.b.h / 2));
+  const c = it => k === 'H' ? it.b.x + it.b.w / 2 : it.b.y + it.b.h / 2, c0 = c(items[0]), c1 = c(items[items.length - 1]), step = (c1 - c0) / (items.length - 1);
+  items.forEach((it, i) => { const t = c0 + step * i; if (k === 'H') it.b.x = t - it.b.w / 2; else it.b.y = t - it.b.h / 2; ffSetVB(it.a, it.b); });
+  ffDone(sel);
+}
+
+// ---------------------------------------------------------------- how fields look while preparing
+const FF_BLUE = '#2b47ff';
+formFieldGeometry = function (a, vp, V, box) {
+  const s = vp.scale, prims = [];
+  const hidden = a.vis === 'h' || a.vis === 'hp';
+  prims.push({ k: 'poly', pts: rectPts(box), fill: '#c9d3ff', fillOpacity: hidden ? 0.25 : 0.62, stroke: FF_BLUE, width: 1, dash: hidden ? [3, 2] : undefined, main: true });
+  if (a.kind === 'dropdown') prims.push({ k: 'poly', pts: [[box.x + box.w - 9, box.y + box.h * 0.42], [box.x + box.w - 3, box.y + box.h * 0.42], [box.x + box.w - 6, box.y + box.h * 0.66]], fill: FF_BLUE });
+  // the name tag, white on blue in the middle (cut to fit like Acrobat)
+  const ls = Math.max(6, Math.min(10, box.h * 0.62, 7.5 * s));
+  let label = a.name || '';
+  const maxW = box.w - 2;
+  while (label.length > 1 && textWidth(label, ls) + 4 > maxW) label = label.slice(0, -1);
+  const tw = textWidth(label, ls) + 4, th = Math.min(box.h - 1, ls * 1.25);
+  if (label) prims.push({ k: 'text', x: box.x + (box.w - tw) / 2, y: box.y + (box.h - th) / 2, w: tw, h: th, lines: [label], size: ls, pad: 1, color: '#ffffff', bg: '#1a2ee6', bgOpacity: 1, family: 'sans' });
+  if (state.ffShowTabs) {
+    const i = ffOnPage(a.page).indexOf(a) + 1, ts = Math.max(6, Math.min(9, 7 * s)), w = textWidth(String(i), ts) + 6;
+    prims.push({ k: 'text', x: box.x - 1, y: box.y - ts * 1.3 - 1, w, h: ts * 1.3, lines: [String(i)], size: ts, pad: 1, color: '#000', bg: '#ffe14d', bgOpacity: 1 });
+  }
+  return prims;
+};
+const _drawSelectionFF = drawSelection;
+drawSelection = function (a, vp, g) {
+  if (!a || a.type !== 'form-field') return _drawSelectionFF.apply(this, arguments);
+  const b = bboxOf(a.pts.map(p => vp.convertToViewportPoint(p[0], p[1]))); if (!b) return;
+  svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'none', stroke: FF_BLUE, 'stroke-width': 1.6 }, g);
+  const xs = [b.x, b.x + b.w / 2, b.x + b.w], ys = [b.y, b.y + b.h / 2, b.y + b.h];
+  if (!a.locked) xs.forEach((x, i) => ys.forEach((y, j) => { if (i === 1 && j === 1) return; svgEl('circle', { cx: x, cy: y, r: 3.3, fill: '#fff', stroke: FF_BLUE, 'stroke-width': 1.3 }, g); }));
+};
+// grid overlay (Show Grid, Ctrl+U)
+const _renderPageAnnotsFF = renderPageAnnots;
+renderPageAnnots = function (n) {
+  const r = _renderPageAnnotsFF.apply(this, arguments);
+  const ps = state.pages[n]; if (!ps || !ps.wrapper) return r;
+  let gl = ps.wrapper.querySelector('.ff-grid');
+  const on = state.ffGrid && state.prepareMode;
+  if (!on) { if (gl) gl.remove(); }
+  else {
+    if (!gl) { gl = document.createElement('div'); gl.className = 'ff-grid'; ps.wrapper.appendChild(gl); }
+    const step = 72 * ps.vp.scale / 4;   // quarter inch
+    gl.style.backgroundSize = `${step}px ${step}px, ${step}px ${step}px, ${step * 4}px ${step * 4}px, ${step * 4}px ${step * 4}px`;
+  }
+  if (state.prepareMode && state.rightPaneMode === 'prepare') { clearTimeout(ffPaneT); ffPaneT = setTimeout(ffRenderPane, 30); }
+  return r;
+};
+let ffPaneT = null;
+const _selectAnnotFF = selectAnnot;
+selectAnnot = function (id) { const r = _selectAnnotFF.apply(this, arguments); if (state.prepareMode) { const a = state.annotations.find(x => x.id === id); if (a && a.type === 'form-field') state.ffAnchorId = id; clearTimeout(ffPaneT); ffPaneT = setTimeout(ffRenderPane, 30); } return r; };
+
+// ---------------------------------------------------------------- creating fields
+function ffNextName(kind) {
+  const base = { text: 'Text', checkbox: 'Check Box', radio: 'Group', dropdown: 'Dropdown', list: 'List Box', signature: 'Signature', button: 'Button', image: 'Image', date: 'Date', barcode: 'Barcode' }[kind] || 'Field';
+  const suffix = kind === 'image' ? '_af_image' : kind === 'date' ? '_af_date' : '';
+  const used = new Set(ffAll().map(a => a.name)); Object.values(state.formFields || {}).flat().forEach(f => used.add(f.name));
+  let i = 1; while (used.has(base + i + suffix)) i++;
+  return base + i + suffix;
+}
+function ffDefaults() { try { return JSON.parse(localStorage.getItem('khz-ff-defaults') || '{}'); } catch (e) { return {}; } }
+function ffMakeDefault(a) {
+  if (!a) return;
+  const d = ffDefaults(), keep = {};
+  ['bc', 'bg', 'bw', 'bs', 'fontSize', 'color', 'font', 'align', 'chkStyle', 'vis', 'rot', 'readOnly', 'required', 'multiLine', 'noScroll', 'noSpell'].forEach(k => { if (a[k] !== undefined) keep[k] = a[k]; });
+  d[a.kind] = keep;
+  try { localStorage.setItem('khz-ff-defaults', JSON.stringify(d)); } catch (e) {}
+  toast(`New ${FF_LABEL[a.kind].toLowerCase()}s will look like this one.`);
+}
+createFieldFromDrag = function (kind, ps, p1, p2, isClick) {
+  let b = bboxOf([p1, p2]);
+  const s = ps.vp.scale;
+  if (isClick) {
+    const def = { text: [144, 22], checkbox: [14, 14], radio: [14, 14], dropdown: [120, 22], list: [120, 60], signature: [180, 40], button: [72, 22], image: [100, 80], date: [100, 22], barcode: [150, 72] }[kind] || [120, 22];
+    b = { x: p1[0], y: p1[1], w: def[0] * s, h: def[1] * s };
+  }
+  const radioN = ffAll().filter(x => x.kind === 'radio').length + 1;
+  const groupName = kind === 'radio' ? (state.ffRadioGroup && ffAll().some(x => x.kind === 'radio' && x.name === state.ffRadioGroup) && state.ffAddingRadio ? state.ffRadioGroup : ffNextName('radio')) : null;
+  const a = { id: uid('fld'), page: ps.n, type: 'form-field', kind, untouched: false,
+    name: groupName || ffNextName(kind),
+    pts: toPdfPts(ps, [[b.x, b.y], [b.x + b.w, b.y + b.h]]), fontSize: 0,
+    bc: kind === 'checkbox' || kind === 'radio' || kind === 'button' ? '#000000' : null, bg: kind === 'button' ? '#d4d0c8' : null, bw: 1, bs: kind === 'button' ? 'B' : 'S', color: '#000000', font: 'Helvetica',
+    exportValue: kind === 'checkbox' ? 'Yes' : kind === 'radio' ? 'Choice' + radioN : undefined,
+    chkStyle: kind === 'checkbox' ? 'check' : kind === 'radio' ? 'circle' : undefined,
+    items: kind === 'dropdown' || kind === 'list' ? [] : undefined, options: kind === 'dropdown' || kind === 'list' ? [] : undefined,
+    fmt: kind === 'date' ? { cat: 'date', date: 'mm/dd/yyyy' } : undefined,
+    btnLabel: kind === 'button' ? '' : undefined, noSpell: false, readOnly: kind === 'barcode' || undefined,
+    ...((ffDefaults()[kind]) || {}) };
+  if (kind === 'radio') state.ffRadioGroup = a.name;
+  state.ffAddingRadio = false;
+  addAnnotation(a);
+  mselSet([]);
+  selectAnnot(a.id);
+  if (state.ffKeepTool) setActiveTool(Object.keys(FF_TOOLS).find(k => FF_TOOLS[k] === kind)); else setActiveTool('select');
+  setTimeout(() => ffPopup(a), 30);
+};
+// pasted / duplicated fields get their own names
+const _pasteAnnotFF = pasteAnnot;
+pasteAnnot = function () {
+  const c = state.clipboardAnnot;
+  if (c && c.type === 'form-field') { c.existing = false; delete c.origName; delete c.wid; delete c.origRect; c.untouched = false; }
+  const r = _pasteAnnotFF.apply(this, arguments);
+  const a = state.annotations.find(x => x.id === state.selectedId);
+  if (a && a.type === 'form-field' && a.kind !== 'radio') { a.name = ffNextName(a.kind); renderPageAnnots(a.page); }
+  return r;
+};
+
+// ---------------------------------------------------------------- the yellow pop-up
+function ffClosePopup() { const p = $('ff-pop'); if (p) { if (p._commit) p._commit(); p.remove(); } }
+function ffPopup(a) {
+  ffClosePopup();
+  const ps = state.pages[a.page]; if (!ps) return;
+  const b = ffVB(a), wr = ps.wrapper.getBoundingClientRect();
+  const p = document.createElement('div'); p.id = 'ff-pop'; p.className = 'ff-pop';
+  const radio = a.kind === 'radio';
+  p.innerHTML = radio
+    ? `<label>Radio Button Choice:</label><input class="ffq-ev" value="${escapeHtml(a.exportValue || '')}"><label>Group Name:</label><input class="ffq-nm" value="${escapeHtml(a.name)}">
+       <div class="ffq-row"><label class="ffq-req"><input type="checkbox" ${a.required ? 'checked' : ''}> Required field</label><a href="#" class="ffq-all">All Properties</a></div><a href="#" class="ffq-add">Add another button</a>`
+    : `<label>Field Name:</label><input class="ffq-nm" value="${escapeHtml(a.name)}">
+       <div class="ffq-row"><label class="ffq-req"><input type="checkbox" ${a.required ? 'checked' : ''}> Required field</label><a href="#" class="ffq-all">All Properties</a></div>`;
+  document.body.appendChild(p);
+  const left = Math.min(innerWidth - p.offsetWidth - 8, wr.left + b.x + 6), top = wr.top + b.y + b.h + 4;
+  Object.assign(p.style, { left: left + 'px', top: (top + p.offsetHeight > innerHeight - 6 ? wr.top + b.y - p.offsetHeight - 4 : top) + 'px', zIndex: topZ() + 2 });
+  const nm = p.querySelector('.ffq-nm'), ev = p.querySelector('.ffq-ev'), req = p.querySelector('.ffq-req input');
+  const commit = () => {
+    const v = nm.value.trim().replace(/\./g, '_');
+    if (v && v !== a.name) { if (radio) ffAll().filter(x => x.kind === 'radio' && x.name === a.name && x.page === a.page).forEach(x => { x.name = v; x.untouched = false; }); a.name = v; if (radio) state.ffRadioGroup = v; }
+    if (ev) { const e2 = ev.value.trim(); if (e2) a.exportValue = e2; }
+    a.untouched = false;
+    renderPageAnnots(a.page); ffRenderPane();
+  };
+  p._commit = commit;
+  req.onchange = () => { a.required = req.checked; a.untouched = false; };
+  [nm, ev].filter(Boolean).forEach(i => i.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { commit(); p._commit = null; p.remove(); pushHistory(); } if (e.key === 'Escape') { p._commit = null; p.remove(); } }));
+  p.querySelector('.ffq-all').onclick = e => { e.preventDefault(); commit(); p._commit = null; p.remove(); ffProps(a); };
+  const add = p.querySelector('.ffq-add');
+  if (add) add.onclick = e => { e.preventDefault(); commit(); p._commit = null; p.remove(); state.ffRadioGroup = a.name; state.ffAddingRadio = true; setActiveTool('ff-radio'); toast('Click where the next button of this group goes.'); };
+  setTimeout(() => { nm.focus(); nm.select(); }, 20);
+  setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!p.isConnected) { document.removeEventListener('mousedown', h, true); return; } if (!p.contains(e.target)) { document.removeEventListener('mousedown', h, true); ffClosePopup(); pushHistory(); } }, true), 0);
+}
+
+// ---------------------------------------------------------------- right-click menus
+const _objectContextMenuFF = objectContextMenu;
+objectContextMenu = function (e, a, n) {
+  if (!a || a.type !== 'form-field' || !state.prepareMode) return _objectContextMenuFF.apply(this, arguments);
+  if (!ffSel().some(x => x.id === a.id)) { mselSet([]); selectAnnot(a.id); }
+  const list = ffOnPage(a.page), i = list.indexOf(a), sel = ffSel(), many = sel.length > 1;
+  const items = [
+    { label: 'Properties...', action: () => ffProps(a) }, '-',
+    { label: 'Move Up in Tab Order', disabled: i <= 0, action: () => ffMoveTab(a, -1) },
+    { label: 'Move Down in Tab Order', disabled: i < 0 || i >= list.length - 1, action: () => ffMoveTab(a, 1) },
+    { label: 'Rename Field...', action: () => ffRename(a) },
+    { label: a.required ? 'Set as Optional Field' : 'Set as Required Field', action: () => { sel.forEach(x => { x.required = !a.required; x.untouched = false; }); pushHistory(); } },
+    { label: 'Add New Field', action: () => {} }, '-',
+    { label: 'Cut', key: 'Ctrl+X', action: () => { if (copySelectedAnnot()) { deleteAnnot(a.id); ffRenderPane(); } } },
+    { label: 'Copy', key: 'Ctrl+C', action: copySelectedAnnot },
+    { label: 'Delete', action: () => { if (many) mselDelete(); else deleteAnnot(a.id); ffRenderPane(); } },
+    { label: 'Select All', key: 'Ctrl+A', action: () => ffSelectAll(a.page) }, '-',
+    { label: 'Align, Distribute or Center', action: () => {} },
+    { label: 'Set Fields to Same Size', action: () => {} }, '-',
+    { label: 'Create Multiple Copies...', action: () => ffMultiCopies(a) },
+    { label: state.ffShowTabs ? 'Hide Tab Numbers' : 'Show Tab Numbers', action: ffToggleTabs },
+    { label: 'Duplicate Across Pages...', disabled: state.totalPages < 2, action: () => ffDuplicatePages(a) },
+    { label: state.ffGrid ? 'Hide Grid' : 'Show Grid', key: 'Ctrl+U', action: ffToggleGrid },
+    { label: 'Use Current Properties as New Defaults', action: () => ffMakeDefault(a) }];
+  openCtxMenu(e.clientX, e.clientY, items);
+  cmSub(cmRow('Add New Field'), FF_KINDS.map(([k, t, l]) => ({ label: l, action: () => setActiveTool(t) })));
+  cmSub(cmRow('Align, Distribute or Center'), [
+    { label: 'Align Left', disabled: !many, action: () => ffAlign('L') }, { label: 'Align Right', disabled: !many, action: () => ffAlign('R') },
+    { label: 'Align Top', disabled: !many, action: () => ffAlign('T') }, { label: 'Align Bottom', disabled: !many, action: () => ffAlign('B') },
+    { label: 'Align Vertically', disabled: !many, action: () => ffAlign('C') }, { label: 'Align Horizontally', disabled: !many, action: () => ffAlign('M') },
+    { label: 'Distribute Vertically', disabled: sel.length < 3, action: () => ffDistribute('V') }, { label: 'Distribute Horizontally', disabled: sel.length < 3, action: () => ffDistribute('H') },
+    { label: 'Center Vertically', action: () => ffCenter('V') }, { label: 'Center Horizontally', action: () => ffCenter('H') }, { label: 'Center Both', action: () => ffCenter('B') }]);
+  cmSub(cmRow('Set Fields to Same Size'), [{ label: 'Height', disabled: !many, action: () => ffSize('H') }, { label: 'Width', disabled: !many, action: () => ffSize('W') }, { label: 'Both', disabled: !many, action: () => ffSize('B') }]);
+};
+const _pageContextMenuFF = pageContextMenu;
+pageContextMenu = function (e, n) {
+  if (!state.prepareMode) return _pageContextMenuFF.apply(this, arguments);
+  const ps = state.pages[n], [vx, vy] = viewPoint(e, ps), h0 = hitTest(n, vx, vy), hit = h0 && (h0.annot || h0);
+  if (hit && hit.type === 'form-field') return objectContextMenu(e, hit, n, vx, vy);
+  const kindIc = { text: '▭', checkbox: '☑', radio: '◉', list: '☰', dropdown: '▾', date: '📅', image: '🖼', button: '⬭', signature: '✒', barcode: '▥' };
+  const order = ['text', 'checkbox', 'radio', 'list', 'dropdown', 'date', 'image', 'button', 'signature', 'barcode'];
+  const items = order.map(k => { const d = FF_KINDS.find(x => x[0] === k); return { icon: kindIc[k], label: d[2], action: () => ffAddAt(k, ps, vx, vy) }; });
+  items.push('-', { label: 'Paste', key: 'Ctrl+V', disabled: !state.clipboardAnnot, action: () => { pasteAnnot({ n, vx, vy }); ffRenderPane(); } },
+    { label: 'Select All', key: 'Ctrl+A', action: () => ffSelectAll(n) }, '-',
+    { label: state.ffShowTabs ? 'Hide Tab Numbers' : 'Show Tab Numbers', action: ffToggleTabs }, { label: state.ffGrid ? 'Hide Grid' : 'Show Grid', key: 'Ctrl+U', action: ffToggleGrid }, '-',
+    { icon: '🖨', label: 'Print...', key: 'Ctrl+P', action: () => showPrintDialog() }, '-',
+    { label: 'Document Properties...', key: 'Ctrl+D', action: () => showDocProps() }, { label: 'Page Display Preferences...', action: () => showPreferences('Page Display') });
+  openCtxMenu(e.clientX, e.clientY, items);
+};
+function ffAddAt(kind, ps, vx, vy) { createFieldFromDrag(kind, ps, [vx, vy], [vx, vy], true); }
+function ffSelectAll(n) { const ids = ffOnPage(n).map(a => a.id); mselSet(ids); if (ids.length) state.selectedId = ids[ids.length - 1]; renderPageAnnots(n); ffRenderPane(); }
+function ffMoveTab(a, d) {
+  const list = ffOnPage(a.page), i = list.indexOf(a), j = i + d; if (j < 0 || j >= list.length) return;
+  const s = list.slice(); [s[i], s[j]] = [s[j], s[i]];
+  ffReorder(a.page, s); state.ffTabs = state.ffTabs || {}; state.ffTabs[a.page] = 'M';
+  ffDirtyAll(); renderPageAnnots(a.page); pushHistory(); ffRenderPane();
+}
+function ffRename(a) {
+  esDialog('ff-rename', 'Rename Field', `<div class="es-grid"><label>New field name:</label><input id="ffr-nm" value="${escapeHtml(a.name)}" style="width:100%"></div>`, [
+    { label: 'OK', primary: true, run: ov => { const v = esq(ov, '#ffr-nm').value.trim().replace(/\./g, '_'); if (!v) return false; a.name = v; a.untouched = false; renderPageAnnots(a.page); pushHistory(); ffRenderPane(); } }, { label: 'Cancel' }], 380);
+}
+function ffMultiCopies(a) {
+  esDialog('ff-copies', 'Create Multiple Copies of Fields', `<div class="ffm">
+    <div class="ffm-r"><label>Copy selected fields down</label><input type="number" id="ffm-dn" min="1" max="40" value="2"></div>
+    <div class="ffm-r"><label>Copy selected fields across</label><input type="number" id="ffm-ac" min="1" max="40" value="1"></div>
+    <div class="ffm-r"><label>Space between copies (points)</label><input type="number" id="ffm-sp" min="0" max="200" value="4"></div></div>`, [
+    { label: 'OK', primary: true, run: ov => {
+      const dn = Math.max(1, +esq(ov, '#ffm-dn').value || 1), ac = Math.max(1, +esq(ov, '#ffm-ac').value || 1), sp = +esq(ov, '#ffm-sp').value || 0;
+      const sel = ffSel().length ? ffSel() : [a];
+      const ps = state.pages[a.page], s = ps.vp.scale;
+      const U = bboxOf(sel.map(ffVB).flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]]));
+      const made = [];
+      for (let r = 0; r < dn; r++) for (let c = 0; c < ac; c++) {
+        if (!r && !c) continue;
+        sel.forEach(o => { const b = ffVB(o), n2 = cloneAnnot(o); n2.existing = false; delete n2.origName; delete n2.wid; delete n2.origRect; n2.untouched = false;
+          n2.name = o.kind === 'radio' ? o.name : `${o.name.replace(/\.\d+$/, '')}.${r * ac + c}`.replace(/\./g, '_');
+          if (o.kind === 'radio') n2.exportValue = (o.exportValue || 'Choice') + '_' + (r * ac + c);
+          ffSetVB(n2, { ...b, x: b.x + c * (U.w + sp * s), y: b.y + r * (U.h + sp * s) }); state.annotations.push(n2); made.push(n2.id); });
+      }
+      renderPageAnnots(a.page); pushHistory(); ffRenderPane(); toast(`Created ${made.length} field${made.length === 1 ? '' : 's'}.`);
+    } }, { label: 'Cancel' }], 420);
+}
+function ffDuplicatePages(a) {
+  esDialog('ff-dup', 'Duplicate Field', `<div class="ffm"><div class="ffm-r"><label><input type="radio" name="ffd" value="all" checked> All pages</label></div>
+    <div class="ffm-r"><label><input type="radio" name="ffd" value="range"> From</label><input type="number" id="ffd-a" min="1" max="${state.totalPages}" value="1"> to <input type="number" id="ffd-b" min="1" max="${state.totalPages}" value="${state.totalPages}"></div></div>`, [
+    { label: 'OK', primary: true, run: ov => {
+      const all = esq(ov, 'input[name=ffd]:checked').value === 'all';
+      const p0 = all ? 1 : Math.max(1, +esq(ov, '#ffd-a').value), p1 = all ? state.totalPages : Math.min(state.totalPages, +esq(ov, '#ffd-b').value);
+      const sel = ffSel().length ? ffSel() : [a]; let k = 0;
+      for (let n = p0; n <= p1; n++) sel.forEach(o => { if (n === o.page) return; const c = cloneAnnot(o); c.existing = false; delete c.origName; delete c.wid; delete c.origRect; c.untouched = false; c.page = n; state.annotations.push(c); k++; });
+      renderAllAnnots(); pushHistory(); ffRenderPane(); toast(`Copied to ${k} place${k === 1 ? '' : 's'} (same name, so they share one value).`);
+    } }, { label: 'Cancel' }], 380);
+}
+function ffCalcOrderDialog() {
+  const calc = ffAll().filter(a => a.calc && a.calc.kind && a.calc.kind !== 'none');
+  const names = [...new Set((state.ffCalcOrder || []).filter(n => calc.some(a => a.name === n)).concat(calc.map(a => a.name)))];
+  const ov = esDialog('ff-co', 'Calculated Fields', `<div class="es-note">Fields are calculated in this order. Select one and move it.</div><select id="ffco-l" size="8" style="width:100%">${names.map(n => `<option>${escapeHtml(n)}</option>`).join('')}</select>
+    <div style="margin-top:8px;display:flex;gap:8px"><button class="ap-btn" id="ffco-u">Up</button><button class="ap-btn" id="ffco-d">Down</button></div>`, [
+    { label: 'OK', primary: true, run: ov2 => { state.ffCalcOrder = [...esq(ov2, '#ffco-l').options].map(o => o.text); ffDirtyAll(); } }, { label: 'Cancel' }], 380);
+  const l = esq(ov, '#ffco-l');
+  const mv = d => { const i = l.selectedIndex; if (i < 0) return; const j = i + d; if (j < 0 || j >= l.options.length) return; const o = l.options[i]; l.removeChild(o); l.insertBefore(o, l.options[j] || null); l.selectedIndex = j; };
+  esq(ov, '#ffco-u').onclick = () => mv(-1); esq(ov, '#ffco-d').onclick = () => mv(1);
+}
+// keys while preparing: Ctrl+U grid, Ctrl+A all fields on the page
+document.addEventListener('keydown', e => {
+  if (!state.prepareMode || e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) { e.preventDefault(); e.stopImmediatePropagation(); ffToggleGrid(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); e.stopImmediatePropagation(); ffSelectAll(state.currentPage || 1); }
+}, true);
+// double-click a field opens All Properties
+const _showFieldPropsFF = showFieldProps;
+showFieldProps = function (a) { a = a || state.annotations.find(x => x.id === state.selectedId && x.type === 'form-field'); if (a) return ffProps(a); return _showFieldPropsFF.apply(this, arguments); };
+// "requires signatures": lines labelled Sign / Signature become signature fields
+const _detectFormFieldsFF = detectFormFields;
+detectFormFields = async function (n) {
+  const before = new Set(state.annotations.map(a => a.id));
+  const r = await _detectFormFieldsFF.apply(this, arguments);
+  state.annotations.forEach(a => {
+    if (before.has(a.id) || a.type !== 'form-field') return;
+    if (/^(text|field)\s*\d*$/i.test(a.name)) a.name = ffNextName(a.kind);
+    if (ffPrefs().sig && a.kind === 'text' && /sign/i.test(a.name)) { a.kind = 'signature'; a.name = a.name.replace(/\s+/g, '') || ffNextName('signature'); }
+    a.bw = a.bw || 1; a.bs = a.bs || 'S'; a.color = a.color || '#000000'; a.font = a.font || 'Helvetica';
+    if (a.kind === 'checkbox') { a.bc = a.bc || '#000000'; a.chkStyle = a.chkStyle || 'check'; }
+  });
+  return r;
+};
+
+// ================================================================
+//  FIELD PROPERTIES like Acrobat: General · Appearance · Position · Options · Actions · Format · Validate · Calculate
+//  (Selection Change for list boxes, Signed for signature fields). Changes apply right away; Close finishes.
+// ================================================================
+const FF_TABS = {
+  text: ['General', 'Appearance', 'Position', 'Options', 'Actions', 'Format', 'Validate', 'Calculate'],
+  date: ['General', 'Appearance', 'Position', 'Options', 'Actions', 'Format', 'Validate', 'Calculate'],
+  barcode: ['General', 'Appearance', 'Position', 'Options', 'Actions', 'Calculate'],
+  dropdown: ['General', 'Appearance', 'Position', 'Options', 'Actions', 'Format', 'Validate', 'Calculate'],
+  list: ['General', 'Appearance', 'Position', 'Options', 'Actions', 'Selection Change'],
+  checkbox: ['General', 'Appearance', 'Position', 'Options', 'Actions'],
+  radio: ['General', 'Appearance', 'Position', 'Options', 'Actions'],
+  button: ['General', 'Appearance', 'Position', 'Options', 'Actions'],
+  image: ['General', 'Appearance', 'Position', 'Options', 'Actions'],
+  signature: ['General', 'Appearance', 'Position', 'Actions', 'Signed'],
+};
+const FF_TITLE = { text: 'Text Field', date: 'Text Field', barcode: 'Barcode', dropdown: 'Dropdown', list: 'List Box', checkbox: 'Check Box', radio: 'Radio Button', button: 'Button', image: 'Button', signature: 'Digital Signature' };
+const FF_FONTS = ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique', 'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic', 'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique', 'Symbol', 'ZapfDingbats'];
+const FF_SIZES = ['Auto', 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
+const FF_TRIG = [['U', 'Mouse Up'], ['D', 'Mouse Down'], ['E', 'Mouse Enter'], ['X', 'Mouse Exit'], ['Fo', 'On Focus'], ['Bl', 'On Blur']];
+const FF_ACTS = [['named', 'Execute a menu item'], ['3d', 'Go to a 3D/Multimedia view'], ['goto', 'Go to a page view'], ['import', 'Import form data'], ['mm', 'Multimedia Operation (Acrobat 9 and later)'],
+  ['launch', 'Open a file'], ['uri', 'Open a web link'], ['sound', 'Play a sound'], ['media5', 'Play Media (Acrobat 5 Compatible)'], ['media6', 'Play Media (Acrobat 6 and Later Compatible)'],
+  ['article', 'Read an article'], ['reset', 'Reset a form'], ['js', 'Run a JavaScript'], ['ocg', 'Set layer visibility'], ['hide', 'Show/hide a field'], ['submit', 'Submit a form']];
+const FF_UNSUP = ['3d', 'mm', 'sound', 'media5', 'media6', 'article'];
+const FF_MENU = [['NextPage', 'View › Page Navigation › Next Page'], ['PrevPage', 'View › Page Navigation › Previous Page'], ['FirstPage', 'View › Page Navigation › First Page'], ['LastPage', 'View › Page Navigation › Last Page'],
+  ['Print', 'File › Print...'], ['SaveAs', 'File › Save As...'], ['Close', 'File › Close'], ['FitPage', 'View › Zoom › Zoom to Page Level'], ['FitWidth', 'View › Zoom › Fit Width'], ['FullScreen', 'View › Full Screen Mode'], ['Find', 'Edit › Find...']];
+const FF_DATES = ['m/d', 'm/d/yy', 'm/d/yyyy', 'mm/dd/yy', 'mm/dd/yyyy', 'mm/yy', 'mm/yyyy', 'd-mmm', 'd-mmm-yy', 'd-mmm-yyyy', 'dd-mmm-yy', 'dd-mmm-yyyy', 'yy-mm-dd', 'yyyy-mm-dd', 'mmm-yy', 'mmmm-yy', 'mmm d, yyyy', 'mmmm d, yyyy', 'm/d/yy h:MM tt', 'm/d/yy HH:MM'];
+const FF_TIMES = [['HH:MM', 0], ['h:MM tt', 1], ['HH:MM:ss', 2], ['h:MM:ss tt', 3]];
+const FF_SEPS = ['1,234.56', '1234.56', '1.234,56', '1234,56', "1'234.56"];
+const FF_CURS = [['', 'None'], ['$', 'Dollar ($)'], ['€', 'Euro (€)'], ['£', 'Pound (£)'], ['¥', 'Yen (¥)'], ['CHF', 'Franc (CHF)']];
+const FF_SPECIAL = ['Zip Code', 'Zip Code + 4', 'Phone Number', 'Social Security Number', 'Arbitrary Mask'];
+const FF_CHK = [['check', 'Check'], ['circle', 'Circle'], ['cross', 'Cross'], ['diamond', 'Diamond'], ['square', 'Square'], ['star', 'Star']];
+
+function ffProps(a) {
+  ffClosePopup();
+  const old = $('ffp-ov'); if (old) old.remove();
+  const tabs = FF_TABS[a.kind] || FF_TABS.text;
+  let tab = state.ffLastTab && tabs.includes(state.ffLastTab) ? state.ffLastTab : 'General';
+  const ov = document.createElement('div'); ov.id = 'ffp-ov'; ov.className = 'ffp-ov';
+  ov.innerHTML = `<div class="ffd"><div class="ffd-t"><span>${FF_TITLE[a.kind] || 'Field'} Properties</span><button class="ffd-x" title="Close">×</button></div>
+    <div class="ffd-tabs">${tabs.map(t => `<button class="ffd-tab" data-t="${t}">${t}</button>`).join('')}</div><div class="ffd-pane"></div>
+    <div class="ffd-foot"><label class="ffd-lock"><input type="checkbox" class="ffd-locked" ${a.locked ? 'checked' : ''}> Locked</label><button class="ffd-close">Close</button></div></div>`;
+  ov.style.zIndex = topZ() + 3;
+  document.body.appendChild(ov);
+  const dlg = ov.querySelector('.ffd'), pane = ov.querySelector('.ffd-pane');
+  // draggable title bar
+  ov.querySelector('.ffd-t').addEventListener('mousedown', e => {
+    if (e.target.closest('.ffd-x')) return; e.preventDefault();
+    const r = dlg.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const mv = ev => Object.assign(dlg.style, { position: 'fixed', margin: 0, left: ev.clientX - dx + 'px', top: ev.clientY - dy + 'px' });
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  });
+  const changed = () => { a.untouched = false; renderPageAnnots(a.page); state.ffPropsDirty = true; };
+  const close = () => { ov.remove(); if (state.ffPropsDirty) { pushHistory(); state.ffPropsDirty = false; } ffRenderPane(); };
+  ov.querySelector('.ffd-x').onclick = close; ov.querySelector('.ffd-close').onclick = close;
+  ov.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+  const lockBox = ov.querySelector('.ffd-locked');
+  lockBox.onchange = () => { a.locked = lockBox.checked; changed(); draw(); };
+  const draw = () => {
+    ov.querySelectorAll('.ffd-tab').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+    pane.innerHTML = ffPane(a, tab);
+    ffWire(a, tab, pane, changed, draw);
+    pane.querySelectorAll('input, select, textarea, button').forEach(el => { if (a.locked && !el.classList.contains('ffd-keep')) el.disabled = true; });
+  };
+  ov.querySelectorAll('.ffd-tab').forEach(b => b.onclick = () => { tab = b.dataset.t; state.ffLastTab = tab; draw(); });
+  draw();
+  return ov;
+}
+const ffOpt = (v, l, cur) => `<option value="${escapeHtml(String(v))}" ${String(cur) === String(v) ? 'selected' : ''}>${escapeHtml(l)}</option>`;
+const ffChk = (cls, label, on, dis) => `<label class="ffd-cb ${dis ? 'dis' : ''}"><input type="checkbox" class="${cls}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${label}</label>`;
+const ffSw = (cls, hex, title) => `<button class="ffd-sw ${cls}" data-v="${hex || ''}" title="${title}">${hex ? `<i style="background:${hex}"></i>` : '<i class="none"></i>'}</button>`;
+const FF_UNITS = { in: [72, 'Inches', 'in', 4], cm: [72 / 2.54, 'Centimeters', 'cm', 3], mm: [72 / 25.4, 'Millimeters', 'mm', 2], pt: [1, 'Points', 'pt', 2], pc: [12, 'Picas', 'pc', 3] };
+
+function ffPane(a, tab) {
+  const k = a.kind, isText = k === 'text' || k === 'date' || k === 'barcode', isChoice = k === 'dropdown' || k === 'list';
+  if (tab === 'General') return `<div class="ffd-g"><div class="ffd-r"><label>Name:</label><input class="g-name" value="${escapeHtml(a.name)}"></div>
+      <div class="ffd-r"><label>Tooltip:</label><input class="g-tip" value="${escapeHtml(a.tooltip || '')}"></div></div>
+    <fieldset class="ffd-fs ffd-common"><legend>Common Properties</legend><div class="ffd-cp">
+      <div><div class="ffd-r"><label>Form Field:</label><select class="g-vis">${ffOpt('v', 'Visible', a.vis || 'v')}${ffOpt('h', 'Hidden', a.vis)}${ffOpt('np', 'Visible but doesn\'t print', a.vis)}${ffOpt('hp', 'Hidden but printable', a.vis)}</select></div>
+      <div class="ffd-r"><label>Orientation:</label><select class="g-rot sm">${[0, 90, 180, 270].map(v => ffOpt(v, v, a.rot || 0)).join('')}</select><span>degrees</span></div></div>
+      <div>${ffChk('g-ro', 'Read Only', a.readOnly)}${k === 'button' || k === 'image' ? '' : ffChk('g-req', 'Required', a.required, k === 'signature')}</div></div></fieldset>`;
+  if (tab === 'Appearance') return `<fieldset class="ffd-fs"><legend>Borders and Colors</legend><div class="ffd-ap">
+      <label>Border Color:</label>${ffSw('ap-bc', a.bc, 'Border color')}<label>Line Thickness:</label><select class="ap-bw" ${a.bc ? '' : 'disabled'}>${ffOpt(1, 'Thin', a.bw || 1)}${ffOpt(2, 'Medium', a.bw)}${ffOpt(3, 'Thick', a.bw)}</select>
+      <label>Fill Color:</label>${ffSw('ap-bg', a.bg, 'Fill color')}<label>Line Style:</label><select class="ap-bs" ${a.bc ? '' : 'disabled'}>${ffOpt('S', 'Solid', a.bs || 'S')}${ffOpt('D', 'Dashed', a.bs)}${ffOpt('B', 'Beveled', a.bs)}${ffOpt('I', 'Inset', a.bs)}${ffOpt('U', 'Underline', a.bs)}</select></div></fieldset>
+    <fieldset class="ffd-fs"><legend>Text</legend><div class="ffd-ap">
+      <label>Font Size:</label><select class="ap-fs">${FF_SIZES.map(v => ffOpt(v === 'Auto' ? 0 : v, v, a.fontSize || 0)).join('')}</select><label>Text Color:</label>${ffSw('ap-tc', a.color || '#000000', 'Text color')}
+      <label>Font:</label><select class="ap-font wide" ${k === 'checkbox' || k === 'radio' ? 'disabled' : ''}>${FF_FONTS.map(f => ffOpt(f, f, a.font || 'Helvetica')).join('')}</select></div></fieldset>`;
+  if (tab === 'Position') {
+    const u = state.ffUnits || 'in', U = FF_UNITS[u], ps = state.pages[a.page];
+    const cb = ps.origPage.view, b = bboxOf(a.pts), f = v => (v / U[0]).toFixed(U[3]) + ' ' + U[2];
+    const L = b.x - cb[0], B = b.y - cb[1], R = b.x + b.w - cb[0], T = b.y + b.h - cb[1];   // Acrobat measures all four from the bottom-left corner
+    const sp = (cls, v) => `<span class="ffd-spin"><input class="${cls}" value="${f(v)}"><span><button data-s="${cls}" data-d="1">▲</button><button data-s="${cls}" data-d="-1">▼</button></span></span>`;
+    return `<div class="ffd-r"><label>Units:</label><select class="po-u">${Object.entries(FF_UNITS).map(([key, x]) => ffOpt(key, x[1], u)).join('')}</select></div>
+      <fieldset class="ffd-fs"><legend>Position</legend><div class="ffd-pos">
+        <label>Left:</label>${sp('po-l', L)}<label>Bottom:</label>${sp('po-b', B)}
+        <label>Right:</label>${sp('po-r', R)}<label>Top:</label>${sp('po-t', T)}
+        <label>Width:</label>${sp('po-w', b.w)}<label>Height:</label>${sp('po-h', b.h)}</div>
+        ${ffChk('po-keep', 'Do not change height and width when changing the position.', state.ffKeepSize)}</fieldset>`;
+  }
+  if (tab === 'Options') {
+    if (isText) return `<div class="ffd-r"><label>Alignment:</label><select class="op-al sm">${ffOpt(0, 'Left', a.align || 0)}${ffOpt(1, 'Center', a.align)}${ffOpt(2, 'Right', a.align)}</select></div>
+      <div class="ffd-r top"><label>Default Value:</label><textarea class="op-dv">${escapeHtml(a.dv || '')}</textarea></div>
+      <div class="ffd-opts">${ffChk('op-file', 'Field is used for file selection', a.fileSel, !a.noSpell || !a.noScroll || a.multiLine || a.password || a.comb)}${ffChk('op-pw', 'Password', a.password, !a.noSpell || a.multiLine || a.fileSel || a.comb)}
+        ${ffChk('op-spell', 'Check spelling', !a.noSpell)}${ffChk('op-ml', 'Multi-line', a.multiLine, a.comb || a.password || a.fileSel)}${ffChk('op-scroll', 'Scroll long text', !a.noScroll)}${ffChk('op-rich', 'Allow Rich Text Formatting', a.rich)}
+        <div class="ffd-lim">${ffChk('op-lim', 'Limit of', !!a.maxLen && !a.comb, a.comb)}<input class="op-max sm" value="${a.maxLen && !a.comb ? a.maxLen : 0}" ${a.maxLen && !a.comb ? '' : 'disabled'}><span>characters</span></div>
+        <div class="ffd-lim">${ffChk('op-comb', 'Comb of', !!a.comb, !a.comb && (!a.noSpell || !a.noScroll || a.multiLine || a.password || a.fileSel || a.rich))}<input class="op-combn sm" value="${a.comb ? a.maxLen || 0 : 0}" ${a.comb ? '' : 'disabled'}><span>characters</span></div></div>`;
+    if (k === 'checkbox' || k === 'radio') return `<div class="ffd-r"><label>${k === 'radio' ? 'Button Style:' : 'Check Box Style:'}</label><select class="op-cs">${FF_CHK.map(([v, l]) => ffOpt(v, l, a.chkStyle || (k === 'radio' ? 'circle' : 'check'))).join('')}</select></div>
+      <div class="ffd-r"><label>${k === 'radio' ? 'Radio Button Choice:' : 'Export Value:'}</label><input class="op-ev" value="${escapeHtml(a.exportValue || '')}"></div>
+      <div class="ffd-opts">${ffChk('op-def', k === 'radio' ? 'Button is checked by default' : 'Check box is checked by default', a.defOn)}
+      ${k === 'radio' ? ffChk('op-unison', 'Buttons with the same name and choice are selected in unison', a.unison) : ''}</div>`;
+    if (isChoice) {
+      const items = ffItems(a), sel = state.ffItemSel != null && state.ffItemSel < items.length ? state.ffItemSel : -1;
+      return `<div class="ffd-items"><div class="ffd-r"><label>Item:</label><input class="op-it"><button class="ffd-btn op-add">Add</button></div>
+        <div class="ffd-r"><label>Export Value:</label><input class="op-ie"></div>
+        <div class="ffd-r top"><label>Item List:</label><select class="op-list" size="6">${items.map((it, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${escapeHtml(it.d)}</option>`).join('')}</select>
+          <span class="ffd-col"><button class="ffd-btn op-up" ${sel > 0 ? '' : 'disabled'}>Up</button><button class="ffd-btn op-dn" ${sel >= 0 && sel < items.length - 1 ? '' : 'disabled'}>Down</button><button class="ffd-btn op-del" ${sel >= 0 ? '' : 'disabled'}>Delete</button></span></div>
+        <div class="ffd-note">Select an item to make it the default choice.</div>
+        <div class="ffd-opts">${ffChk('op-sort', 'Sort items', a.sort)}${k === 'dropdown' ? ffChk('op-cust', 'Allow user to enter custom text', a.allowCustom) + ffChk('op-spell', 'Check spelling', !a.noSpell, !a.allowCustom) : ffChk('op-multi', 'Multiple selection', a.multiSel)}
+          ${ffChk('op-commit', 'Commit selected value immediately', a.commitNow, a.multiSel)}</div></div>`;
+    }
+    if (k === 'button' || k === 'image') return `<div class="ffd-opt2"><div class="ffd-r"><label>Layout:</label><select class="op-lay">${[['label', 'Label only'], ['icon', 'Icon only'], ['iconTop', 'Icon top, label bottom'], ['labelTop', 'Label top, icon bottom'], ['iconLeft', 'Icon left, label right'], ['labelLeft', 'Label left, icon right'], ['over', 'Label over icon']].map(([v, l]) => ffOpt(v, l, a.btnLayout || (k === 'image' ? 'icon' : 'label'))).join('')}</select></div>
+      <div class="ffd-r"><label>Behavior:</label><select class="op-beh">${[['none', 'None'], ['push', 'Push'], ['outline', 'Outline'], ['invert', 'Invert']].map(([v, l]) => ffOpt(v, l, a.btnBehavior || 'invert')).join('')}</select></div>
+      <div class="ffd-r"><label>Label:</label><input class="op-lbl" value="${escapeHtml(a.btnLabel || '')}"></div>
+      <div class="ffd-r"><label>Icon:</label><button class="ffd-btn op-icon">Choose Icon...</button><button class="ffd-btn op-clricon" ${a.btnIcon ? '' : 'disabled'}>Clear</button>${a.btnIcon ? `<img class="ffd-icon" src="${a.btnIcon}">` : ''}</div>
+      ${k === 'image' ? '<div class="ffd-note">When the form is filled in, clicking this field lets the person pick a picture to put in it.</div>' : ''}</div>`;
+  }
+  if (tab === 'Actions') {
+    const acts = a.actions || [];
+    return `<fieldset class="ffd-fs"><legend>Add an Action</legend>
+      <div class="ffd-r"><label>Select Trigger:</label><select class="ac-tr sm2">${FF_TRIG.map(([v, l]) => ffOpt(v, l, state.ffTrig || 'U')).join('')}</select></div>
+      <div class="ffd-r"><label>Select Action:</label><select class="ac-ty wide">${FF_ACTS.map(([v, l]) => ffOpt(v, l, state.ffAct || 'named')).join('')}</select></div>
+      <div class="ffd-r right"><button class="ffd-btn ac-add">Add...</button></div></fieldset>
+      <fieldset class="ffd-fs"><legend>Actions</legend><div class="ffd-acts" tabindex="0">${FF_TRIG.map(([t, l]) => { const list = acts.map((x, i) => [x, i]).filter(([x]) => x.trig === t); return list.length ? `<div class="ffd-at">▾ ${l}</div>` + list.map(([x, i]) => `<div class="ffd-ai ${state.ffActSel === i ? 'on' : ''}" data-i="${i}">${escapeHtml(ffActLabel(x))}</div>`).join('') : ''; }).join('')}</div>
+      <div class="ffd-arow"><button class="ffd-btn ac-up" ${ffActCan(a, -1) ? '' : 'disabled'}>Up</button><button class="ffd-btn ac-dn" ${ffActCan(a, 1) ? '' : 'disabled'}>Down</button><button class="ffd-btn ac-ed" ${state.ffActSel != null && acts[state.ffActSel] ? '' : 'disabled'}>Edit</button><button class="ffd-btn ac-del" ${state.ffActSel != null && acts[state.ffActSel] ? '' : 'disabled'}>Delete</button></div></fieldset>`;
+  }
+  if (tab === 'Format') {
+    const f = a.fmt || { cat: 'none' }, c = f.cat || 'none';
+    let body = '';
+    if (c === 'none') body = '';
+    else if (c === 'number' || c === 'percent') body = `<fieldset class="ffd-fs"><legend>${c === 'number' ? 'Number' : 'Percentage'} Options</legend><div class="ffd-fmt">
+        <label>Decimal Places:</label><select class="fm-dec sm">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => ffOpt(v, v, f.dec == null ? 2 : f.dec)).join('')}</select>
+        <label>Separator Style:</label><select class="fm-sep">${FF_SEPS.map((l, i) => ffOpt(i, l, f.sep || 0)).join('')}</select>
+        ${c === 'number' ? `<label>Currency Symbol:</label><select class="fm-cur">${FF_CURS.map(([v, l]) => ffOpt(v, l, f.cur || '')).join('')}</select>
+        <label>Symbol Location:</label><select class="fm-pre" ${f.cur ? '' : 'disabled'}>${ffOpt(1, 'Before number', f.pre == null ? 1 : f.pre)}${ffOpt(0, 'After number', f.pre)}</select>
+        <label class="top">Negative Number Style:</label><div>${ffChk('fm-par', 'Show parentheses', f.neg === 2 || f.neg === 3)}${ffChk('fm-red', 'Use red text', f.neg === 1 || f.neg === 3)}</div>` : ''}</div></fieldset>`;
+    else if (c === 'date') body = `<fieldset class="ffd-fs"><legend>Date Options</legend><select class="fm-dl" size="8">${FF_DATES.map(d => ffOpt(d, d, f.date)).join('')}${ffOpt('__custom', 'Custom', FF_DATES.includes(f.date) ? '' : '__custom')}</select>
+        <div class="ffd-r"><label>Custom:</label><input class="fm-dc" value="${escapeHtml(f.date || '')}"></div><div class="ffd-note">Example of current format: ${escapeHtml(ffDateExample(f.date || 'mm/dd/yyyy'))}</div></fieldset>`;
+    else if (c === 'time') body = `<fieldset class="ffd-fs"><legend>Time Options</legend><select class="fm-tl" size="5">${FF_TIMES.map(([l, i]) => ffOpt(i, l, f.time == null ? 0 : f.time)).join('')}${ffOpt('c', 'Custom', f.time)}</select>
+        <div class="ffd-r"><label>Custom:</label><input class="fm-tc" value="${escapeHtml(f.timeCustom || '')}" ${f.time === 'c' ? '' : 'disabled'}></div></fieldset>`;
+    else if (c === 'special') body = `<fieldset class="ffd-fs"><legend>Special Options</legend><select class="fm-sl" size="5">${FF_SPECIAL.map((l, i) => ffOpt(i, l, f.special || 0)).join('')}</select>
+        <div class="ffd-r"><label>Mask:</label><input class="fm-mask" value="${escapeHtml(f.mask || '')}" ${f.special === 4 ? '' : 'disabled'}></div>
+        <div class="ffd-note">Mask: A = letter, 9 = digit, X = letter or digit, O = anything.</div></fieldset>`;
+    else if (c === 'custom') body = `<fieldset class="ffd-fs"><legend>Custom Options</legend>
+        <div class="ffd-r top"><label>Custom Format Script:</label><textarea class="fm-fs mono">${escapeHtml(f.fs || '')}</textarea></div>
+        <div class="ffd-r top"><label>Custom Keystroke Script:</label><textarea class="fm-ks mono">${escapeHtml(f.ks || '')}</textarea></div></fieldset>`;
+    const hint = { none: 'The field value will be formatted as it is entered. To format fields automatically, select a format from the Format Category list.',
+      number: 'Use the Number format category to automatically format numbers.', percent: 'Use the Percentage format category to show numbers as percentages.', date: 'Use the Date format category to show dates in a set style.',
+      time: 'Use the Time format category to show times in a set style.', special: 'Use the Special format category for zip codes, phone numbers and social security numbers.', custom: 'Use Custom to write your own JavaScript format and keystroke scripts.' }[c];
+    return `<div class="ffd-r"><label>Select format category:</label><select class="fm-cat">${[['none', 'None'], ['number', 'Number'], ['percent', 'Percentage'], ['date', 'Date'], ['time', 'Time'], ['special', 'Special'], ['custom', 'Custom']].map(([v, l]) => ffOpt(v, l, c)).join('')}</select></div>
+      <div class="ffd-fbox">${body}</div><div class="ffd-hint"><span class="ffd-bulb">💡</span><span>${hint}</span></div>`;
+  }
+  if (tab === 'Validate') {
+    const v = a.val || { kind: 'none' }, num = a.fmt && (a.fmt.cat === 'number' || a.fmt.cat === 'percent');
+    return `<div class="ffd-val"><label class="ffd-rb"><input type="radio" name="ffv" value="none" ${v.kind === 'none' || !v.kind ? 'checked' : ''}> Field value is not validated</label>
+      <label class="ffd-rb ${num ? '' : 'dis'}"><input type="radio" name="ffv" value="range" ${v.kind === 'range' ? 'checked' : ''} ${num ? '' : 'disabled'}> Field value is in range:</label>
+      <div class="ffd-rng"><label>From:</label><input class="va-from sm" value="${escapeHtml(v.from ?? '')}" ${v.kind === 'range' ? '' : 'disabled'}><label>To:</label><input class="va-to sm" value="${escapeHtml(v.to ?? '')}" ${v.kind === 'range' ? '' : 'disabled'}></div>
+      <label class="ffd-rb"><input type="radio" name="ffv" value="script" ${v.kind === 'script' ? 'checked' : ''}> Run custom validation script:</label>
+      <div class="ffd-sc"><textarea class="va-sc mono" readonly>${escapeHtml(v.script || '')}</textarea><button class="ffd-btn va-ed" ${v.kind === 'script' ? '' : 'disabled'}>Edit...</button></div></div>`;
+  }
+  if (tab === 'Calculate') {
+    const c = a.calc || { kind: 'none' };
+    return `<div class="ffd-val"><label class="ffd-rb"><input type="radio" name="ffc" value="none" ${!c.kind || c.kind === 'none' ? 'checked' : ''}> Value is not calculated</label>
+      <div class="ffd-r"><label class="ffd-rb"><input type="radio" name="ffc" value="op" ${c.kind === 'op' ? 'checked' : ''}> Value is the</label><select class="ca-op" ${c.kind === 'op' ? '' : 'disabled'}>${[['SUM', 'sum (+)'], ['PRD', 'product (x)'], ['AVG', 'average'], ['MIN', 'minimum'], ['MAX', 'maximum']].map(([v, l]) => ffOpt(v, l, c.op || 'SUM')).join('')}</select><span class="${c.kind === 'op' ? '' : 'dis'}">of the following fields:</span></div>
+      <div class="ffd-sc"><textarea class="ca-fl" readonly>${escapeHtml((c.fields || []).join(', '))}</textarea><button class="ffd-btn ca-pick" ${c.kind === 'op' ? '' : 'disabled'}>Pick...</button></div>
+      <label class="ffd-rb"><input type="radio" name="ffc" value="sfn" ${c.kind === 'sfn' ? 'checked' : ''}> Simplified field notation:</label>
+      <div class="ffd-sc"><textarea class="ca-sfn" readonly>${escapeHtml(c.sfn || '')}</textarea><button class="ffd-btn ca-sed" ${c.kind === 'sfn' ? '' : 'disabled'}>Edit...</button></div>
+      <label class="ffd-rb"><input type="radio" name="ffc" value="script" ${c.kind === 'script' ? 'checked' : ''}> Custom calculation script:</label>
+      <div class="ffd-sc"><textarea class="ca-sc mono" readonly>${escapeHtml(c.script || '')}</textarea><button class="ffd-btn ca-ed" ${c.kind === 'script' ? '' : 'disabled'}>Edit...</button></div></div>`;
+  }
+  if (tab === 'Selection Change') return `<div class="ffd-val"><label class="ffd-rb"><input type="radio" name="ffs" value="none" ${!a.selScript ? 'checked' : ''}> Nothing happens when the list box selection changes.</label>
+      <label class="ffd-rb"><input type="radio" name="ffs" value="js" ${a.selScript ? 'checked' : ''}> This script executes when the list box selection changes:</label>
+      <div class="ffd-sc"><textarea class="sc-js mono" readonly>${escapeHtml(a.selScript || '')}</textarea><button class="ffd-btn sc-ed" ${a.selScript ? '' : 'disabled'}>Edit...</button></div></div>`;
+  if (tab === 'Signed') { const s = a.signed || { kind: 'none' }; return `<div class="ffd-val"><label class="ffd-rb"><input type="radio" name="ffg" value="none" ${s.kind === 'none' ? 'checked' : ''}> Nothing happens when signed</label>
+      <label class="ffd-rb"><input type="radio" name="ffg" value="lock" ${s.kind === 'lock' ? 'checked' : ''}> Mark as read-only:</label>
+      <div class="ffd-r" style="margin-left:24px"><select class="sg-which" ${s.kind === 'lock' ? '' : 'disabled'}>${ffOpt('All', 'All fields', s.which || 'All')}${ffOpt('Include', 'Just these fields', s.which)}${ffOpt('Exclude', 'All fields except these', s.which)}</select><button class="ffd-btn sg-pick" ${s.kind === 'lock' && s.which !== 'All' ? '' : 'disabled'}>Pick...</button></div>
+      <div class="ffd-note" style="margin-left:24px">${escapeHtml((s.fields || []).join(', '))}</div>
+      <label class="ffd-rb"><input type="radio" name="ffg" value="js" ${s.kind === 'js' ? 'checked' : ''}> This script executes when field is signed:</label>
+      <div class="ffd-sc"><textarea class="sg-js mono" readonly>${escapeHtml(s.script || '')}</textarea><button class="ffd-btn sg-ed" ${s.kind === 'js' ? '' : 'disabled'}>Edit...</button></div></div>`; }
+  return '';
+}
+function ffItems(a) { if (!a.items || !a.items.length) a.items = (a.options || []).map(d => ({ d, e: '' })); return a.items; }
+function ffActLabel(x) {
+  const n = (FF_ACTS.find(t => t[0] === x.type) || [0, x.type])[1];
+  const d = x.type === 'uri' ? x.url : x.type === 'goto' ? `page ${x.page}` : x.type === 'named' ? (FF_MENU.find(m => m[0] === x.name) || [0, x.name])[1] : x.type === 'js' ? (x.js || '').slice(0, 40) : x.type === 'hide' ? `${x.hide ? 'Hide' : 'Show'} ${(x.fields || []).join(', ')}` : x.type === 'submit' ? x.url : x.type === 'launch' ? x.file : x.type === 'reset' ? ((x.fields || []).length ? x.fields.join(', ') : 'all fields') : '';
+  return d ? `${n}: ${d}` : n;
+}
+function ffActCan(a, d) {
+  const acts = a.actions || [], i = state.ffActSel; if (i == null || !acts[i]) return false;
+  const same = acts.map((x, j) => [x, j]).filter(([x]) => x.trig === acts[i].trig).map(([, j]) => j), p = same.indexOf(i) + d;
+  return p >= 0 && p < same.length;
+}
+function ffDateExample(fmt) {
+  const d = new Date(2026, 3, 17, 13, 44, 51), p = n => String(n).padStart(2, '0'), M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return String(fmt).replace(/yyyy|yy|mmmm|mmm|mm|m|dd|d|HH|H|hh|h|MM|ss|tt/g, t => ({ yyyy: d.getFullYear(), yy: String(d.getFullYear()).slice(2), mmmm: M[d.getMonth()], mmm: M[d.getMonth()].slice(0, 3), mm: p(d.getMonth() + 1), m: d.getMonth() + 1, dd: p(d.getDate()), d: d.getDate(), HH: p(d.getHours()), H: d.getHours(), hh: p(d.getHours() % 12 || 12), h: d.getHours() % 12 || 12, MM: p(d.getMinutes()), ss: p(d.getSeconds()), tt: d.getHours() < 12 ? 'am' : 'pm' })[t]);
+}
+
+// ---------- wiring each tab ----------
+function ffWire(a, tab, pane, changed, redraw) {
+  const q = s => pane.querySelector(s), on = (s, ev, fn) => { const el = q(s); if (el) el.addEventListener(ev, fn); };
+  if (tab === 'General') {
+    on('.g-name', 'change', e => { const v = e.target.value.trim().replace(/\./g, '_'); if (!v) { e.target.value = a.name; return; } if (a.kind === 'radio') ffAll().filter(x => x.kind === 'radio' && x.name === a.name && x !== a).forEach(x => { x.name = v; x.untouched = false; }); a.name = v; changed(); });
+    on('.g-tip', 'change', e => { a.tooltip = e.target.value; changed(); });
+    on('.g-vis', 'change', e => { a.vis = e.target.value; changed(); });
+    on('.g-rot', 'change', e => { a.rot = +e.target.value; changed(); });
+    on('.g-ro', 'change', e => { a.readOnly = e.target.checked; changed(); });
+    on('.g-req', 'change', e => { a.required = e.target.checked; changed(); });
+  }
+  if (tab === 'Appearance') {
+    pane.querySelectorAll('.ffd-sw').forEach(b => b.onclick = () => ffColorMenu(b, b.classList.contains('ap-tc'), hex => {
+      if (b.classList.contains('ap-bc')) a.bc = hex; else if (b.classList.contains('ap-bg')) a.bg = hex; else a.color = hex || '#000000';
+      changed(); redraw();
+    }));
+    on('.ap-bw', 'change', e => { a.bw = +e.target.value; changed(); });
+    on('.ap-bs', 'change', e => { a.bs = e.target.value; changed(); });
+    on('.ap-fs', 'change', e => { a.fontSize = +e.target.value; changed(); });
+    on('.ap-font', 'change', e => { a.font = e.target.value; changed(); });
+  }
+  if (tab === 'Position') {
+    const ps = state.pages[a.page], cb = ps.origPage.view;
+    on('.po-u', 'change', e => { state.ffUnits = e.target.value; redraw(); });
+    on('.po-keep', 'change', e => { state.ffKeepSize = e.target.checked; });
+    const U = () => FF_UNITS[state.ffUnits || 'in'][0];
+    const apply = (cls, val) => {
+      const b = bboxOf(a.pts); let x0 = b.x, y0 = b.y, x1 = b.x + b.w, y1 = b.y + b.h; const keep = state.ffKeepSize, w = b.w, h = b.h;
+      if (cls === 'po-l') { x0 = cb[0] + val; if (keep) x1 = x0 + w; }
+      if (cls === 'po-r') { x1 = cb[0] + val; if (keep) x0 = x1 - w; }
+      if (cls === 'po-b') { y0 = cb[1] + val; if (keep) y1 = y0 + h; }
+      if (cls === 'po-t') { y1 = cb[1] + val; if (keep) y0 = y1 - h; }
+      if (cls === 'po-w') x1 = x0 + Math.max(1, val);
+      if (cls === 'po-h') y0 = y1 - Math.max(1, val);
+      if (x1 - x0 < 1 || y1 - y0 < 1) return;
+      a.pts = [[x0, y1], [x1, y0]]; changed(); redraw();
+    };
+    pane.querySelectorAll('.ffd-spin input').forEach(i => i.addEventListener('change', () => { const v = parseFloat(i.value); if (!isNaN(v)) apply(i.className, v * U()); else redraw(); }));
+    pane.querySelectorAll('.ffd-spin button').forEach(btn => btn.onclick = () => { const i = q('.' + btn.dataset.s), step = { in: 0.01, cm: 0.05, mm: 0.5, pt: 1, pc: 0.1 }[state.ffUnits || 'in']; apply(btn.dataset.s, (parseFloat(i.value) + step * +btn.dataset.d) * U()); });
+  }
+  if (tab === 'Options') {
+    const k = a.kind;
+    on('.op-al', 'change', e => { a.align = +e.target.value; changed(); });
+    on('.op-dv', 'change', e => { a.dv = e.target.value; changed(); });
+    on('.op-file', 'change', e => { a.fileSel = e.target.checked; changed(); redraw(); });
+    on('.op-pw', 'change', e => { a.password = e.target.checked; changed(); redraw(); });
+    on('.op-spell', 'change', e => { a.noSpell = !e.target.checked; changed(); redraw(); });
+    on('.op-ml', 'change', e => { a.multiLine = e.target.checked; if (a.multiLine) { a.comb = false; a.password = false; } changed(); redraw(); });
+    on('.op-scroll', 'change', e => { a.noScroll = !e.target.checked; changed(); redraw(); });
+    on('.op-rich', 'change', e => { a.rich = e.target.checked; changed(); });
+    on('.op-lim', 'change', e => { a.maxLen = e.target.checked ? (+q('.op-max').value || 10) : 0; a.comb = false; changed(); redraw(); });
+    on('.op-max', 'change', e => { a.maxLen = Math.max(0, parseInt(e.target.value) || 0); changed(); });
+    on('.op-comb', 'change', e => { a.comb = e.target.checked; a.maxLen = a.comb ? (+q('.op-combn').value || 10) : 0; if (a.comb) a.multiLine = false; changed(); redraw(); });
+    on('.op-combn', 'change', e => { a.maxLen = Math.max(1, parseInt(e.target.value) || 1); changed(); });
+    on('.op-cs', 'change', e => { a.chkStyle = e.target.value; changed(); });
+    on('.op-ev', 'change', e => { a.exportValue = e.target.value.trim() || (k === 'radio' ? 'Choice1' : 'Yes'); changed(); });
+    on('.op-def', 'change', e => { a.defOn = e.target.checked; if (k === 'radio' && a.defOn) ffAll().filter(x => x !== a && x.kind === 'radio' && x.name === a.name).forEach(x => { x.defOn = false; x.untouched = false; }); changed(); });
+    on('.op-unison', 'change', e => { a.unison = e.target.checked; changed(); });
+    // dropdown / list items
+    const items = (k === 'dropdown' || k === 'list') ? ffItems(a) : null;
+    const syncOpts = () => { a.options = items.map(x => x.d); changed(); };
+    on('.op-add', 'click', () => { const d = q('.op-it').value.trim(); if (!d) return; items.push({ d, e: q('.op-ie').value.trim() }); state.ffItemSel = items.length - 1; syncOpts(); redraw(); });
+    on('.op-it', 'keydown', e => { if (e.key === 'Enter') { e.preventDefault(); q('.op-add').click(); } });
+    on('.op-list', 'change', e => { const i = +e.target.value; state.ffItemSel = i; a.defIdx = i; q('.op-it') && (q('.op-it').value = items[i].d); q('.op-ie') && (q('.op-ie').value = items[i].e || ''); changed(); redraw(); const it = q('.op-it'); if (it) { it.value = items[i].d; q('.op-ie').value = items[i].e || ''; } });
+    const mv = d => { const i = state.ffItemSel, j = i + d; if (i == null || j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; state.ffItemSel = j; if (a.defIdx === i) a.defIdx = j; syncOpts(); redraw(); };
+    on('.op-up', 'click', () => mv(-1)); on('.op-dn', 'click', () => mv(1));
+    on('.op-del', 'click', () => { const i = state.ffItemSel; if (i == null) return; items.splice(i, 1); if (a.defIdx === i) a.defIdx = undefined; state.ffItemSel = Math.min(i, items.length - 1); if (state.ffItemSel < 0) state.ffItemSel = null; syncOpts(); redraw(); });
+    on('.op-sort', 'change', e => { a.sort = e.target.checked; if (a.sort) { items.sort((x, y) => x.d.localeCompare(y.d)); syncOpts(); redraw(); } else changed(); });
+    on('.op-cust', 'change', e => { a.allowCustom = e.target.checked; changed(); redraw(); });
+    on('.op-multi', 'change', e => { a.multiSel = e.target.checked; if (a.multiSel) a.commitNow = false; changed(); redraw(); });
+    on('.op-commit', 'change', e => { a.commitNow = e.target.checked; changed(); });
+    // buttons
+    on('.op-lay', 'change', e => { a.btnLayout = e.target.value; changed(); });
+    on('.op-beh', 'change', e => { a.btnBehavior = e.target.value; changed(); });
+    on('.op-lbl', 'change', e => { a.btnLabel = e.target.value; changed(); });
+    on('.op-icon', 'click', () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg'; inp.onchange = () => { const f = inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { a.btnIcon = r.result; changed(); redraw(); }; r.readAsDataURL(f); }; inp.click(); });
+    on('.op-clricon', 'click', () => { a.btnIcon = null; changed(); redraw(); });
+  }
+  if (tab === 'Actions') {
+    on('.ac-tr', 'change', e => { state.ffTrig = e.target.value; });
+    on('.ac-ty', 'change', e => { state.ffAct = e.target.value; });
+    on('.ac-add', 'click', () => ffActionDialog(a, { trig: q('.ac-tr').value, type: q('.ac-ty').value }, act => { a.actions = (a.actions || []).concat([act]); state.ffActSel = a.actions.length - 1; changed(); redraw(); }));
+    pane.querySelectorAll('.ffd-ai').forEach(d => { d.onclick = () => { state.ffActSel = +d.dataset.i; redraw(); }; d.ondblclick = () => q('.ac-ed') && q('.ac-ed').click(); });
+    const mv = d => { const acts = a.actions, i = state.ffActSel; const same = acts.map((x, j) => [x, j]).filter(([x]) => x.trig === acts[i].trig).map(([, j]) => j); const j = same[same.indexOf(i) + d]; if (j == null) return; [acts[i], acts[j]] = [acts[j], acts[i]]; state.ffActSel = j; changed(); redraw(); };
+    on('.ac-up', 'click', () => mv(-1)); on('.ac-dn', 'click', () => mv(1));
+    on('.ac-ed', 'click', () => { const i = state.ffActSel; ffActionDialog(a, a.actions[i], act => { a.actions[i] = act; changed(); redraw(); }); });
+    on('.ac-del', 'click', () => { a.actions.splice(state.ffActSel, 1); state.ffActSel = null; changed(); redraw(); });
+  }
+  if (tab === 'Format') {
+    const f = a.fmt = a.fmt || { cat: 'none' };
+    on('.fm-cat', 'change', e => { const c = e.target.value; a.fmt = { cat: c, ...(c === 'date' ? { date: 'mm/dd/yyyy' } : c === 'number' || c === 'percent' ? { dec: 2, sep: 0, neg: 0, cur: '', pre: 1 } : c === 'time' ? { time: 0 } : c === 'special' ? { special: 0 } : {}) };
+      if (c !== 'number' && c !== 'percent' && a.val && a.val.kind === 'range') a.val = { kind: 'none' }; changed(); redraw(); });
+    on('.fm-dec', 'change', e => { f.dec = +e.target.value; changed(); });
+    on('.fm-sep', 'change', e => { f.sep = +e.target.value; changed(); });
+    on('.fm-cur', 'change', e => { f.cur = e.target.value; changed(); redraw(); });
+    on('.fm-pre', 'change', e => { f.pre = +e.target.value; changed(); });
+    const neg = () => { const p = q('.fm-par').checked, r = q('.fm-red').checked; f.neg = p && r ? 3 : p ? 2 : r ? 1 : 0; changed(); };
+    on('.fm-par', 'change', neg); on('.fm-red', 'change', neg);
+    on('.fm-dl', 'change', e => { if (e.target.value !== '__custom') { f.date = e.target.value; } changed(); redraw(); });
+    on('.fm-dc', 'change', e => { f.date = e.target.value.trim() || 'mm/dd/yyyy'; changed(); redraw(); });
+    on('.fm-tl', 'change', e => { f.time = e.target.value === 'c' ? 'c' : +e.target.value; changed(); redraw(); });
+    on('.fm-tc', 'change', e => { f.timeCustom = e.target.value; changed(); });
+    on('.fm-sl', 'change', e => { f.special = +e.target.value; changed(); redraw(); });
+    on('.fm-mask', 'change', e => { f.mask = e.target.value; changed(); });
+    on('.fm-fs', 'change', e => { f.fs = e.target.value; changed(); });
+    on('.fm-ks', 'change', e => { f.ks = e.target.value; changed(); });
+  }
+  if (tab === 'Validate') {
+    const v = a.val = a.val || { kind: 'none' };
+    pane.querySelectorAll('input[name=ffv]').forEach(r => r.onchange = () => { v.kind = r.value; if (v.kind === 'script' && !v.script) return ffScriptDialog('Edit Custom Validation Script', '', s => { v.script = s; changed(); redraw(); }, () => { v.kind = 'none'; redraw(); }); changed(); redraw(); });
+    on('.va-from', 'change', e => { v.from = e.target.value; changed(); }); on('.va-to', 'change', e => { v.to = e.target.value; changed(); });
+    on('.va-ed', 'click', () => ffScriptDialog('Edit Custom Validation Script', v.script || '', s => { v.script = s; changed(); redraw(); }));
+  }
+  if (tab === 'Calculate') {
+    const c = a.calc = a.calc || { kind: 'none' };
+    pane.querySelectorAll('input[name=ffc]').forEach(r => r.onchange = () => { c.kind = r.value; changed(); redraw(); });
+    on('.ca-op', 'change', e => { c.op = e.target.value; changed(); });
+    on('.ca-pick', 'click', () => ffPickFields(a, c.fields || [], list => { c.fields = list; changed(); redraw(); }));
+    on('.ca-sed', 'click', () => ffScriptDialog('Edit Simplified Field Notation', c.sfn || '', s => { c.sfn = s; changed(); redraw(); }, null, 'Example: Price * Quantity'));
+    on('.ca-ed', 'click', () => ffScriptDialog('Edit Custom Calculation Script', c.script || '', s => { c.script = s; changed(); redraw(); }));
+  }
+  if (tab === 'Selection Change') {
+    pane.querySelectorAll('input[name=ffs]').forEach(r => r.onchange = () => { if (r.value === 'none') { a.selScript = ''; changed(); redraw(); } else ffScriptDialog('Edit Selection Change Script', a.selScript || '', s => { a.selScript = s; changed(); redraw(); }, redraw); });
+    on('.sc-ed', 'click', () => ffScriptDialog('Edit Selection Change Script', a.selScript || '', s => { a.selScript = s; changed(); redraw(); }));
+  }
+  if (tab === 'Signed') {
+    const s = a.signed = a.signed || { kind: 'none' };
+    pane.querySelectorAll('input[name=ffg]').forEach(r => r.onchange = () => { s.kind = r.value; if (s.kind === 'js' && !s.script) return ffScriptDialog('Edit Script', '', t => { s.script = t; changed(); redraw(); }, () => { s.kind = 'none'; redraw(); }); changed(); redraw(); });
+    on('.sg-which', 'change', e => { s.which = e.target.value; changed(); redraw(); });
+    on('.sg-pick', 'click', () => ffPickFields(a, s.fields || [], list => { s.fields = list; changed(); redraw(); }));
+    on('.sg-ed', 'click', () => ffScriptDialog('Edit Script', s.script || '', t => { s.script = t; changed(); redraw(); }));
+  }
+}
+// colour picker like Acrobat's: No Color + swatches + Other Color…
+function ffColorMenu(btn, noNone, cb) {
+  document.querySelectorAll('.ffd-colmenu').forEach(m => m.remove());
+  const cols = ['#000000', '#7f7f7f', '#880015', '#ed1c24', '#ff7f27', '#fff200', '#22b14c', '#00a2e8', '#3f48cc', '#a349a4', '#ffffff', '#c3c3c3', '#b97a57', '#ffaec9', '#ffc90e', '#efe4b0', '#b5e61d', '#99d9ea', '#7092be', '#c8bfe7', '#d4d0c8', '#e6e6e6', '#d9e2f3', '#fce4d6', '#e2efda'];
+  const m = document.createElement('div'); m.className = 'ffd-colmenu';
+  m.innerHTML = (noNone ? '' : '<button class="cm-none" data-v="">No Color</button>') + `<div class="cm-grid">${cols.map(c => `<button data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div><button class="cm-other">Other Color...</button>`;
+  document.body.appendChild(m);
+  const r = btn.getBoundingClientRect(); Object.assign(m.style, { left: Math.min(innerWidth - 200, r.left) + 'px', top: r.bottom + 2 + 'px', zIndex: topZ() + 5 });
+  m.onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.classList.contains('cm-other')) { const i = document.createElement('input'); i.type = 'color'; i.value = btn.dataset.v || '#000000'; i.oninput = () => cb(i.value); i.click(); m.remove(); return; }
+    m.remove(); cb(b.dataset.v || null);
+  };
+  setTimeout(() => document.addEventListener('mousedown', function h(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('mousedown', h, true); } }, true), 0);
+}
+function ffScriptDialog(title, text, ok, cancel, hint) {
+  const ov = esDialog('ff-js', title, `${hint ? `<div class="es-note">${escapeHtml(hint)}</div>` : ''}<textarea id="ffjs-t" class="mono" spellcheck="false" style="width:100%;height:260px">${escapeHtml(text || '')}</textarea>`, [
+    { label: 'OK', primary: true, run: o => ok(esq(o, '#ffjs-t').value) }, { label: 'Cancel', run: () => { if (cancel) cancel(); } }], 620);
+  ov.querySelector('.ap-x').onclick = () => { ov.remove(); if (cancel) cancel(); };
+  ov.style.zIndex = topZ() + 6;
+  esq(ov, '#ffjs-t').addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } });
+}
+function ffPickFields(self, cur, ok) {
+  const names = [...new Set(ffAll().filter(x => x !== self).map(x => x.name).concat(Object.values(state.formFields || {}).flat().map(f => f.name)))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+  const ov = esDialog('ff-pick', 'Field Selection', `<div class="es-note">Select the fields:</div><div class="ffpk">${names.map(n => `<label><input type="checkbox" value="${escapeHtml(n)}" ${cur.includes(n) ? 'checked' : ''}> ${escapeHtml(n)}</label>`).join('') || '<i>No other fields yet.</i>'}</div>`, [
+    { label: 'OK', primary: true, run: o => ok([...o.querySelectorAll('.ffpk input:checked')].map(i => i.value)) }, { label: 'Cancel' }], 380);
+  ov.style.zIndex = topZ() + 6;
+}
+function ffActionDialog(a, act, ok) {
+  const t = act.type;
+  if (FF_UNSUP.includes(t)) { toast('That action type plays media or 3D content, which KHZ PDF can\'t add. Choose another action.'); return; }
+  const fieldNames = [...new Set(ffAll().map(x => x.name))].sort();
+  let body = '', read = null;
+  if (t === 'named') { body = `<div class="es-note">Choose the menu command that runs:</div><select id="ffa-n" size="10" style="width:100%">${FF_MENU.map(([v, l]) => ffOpt(v, l, act.name || 'NextPage')).join('')}</select>`; read = o => ({ name: esq(o, '#ffa-n').value }); }
+  else if (t === 'goto') { body = `<div class="es-grid"><label>Page:</label><input id="ffa-p" type="number" min="1" max="${state.totalPages}" value="${act.page || state.currentPage || 1}"><label>Zoom:</label><select id="ffa-z">${ffOpt('Fit', 'Fit Page', act.zoom || 'Fit')}${ffOpt('FitH', 'Fit Width', act.zoom)}${ffOpt('XYZ', 'Inherit Zoom', act.zoom)}</select></div>`; read = o => ({ page: Math.max(1, Math.min(state.totalPages, +esq(o, '#ffa-p').value || 1)), zoom: esq(o, '#ffa-z').value }); }
+  else if (t === 'uri') { body = `<div class="es-grid"><label>Enter a URL for this link:</label><input id="ffa-u" style="width:100%" value="${escapeHtml(act.url || 'http://')}"></div>`; read = o => { const u = esq(o, '#ffa-u').value.trim(); return u && u !== 'http://' ? { url: u } : null; }; }
+  else if (t === 'launch') { body = `<div class="es-grid"><label>File to open (name or path):</label><input id="ffa-f" style="width:100%" value="${escapeHtml(act.file || '')}"></div>`; read = o => ({ file: esq(o, '#ffa-f').value.trim() }); }
+  else if (t === 'js' || t === 'import') { body = `<textarea id="ffa-j" class="mono" spellcheck="false" style="width:100%;height:240px">${escapeHtml(act.js || (t === 'import' ? 'this.importAnFDF();' : ''))}</textarea>`; read = o => ({ type: 'js', js: esq(o, '#ffa-j').value }); }
+  else if (t === 'reset' || t === 'hide') {
+    body = `${t === 'hide' ? `<div class="es-grid"><label><input type="radio" name="ffh" value="1" ${act.hide !== false ? 'checked' : ''}> Hide</label><label><input type="radio" name="ffh" value="0" ${act.hide === false ? 'checked' : ''}> Show</label></div>` : ''}<div class="es-note">${t === 'reset' ? 'Fields to reset (none ticked = every field):' : 'Fields to show or hide:'}</div><div class="ffpk">${fieldNames.map(n => `<label><input type="checkbox" value="${escapeHtml(n)}" ${(act.fields || []).includes(n) ? 'checked' : ''}> ${escapeHtml(n)}</label>`).join('')}</div>`;
+    read = o => ({ fields: [...o.querySelectorAll('.ffpk input:checked')].map(i => i.value), ...(t === 'hide' ? { hide: esq(o, 'input[name=ffh]:checked').value === '1' } : {}) });
+  }
+  else if (t === 'submit') { body = `<div class="es-grid"><label>Enter a URL for this link:</label><input id="ffa-s" style="width:100%" value="${escapeHtml(act.url || 'mailto:')}"><label>Export Format:</label><select id="ffa-x">${ffOpt('FDF', 'FDF', act.fmt || 'FDF')}${ffOpt('HTML', 'HTML', act.fmt)}${ffOpt('XFDF', 'XFDF', act.fmt)}${ffOpt('PDF', 'PDF The complete document', act.fmt)}</select></div>`; read = o => ({ url: esq(o, '#ffa-s').value.trim(), fmt: esq(o, '#ffa-x').value }); }
+  else if (t === 'ocg') { body = `<div class="es-note">Layers to turn on or off (names, one per line, as shown in the Layers panel):</div><textarea id="ffa-o" style="width:100%;height:100px">${escapeHtml((act.layers || []).join('\n'))}</textarea><div class="es-grid"><label>State:</label><select id="ffa-os">${ffOpt('Toggle', 'Toggle', act.st || 'Toggle')}${ffOpt('ON', 'On', act.st)}${ffOpt('OFF', 'Off', act.st)}</select></div>`; read = o => ({ layers: esq(o, '#ffa-o').value.split('\n').map(s => s.trim()).filter(Boolean), st: esq(o, '#ffa-os').value }); }
+  const name = (FF_ACTS.find(x => x[0] === t) || [0, t])[1];
+  const ov = esDialog('ff-act', name, body, [{ label: 'OK', primary: true, run: o => { const r = read(o); if (!r) return false; ok({ trig: act.trig, type: t, ...r }); } }, { label: 'Cancel' }], t === 'js' || t === 'import' ? 620 : 460);
+  ov.style.zIndex = topZ() + 6;
+}
+
+// ================================================================
+//  PREPARE FORM › writing every property into the PDF (and reading it back from fields already there)
+//  border / fill / line style, font, size, colour, alignment, visibility, orientation, flags, default value,
+//  items + export values, check styles, buttons & image fields, actions, format / validate / calculate
+//  scripts (Acrobat's AF… functions), calculation order, tab order, signature locks, Locked.
+// ================================================================
+const FF_FONTKEY = { 'Helvetica': 'Helv', 'Helvetica-Bold': 'HeBo', 'Helvetica-Oblique': 'HeOb', 'Helvetica-BoldOblique': 'HeBO', 'Times-Roman': 'TiRo', 'Times-Bold': 'TiBo', 'Times-Italic': 'TiIt', 'Times-BoldItalic': 'TiBI', 'Courier': 'Cour', 'Courier-Bold': 'CoBo', 'Courier-Oblique': 'CoOb', 'Courier-BoldOblique': 'CoBO', 'Symbol': 'Symb', 'ZapfDingbats': 'ZaDb' };
+const FF_SF = { 'Helvetica': 'Helvetica', 'Helvetica-Bold': 'HelveticaBold', 'Helvetica-Oblique': 'HelveticaOblique', 'Helvetica-BoldOblique': 'HelveticaBoldOblique', 'Times-Roman': 'TimesRoman', 'Times-Bold': 'TimesRomanBold', 'Times-Italic': 'TimesRomanItalic', 'Times-BoldItalic': 'TimesRomanBoldItalic', 'Courier': 'Courier', 'Courier-Bold': 'CourierBold', 'Courier-Oblique': 'CourierOblique', 'Courier-BoldOblique': 'CourierBoldOblique', 'Symbol': 'Symbol', 'ZapfDingbats': 'ZapfDingbats' };
+const FF_CHKCHAR = { check: '4', circle: 'l', cross: '8', diamond: 'u', square: 'n', star: 'H' };
+const ffHex2 = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+const ffNum = v => +(+v).toFixed(4);
+const ffRgbHex = arr => '#' + arr.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+
+// ---------- write ----------
+const _writeFormFieldChangesFF = writeFormFieldChanges;
+writeFormFieldChanges = function (doc) {
+  const L = PDFLib, N = k => L.PDFName.of(k);
+  let form; try { form = doc.getForm(); } catch (e) { return _writeFormFieldChangesFF.apply(this, arguments); }
+  const all = ffAll();
+  const has = n => { try { form.getField(n); return true; } catch (e) { return false; } };
+  // 1. fields the original writer can't make (or that share a name with another field) are set aside
+  const aside = [], kindBack = [];
+  const seen = new Set();
+  all.forEach(a => {
+    if (a.existing) return;
+    if (a.kind === 'date' || a.kind === 'barcode') { kindBack.push([a, a.kind]); a.kind = 'text'; }
+    const dup = a.kind !== 'radio' && (seen.has(a.name) || has(a.name));
+    if (dup || a.kind === 'button' || a.kind === 'image') { aside.push(a); a.type = 'form-field-aside'; }
+    if (a.kind !== 'radio') seen.add(a.name);
+  });
+  let r;
+  try { r = _writeFormFieldChangesFF.apply(this, arguments); }
+  finally { aside.forEach(a => { a.type = 'form-field'; }); kindBack.forEach(([a, k]) => { a.kind = k; }); }
+  const pages = doc.getPages();
+  const rectOf = a => { const b = bboxOf(a.pts); return { x: b.x, y: b.y, width: b.w, height: b.h }; };
+  // 2. second widgets of same-named fields, buttons and image fields
+  aside.forEach(a => {
+    const lp = pages[a.page - 1]; if (!lp) return;
+    const opt = { ...rectOf(a), borderWidth: 0, rotate: L.degrees(effRot(a.page)) };
+    try {
+      let f = null; try { f = form.getField(a.name); } catch (e) {}
+      if (a.kind === 'button' || a.kind === 'image') {
+        if (!(f instanceof L.PDFButton)) f = form.createButton(has(a.name) ? uniqueIn(form, a.name) : a.name);
+        f.addToPage(a.btnLabel || '', lp, opt);
+      } else if (f && f.addToPage) f.addToPage(lp, opt);
+      else if (f instanceof L.PDFRadioGroup) f.addOptionToPage(a.exportValue || 'Choice', lp, opt);
+    } catch (e) { console.warn('extra widget', a.name, e); }
+  });
+  // 3. every property
+  const order = {};   // page → widget refs in tab order
+  ffFontCache.clear();
+  all.forEach(a => {
+    let f = null; try { f = form.getField(a.name); } catch (e) {} if (!f && a.origName) { try { f = form.getField(a.origName); } catch (e) {} }
+    if (!f) return;
+    const R = rectOf(a);
+    const ws = f.acroField.getWidgets();
+    const w = ws.find(wd => { const q = wd.getRectangle(); return Math.abs(q.x + q.width / 2 - R.x - R.width / 2) < 1.2 && Math.abs(q.y + q.height / 2 - R.y - R.height / 2) < 1.2 && Math.abs(q.width - R.width) < 2.2 && Math.abs(q.height - R.height) < 2.2; }) || (ws.length === 1 ? ws[0] : null);
+    if (!w) return;
+    const wref = doc.context.getObjectRef ? null : null;
+    (order[a.page] = order[a.page] || []).push(w.dict);
+    if (a.existing && a.untouched) return;
+    try { ffApplyProps(doc, form, f, w, a); } catch (e) { console.warn('field properties', a.name, e); }
+  });
+  // 4. tab order + /Tabs
+  try {
+    pages.forEach((lp, i) => {
+      const n = i + 1, list = order[n]; const an = lp.node.lookup(N('Annots'));
+      if (list && list.length > 1 && an && an.asArray && state.ffOrderChanged) {
+        const arr = an.asArray(), refOf = d => arr.find(x => doc.context.lookup(x) === d);
+        const refs = list.map(refOf).filter(Boolean), slots = arr.map((x, j) => refs.includes(x) ? j : -1).filter(j => j >= 0);
+        slots.forEach((j, k) => { an.set(j, refs[k]); });
+      }
+      const t = (state.ffTabs || {})[n];
+      if (t === 'R' || t === 'C' || t === 'S') lp.node.set(N('Tabs'), N(t)); else if (t === 'M' || t === 'U') lp.node.delete(N('Tabs'));
+    });
+  } catch (e) { console.warn('tab order', e); }
+  // 5. calculation order
+  try {
+    const calc = all.filter(a => a.calc && a.calc.kind && a.calc.kind !== 'none');
+    if (calc.length) {
+      const names = [...new Set((state.ffCalcOrder || []).concat(calc.map(a => a.name)))].filter(n => calc.some(a => a.name === n));
+      const refs = names.map(n => { try { return form.getField(n).ref; } catch (e) { return null; } }).filter(Boolean);
+      form.acroForm.dict.set(N('CO'), doc.context.obj(refs));
+    }
+  } catch (e) {}
+  return r;
+};
+const ffFontCache = new Map();
+function ffFont(doc, form, name) {
+  const L = PDFLib, N = k => L.PDFName.of(k);
+  name = FF_SF[name] ? name : 'Helvetica';
+  if (ffFontCache.has(name)) return ffFontCache.get(name);
+  const font = doc.embedStandardFont(L.StandardFonts[FF_SF[name]]);
+  const key = FF_FONTKEY[name];
+  const af = form.acroForm.dict;
+  let dr = af.lookup(N('DR')); if (!dr) { dr = doc.context.obj({}); af.set(N('DR'), dr); }
+  let fd = dr.lookup(N('Font')); if (!fd) { fd = doc.context.obj({}); dr.set(N('Font'), fd); }
+  if (!fd.get(N(key))) fd.set(N(key), font.ref);
+  const out = { font, key }; ffFontCache.set(name, out); return out;
+}
+function ffApplyProps(doc, form, f, w, a) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context, fd = f.acroField.dict, wd = w.dict, T = s => L.PDFHexString.fromText(String(s));
+  const k = a.kind;
+  // tooltip
+  if (a.tooltip) fd.set(N('TU'), T(a.tooltip)); else fd.delete(N('TU'));
+  // field flags
+  let ff = (fd.get(N('Ff')) || { asNumber: () => 0 }).asNumber ? fd.get(N('Ff')).asNumber() : 0;
+  const bit = (b, on) => { ff = on ? ff | b : ff & ~b; };
+  bit(1, !!a.readOnly); bit(2, !!a.required && k !== 'signature');
+  if (k === 'text' || k === 'date' || k === 'barcode') {
+    bit(1 << 12, !!a.multiLine); bit(1 << 13, !!a.password); bit(1 << 20, !!a.fileSel); bit(1 << 22, !!a.noSpell); bit(1 << 23, !!a.noScroll); bit(1 << 24, !!a.comb && !!a.maxLen); bit(1 << 25, !!a.rich);
+    if (a.maxLen) fd.set(N('MaxLen'), ctx.obj(a.maxLen)); else fd.delete(N('MaxLen'));
+    fd.set(N('Q'), ctx.obj(a.align || 0));
+    if (a.dv) { fd.set(N('DV'), T(a.dv)); if (!a.existing && !fd.get(N('V'))) fd.set(N('V'), T(a.dv)); } else fd.delete(N('DV'));
+  } else if (k === 'dropdown' || k === 'list') {
+    const items = ffItems(a);
+    if (items.length) {
+      fd.set(N('Opt'), ctx.obj(items.map(it => it.e ? ctx.obj([T(it.e), T(it.d)]) : T(it.d))));
+      if (a.defIdx != null && items[a.defIdx]) { const v = T(items[a.defIdx].e || items[a.defIdx].d); fd.set(N('DV'), v); fd.set(N('V'), v); }
+    }
+    bit(1 << 17, k === 'dropdown'); bit(1 << 18, k === 'dropdown' && !!a.allowCustom); bit(1 << 19, !!a.sort); bit(1 << 21, k === 'list' && !!a.multiSel);
+    bit(1 << 22, !!a.noSpell || (k === 'dropdown' && !a.allowCustom)); bit(1 << 26, !!a.commitNow);
+    fd.set(N('Q'), ctx.obj(a.align || 0));
+  } else if (k === 'radio') { bit(1 << 14, true); bit(1 << 15, true); bit(1 << 25, !!a.unison); }
+  else if (k === 'button' || k === 'image') { bit(1 << 16, true); }
+  fd.set(N('Ff'), ctx.obj(ff));
+  // annotation flags: visibility + locked
+  let F = wd.get(N('F')) ? wd.get(N('F')).asNumber() : 4;
+  F &= ~(2 | 4 | 32 | 128);
+  F |= { v: 4, h: 2, np: 0, hp: 32 | 4 }[a.vis || 'v'];
+  if (a.locked) F |= 128;
+  wd.set(N('F'), ctx.obj(F));
+  // border style
+  const bw = a.bc ? (a.bw || 1) : 0;
+  const bs = { W: bw, S: N(a.bs || 'S') }; if (a.bs === 'D') bs.D = [3];
+  wd.set(N('BS'), ctx.obj(bs));
+  // MK: rotation, colours, caption
+  const mk = wd.lookup(N('MK')) || ctx.obj({}); wd.set(N('MK'), mk);
+  const rot = ((a.rot || 0) + effRot(a.page)) % 360;
+  if (rot) mk.set(N('R'), ctx.obj(rot)); else mk.delete(N('R'));
+  const bc = ffHex2(a.bc), bg = ffHex2(a.bg);
+  if (bc) mk.set(N('BC'), ctx.obj(bc.map(ffNum))); else mk.delete(N('BC'));
+  if (bg) mk.set(N('BG'), ctx.obj(bg.map(ffNum))); else mk.delete(N('BG'));
+  // DA: font, size, colour
+  const tc = ffHex2(a.color) || [0, 0, 0];
+  const fontName = (k === 'checkbox' || k === 'radio') ? 'ZapfDingbats' : (a.font || 'Helvetica');
+  const { font, key } = ffFont(doc, form, fontName);
+  const da = `/${key} ${a.fontSize || 0} Tf ${tc.map(ffNum).join(' ')} rg`;
+  fd.set(N('DA'), L.PDFString.of(da));
+  wd.delete(N('DA'));
+  // actions and scripts
+  ffWriteActions(doc, form, fd, wd, a);
+  // signature: lock fields when signed
+  if (k === 'signature') {
+    const s = a.signed || {};
+    if (s.kind === 'lock') { const lk = { Type: 'SigFieldLock', Action: N(s.which || 'All') }; if (s.which && s.which !== 'All') lk.Fields = (s.fields || []).map(T); fd.set(N('Lock'), ctx.obj(lk)); }
+    else fd.delete(N('Lock'));
+  }
+  // appearance
+  if (k === 'checkbox' || k === 'radio') { ffBoxAP(doc, form, f, w, a, font, key); try { form.markFieldAsClean(f.ref); } catch (e) {} }
+  else if (k === 'button' || k === 'image') {
+    mk.set(N('CA'), T(a.btnLabel || ''));
+    mk.set(N('TP'), ctx.obj({ label: 0, icon: 1, iconTop: 2, labelTop: 3, iconLeft: 4, labelLeft: 5, over: 6 }[a.btnLayout || (k === 'image' ? 'icon' : 'label')]));
+    wd.set(N('H'), N({ none: 'N', push: 'P', outline: 'O', invert: 'I' }[a.btnBehavior || 'invert']));
+    ffButtonAP(doc, form, f, w, a, font);
+    try { form.markFieldAsClean(f.ref); } catch (e) {}
+  } else if (k !== 'signature') {
+    // dropdowns show the item's name, not its export value
+    const items = (k === 'dropdown' || k === 'list') ? ffItems(a) : [], v0 = fd.get(N('V'));
+    const vs = v0 && v0.decodeText ? v0.decodeText() : null, hit = vs != null ? items.find(it => it.e && it.e === vs) : null;
+    if (hit) fd.set(N('V'), T(hit.d));
+    try { f.updateAppearances(font); } catch (e) { console.warn('appearance', a.name, e); }
+    if (hit) fd.set(N('V'), v0);
+    fd.set(N('DA'), L.PDFString.of(da)); ws0(f).forEach(x => x.dict.delete(N('DA')));   // keep Auto size and the font name from the form's resources
+  }
+}
+const ws0 = f => { try { return f.acroField.getWidgets(); } catch (e) { return []; } };
+function ffJS(doc, js) { const L = PDFLib; return doc.context.obj({ S: 'JavaScript', JS: L.PDFHexString.fromText(js) }); }
+function ffActionDict(doc, form, x) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context, T = s => L.PDFHexString.fromText(String(s));
+  if (x.type === 'uri') return ctx.obj({ S: 'URI', URI: L.PDFString.of(x.url) });
+  if (x.type === 'js') return ffJS(doc, x.js || '');
+  if (x.type === 'named') return ctx.obj({ S: 'Named', N: N(x.name || 'NextPage') });
+  if (x.type === 'goto') { const pg = doc.getPages()[(x.page || 1) - 1]; if (!pg) return null; const d = x.zoom === 'FitH' ? [pg.ref, N('FitH'), L.PDFNull] : x.zoom === 'XYZ' ? [pg.ref, N('XYZ'), L.PDFNull, L.PDFNull, L.PDFNull] : [pg.ref, N('Fit')]; return ctx.obj({ S: 'GoTo', D: d }); }
+  if (x.type === 'launch') return ctx.obj({ S: 'Launch', F: L.PDFString.of(x.file || '') });
+  if (x.type === 'reset') { const o = { S: 'ResetForm' }; if ((x.fields || []).length) o.Fields = x.fields.map(T); return ctx.obj(o); }
+  if (x.type === 'hide') return ctx.obj({ S: 'Hide', T: (x.fields || []).map(T), H: x.hide !== false });
+  if (x.type === 'submit') { const fl = { FDF: 0, HTML: 4, XFDF: 32, PDF: 256 }[x.fmt || 'FDF']; return ctx.obj({ S: 'SubmitForm', F: ctx.obj({ FS: 'URL', F: L.PDFString.of(x.url || '') }), Flags: fl }); }
+  if (x.type === 'ocg') {
+    const ocp = doc.catalog.lookup(N('OCProperties')), ocgs = ocp && ocp.lookup(N('OCGs')), refs = [];
+    if (ocgs && ocgs.asArray) ocgs.asArray().forEach(r => { const d = ctx.lookup(r); const nm = d && d.lookup(N('Name')); const s = nm && nm.decodeText ? nm.decodeText() : ''; if ((x.layers || []).includes(s)) refs.push(r); });
+    return ctx.obj({ S: 'SetOCGState', State: [N(x.st || 'Toggle'), ...refs] });
+  }
+  return null;
+}
+function ffChain(doc, list) {   // several actions on one trigger: first action with /Next
+  const L = PDFLib, N = k => L.PDFName.of(k);
+  const ds = list.filter(Boolean); if (!ds.length) return null;
+  if (ds.length > 1) ds[0].set(N('Next'), doc.context.obj(ds.slice(1)));
+  return ds[0];
+}
+const ffQ = s => JSON.stringify(String(s));
+function ffSfnToJs(expr) {
+  return String(expr || '').replace(/(?:\\.|[A-Za-z_])(?:\\.|[A-Za-z0-9_.])*/g, m => {
+    if (/^(Math|AFMakeNumber|getField)$/.test(m)) return m;
+    const name = m.replace(/\\(.)/g, '$1');
+    return `AFMakeNumber(getField(${ffQ(name)}).value)`;
+  });
+}
+function ffWriteActions(doc, form, fd, wd, a) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context;
+  // widget triggers
+  const wAA = ctx.obj({});
+  FF_TRIG.forEach(([t]) => { const d = ffChain(doc, (a.actions || []).filter(x => x.trig === t).map(x => ffActionDict(doc, form, x))); if (d) wAA.set(N(t), d); });
+  if (a.kind === 'image') { const pick = ffJS(doc, 'event.target.buttonImportIcon();'); const cur = wAA.get(N('U')); if (!cur) wAA.set(N('U'), pick); }
+  const keepW = wd.lookup(N('AA'));
+  if (wAA.keys().length) wd.set(N('AA'), wAA); else if (keepW && !a.existing) wd.delete(N('AA')); else if (keepW) { FF_TRIG.forEach(([t]) => keepW.delete(N(t))); }
+  // field scripts: K (keystroke), F (format), V (validate), C (calculate)
+  const fAA = fd.lookup(N('AA')) || ctx.obj({});
+  ['K', 'F', 'V', 'C'].forEach(t => fAA.delete(N(t)));
+  const f = a.fmt || {}, c = f.cat || 'none';
+  const sepN = f.sep || 0, dec = f.dec == null ? 2 : f.dec;
+  if (c === 'number') { const args = `${dec}, ${sepN}, ${f.neg || 0}, 0, ${ffQ(f.cur || '')}, ${f.pre === 0 ? 'false' : 'true'}`; fAA.set(N('K'), ffJS(doc, `AFNumber_Keystroke(${args});`)); fAA.set(N('F'), ffJS(doc, `AFNumber_Format(${args});`)); }
+  else if (c === 'percent') { fAA.set(N('K'), ffJS(doc, `AFPercent_Keystroke(${dec}, ${sepN});`)); fAA.set(N('F'), ffJS(doc, `AFPercent_Format(${dec}, ${sepN});`)); }
+  else if (c === 'date') { const d = ffQ(f.date || 'mm/dd/yyyy'); fAA.set(N('K'), ffJS(doc, `AFDate_KeystrokeEx(${d});`)); fAA.set(N('F'), ffJS(doc, `AFDate_FormatEx(${d});`)); }
+  else if (c === 'time') { if (f.time === 'c') { const t = ffQ(f.timeCustom || 'HH:MM'); fAA.set(N('K'), ffJS(doc, `AFTime_KeystrokeEx(${t});`)); fAA.set(N('F'), ffJS(doc, `AFTime_FormatEx(${t});`)); } else { fAA.set(N('K'), ffJS(doc, `AFTime_Keystroke(${f.time || 0});`)); fAA.set(N('F'), ffJS(doc, `AFTime_Format(${f.time || 0});`)); } }
+  else if (c === 'special') { if (f.special === 4) { const m = ffQ(f.mask || ''); fAA.set(N('K'), ffJS(doc, `AFSpecial_KeystrokeEx(${m});`)); fAA.set(N('F'), ffJS(doc, `AFSpecial_KeystrokeEx(${m});`)); } else { fAA.set(N('K'), ffJS(doc, `AFSpecial_Keystroke(${f.special || 0});`)); fAA.set(N('F'), ffJS(doc, `AFSpecial_Format(${f.special || 0});`)); } }
+  else if (c === 'custom') { if (f.ks) fAA.set(N('K'), ffJS(doc, f.ks)); if (f.fs) fAA.set(N('F'), ffJS(doc, f.fs)); }
+  if (a.kind === 'list' && a.selScript) fAA.set(N('K'), ffJS(doc, a.selScript));
+  const v = a.val || {};
+  if (v.kind === 'range') { const g = v.from !== '' && v.from != null, l = v.to !== '' && v.to != null; fAA.set(N('V'), ffJS(doc, `AFRange_Validate(${g}, ${g ? +v.from : 0}, ${l}, ${l ? +v.to : 0});`)); }
+  else if (v.kind === 'script' && v.script) fAA.set(N('V'), ffJS(doc, v.script));
+  const cc = a.calc || {};
+  if (cc.kind === 'op' && (cc.fields || []).length) fAA.set(N('C'), ffJS(doc, `AFSimple_Calculate(${ffQ(cc.op || 'SUM')}, new Array (${cc.fields.map(ffQ).join(', ')}));`));
+  else if (cc.kind === 'sfn' && cc.sfn) fAA.set(N('C'), ffJS(doc, `/** BVCALC ${cc.sfn} EVCALC **/ event.value = ${ffSfnToJs(cc.sfn)};`));
+  else if (cc.kind === 'script' && cc.script) fAA.set(N('C'), ffJS(doc, cc.script));
+  if (a.kind === 'barcode') fAA.set(N('C'), ffJS(doc, 'var v = []; for (var i = 0; i < this.numFields; i++) { var n = this.getNthFieldName(i); if (n != event.target.name) { var f = this.getField(n); if (f && f.type != "button" && f.type != "signature") v.push(f.valueAsString); } } event.value = v.join("\\t");'));
+  if (fAA.keys().length) fd.set(N('AA'), fAA); else fd.delete(N('AA'));
+}
+// check boxes / radio buttons: draw them ourselves so the style (check, circle, cross…) shows everywhere
+function ffBoxAP(doc, form, f, w, a, font, key) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context, wd = w.dict;
+  const r = w.getRectangle(), W = r.width, H = r.height;
+  const ap = wd.lookup(N('AP')), n0 = ap && ap.lookup(N('N'));
+  let on = null; if (n0 && n0.keys) n0.keys().forEach(kk => { const s = kk.asString().slice(1); if (s !== 'Off') on = s; });
+  if (a.kind === 'checkbox') on = (String(a.exportValue || on || 'Yes').replace(/[^A-Za-z0-9_\-.]/g, '') || 'Yes');
+  on = on || 'Yes';
+  const bc = ffHex2(a.bc), bg = ffHex2(a.bg), tc = ffHex2(a.color) || [0, 0, 0], bw = bc ? (a.bw || 1) : 0, round = a.kind === 'radio';
+  const kap = (x, y, rx, ry) => { const c = 0.5523; return `${x + rx} ${y} m ${x + rx} ${y + ry * c} ${x + rx * c} ${y + ry} ${x} ${y + ry} c ${x - rx * c} ${y + ry} ${x - rx} ${y + ry * c} ${x - rx} ${y} c ${x - rx} ${y - ry * c} ${x - rx * c} ${y - ry} ${x} ${y - ry} c ${x + rx * c} ${y - ry} ${x + rx} ${y - ry * c} ${x + rx} ${y} c`; };
+  const shape = inset => round ? kap(W / 2, H / 2, W / 2 - inset, H / 2 - inset) : `${inset} ${inset} ${W - inset * 2} ${H - inset * 2} re`;
+  let base = '';
+  if (bg) base += `${bg.map(ffNum).join(' ')} rg ${shape(0)} f\n`;
+  if (bc && bw) base += `${bc.map(ffNum).join(' ')} RG ${bw} w ${a.bs === 'D' ? '[3] 0 d ' : ''}${shape(bw / 2)} S\n`;
+  const ch = FF_CHKCHAR[a.chkStyle || (round ? 'circle' : 'check')] || '4';
+  const size = a.fontSize || Math.min(W, H) * 0.8;
+  const gw = { '4': 0.846, 'l': 0.791, '8': 0.761, 'u': 0.759, 'n': 0.761, 'H': 0.816 }[ch] * size;
+  const mark = `q BT ${tc.map(ffNum).join(' ')} rg /${key} ${ffNum(size)} Tf ${ffNum((W - gw) / 2)} ${ffNum((H - size * 0.7) / 2)} Td (${ch}) Tj ET Q\n`;
+  const res = ctx.obj({ Font: ctx.obj({ [key]: font.ref }) });
+  const mkStream = s => ctx.register(ctx.flateStream(s, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, W, H], Resources: res }));
+  const nd = ctx.obj({}); nd.set(N(on), mkStream(base + mark)); nd.set(N('Off'), mkStream(base));
+  const dd = ctx.obj({}); dd.set(N(on), mkStream(base + mark)); dd.set(N('Off'), mkStream(base));
+  wd.set(N('AP'), ctx.obj({ N: nd, D: dd }));
+  const mk = wd.lookup(N('MK')); if (mk) mk.set(N('CA'), L.PDFString.of(ch));
+  const fd = f.acroField.dict;
+  if (a.defOn) { wd.set(N('AS'), N(on)); fd.set(N('V'), N(on)); fd.set(N('DV'), N(on)); }
+  else {
+    const cur = wd.get(N('AS')); const curS = cur ? cur.asString().slice(1) : 'Off';
+    if (a.kind === 'checkbox' && curS !== 'Off' && curS !== on) wd.set(N('AS'), N(on));
+    else if (!cur) wd.set(N('AS'), N('Off'));
+    if (!a.existing && a.kind === 'checkbox') { wd.set(N('AS'), N('Off')); fd.set(N('V'), N('Off')); }
+    if (a.kind === 'radio' && !ffAll().some(x => x.kind === 'radio' && x.name === a.name && x.defOn)) { fd.delete(N('DV')); if (!a.existing) fd.set(N('V'), N('Off')); }
+  }
+}
+function ffButtonAP(doc, form, f, w, a, font) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context, wd = w.dict, r = w.getRectangle(), W = r.width, H = r.height;
+  const bc = ffHex2(a.bc), bg = ffHex2(a.bg), tc = ffHex2(a.color) || [0, 0, 0], bw = bc ? (a.bw || 1) : 0;
+  let s = '';
+  if (bg) s += `${bg.map(ffNum).join(' ')} rg 0 0 ${W} ${H} re f\n`;
+  if (bc && bw) {
+    s += `${bc.map(ffNum).join(' ')} RG ${bw} w ${a.bs === 'D' ? '[3] 0 d ' : ''}${bw / 2} ${bw / 2} ${W - bw} ${H - bw} re S\n`;
+    if (a.bs === 'B' || a.bs === 'I') { const lt = a.bs === 'B' ? '1 g' : '0.5 g', dk = a.bs === 'B' ? '0.5 g' : '0.75 g'; s += `${lt} ${bw} ${bw} m ${bw} ${H - bw} l ${W - bw} ${H - bw} l ${W - bw * 2} ${H - bw * 2} l ${bw * 2} ${H - bw * 2} l ${bw * 2} ${bw * 2} l f ${dk} ${W - bw} ${H - bw} m ${W - bw} ${bw} l ${bw} ${bw} l ${bw * 2} ${bw * 2} l ${W - bw * 2} ${bw * 2} l ${W - bw * 2} ${H - bw * 2} l f\n`; }
+  }
+  const lay = a.btnLayout || (a.kind === 'image' ? 'icon' : 'label');
+  const label = lay === 'icon' ? '' : (a.btnLabel || '');
+  const size = a.fontSize || Math.max(6, Math.min(12, H * 0.55));
+  if (label) { const tw = font.widthOfTextAtSize(label, size); s += `q BT ${tc.map(ffNum).join(' ')} rg /F1 ${ffNum(size)} Tf ${ffNum((W - tw) / 2)} ${ffNum(lay === 'iconTop' ? 3 : lay === 'labelTop' ? H - size - 2 : (H - size * 0.7) / 2)} Td ${font.encodeText(label).toString()} Tj ET Q\n`; }
+  const res = { Font: ctx.obj({ F1: font.ref }) };
+  if (a.btnIcon && lay !== 'label') (state._ffIconJobs = state._ffIconJobs || []).push({ wd, a, W, H, pre: s, res, label });
+  const st = ctx.register(ctx.flateStream(s, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, W, H], Resources: ctx.obj(res) }));
+  wd.set(N('AP'), ctx.obj({ N: st }));
+}
+// button icons need the picture embedded (async), done just after the fields are written
+const _writeContentEditsFF = writeContentEdits;
+writeContentEdits = async function (doc) {
+  const jobs = state._ffIconJobs || []; state._ffIconJobs = [];
+  for (const j of jobs) {
+    try {
+      const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context;
+      const bytes = b64ToBytes(j.a.btnIcon.split(',')[1]);
+      const img = /^data:image\/png/.test(j.a.btnIcon) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const lay = j.a.btnLayout || 'icon', top = lay === 'iconTop' ? (j.label ? 14 : 0) : 0, bot = lay === 'labelTop' ? 14 : 0;
+      const bw = 2, aw = j.W - bw * 2, ah = j.H - bw * 2 - top - bot, sc = Math.min(aw / img.width, ah / img.height), iw = img.width * sc, ih = img.height * sc;
+      const x = (j.W - iw) / 2, y = bw + top + (ah - ih) / 2;
+      const s = j.pre + `q ${ffNum(iw)} 0 0 ${ffNum(ih)} ${ffNum(x)} ${ffNum(y)} cm /Im1 Do Q\n`;
+      const st = ctx.register(ctx.flateStream(s, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, j.W, j.H], Resources: ctx.obj({ ...j.res, XObject: ctx.obj({ Im1: img.ref }) }) }));
+      j.wd.set(N('AP'), ctx.obj({ N: st }));
+      const mk = j.wd.lookup(N('MK')); if (mk) mk.set(N('I'), img.ref);
+    } catch (e) { console.warn('button icon', e); }
+  }
+  return _writeContentEditsFF.apply(this, arguments);
+};
+
+// ---------- read the properties of fields already in the PDF ----------
+const _startPrepareFormFF = startPrepareForm;
+startPrepareForm = async function () {
+  const r = await _startPrepareFormFF.apply(this, arguments);
+  try { await ffReadExisting(); } catch (e) { console.warn('reading field properties', e); }
+  renderAllAnnots(); ffRenderPane();
+  return r;
+};
+async function ffReadExisting() {
+  const list = ffAll().filter(a => a.existing && !a._ffRead); if (!list.length) return;
+  const L = PDFLib, N = k => L.PDFName.of(k);
+  const doc = await L.PDFDocument.load(state.fileBytes, { ignoreEncryption: true, updateMetadata: false });
+  const form = doc.getForm(), ctx = doc.context;
+  const txt = o => { try { return o ? (o.decodeText ? o.decodeText() : String(o)) : ''; } catch (e) { return ''; } };
+  const dr = form.acroForm.dict.lookup(N('DR')), drf = dr && dr.lookup(N('Font'));
+  const num = o => o && o.asNumber ? o.asNumber() : 0;
+  for (const a of list) {
+    a._ffRead = true;
+    let f; try { f = form.getField(a.origName); } catch (e) { continue; }
+    const o = a.origRect, ws = f.acroField.getWidgets();
+    const w = ws.find(wd => { const q = wd.getRectangle(); return Math.abs(q.x - o[0]) < 0.8 && Math.abs(q.y - o[1]) < 0.8; }) || ws[0]; if (!w) continue;
+    const fd = f.acroField.dict, wd = w.dict, inh = k => { let d = fd; for (let i = 0; d && i < 8; i++) { const v = d.lookup(N(k)); if (v !== undefined) return v; d = d.lookup(N('Parent')); } return undefined; };
+    a.tooltip = txt(fd.lookup(N('TU')));
+    const F = num(wd.get(N('F'))); a.vis = F & 2 ? 'h' : F & 32 ? (F & 4 ? 'hp' : 'h') : F & 4 ? 'v' : 'np'; a.locked = !!(F & 128);
+    const mk = wd.lookup(N('MK'));
+    const col = arr => { if (!arr || !arr.asArray) return null; const v = arr.asArray().map(num); return v.length === 3 ? ffRgbHex(v) : v.length === 1 ? ffRgbHex([v[0], v[0], v[0]]) : v.length === 4 ? ffRgbHex([(1 - v[0]) * (1 - v[3]), (1 - v[1]) * (1 - v[3]), (1 - v[2]) * (1 - v[3])]) : null; };
+    if (mk) { a.bc = col(mk.lookup(N('BC'))); a.bg = col(mk.lookup(N('BG'))); a.rot = (num(mk.get(N('R'))) - effRot(a.page) + 360) % 360;
+      const ca = txt(mk.lookup(N('CA'))); if (a.kind === 'checkbox' || a.kind === 'radio') a.chkStyle = (Object.entries(FF_CHKCHAR).find(([, c]) => c === ca) || [a.kind === 'radio' ? 'circle' : 'check'])[0]; else if (ca) a.btnLabel = ca; }
+    else { a.bc = null; a.bg = null; }
+    const bs = wd.lookup(N('BS')); if (bs) { a.bw = num(bs.get(N('W'))) || 1; const s = bs.get(N('S')); a.bs = s ? s.asString().slice(1) : 'S'; if (!num(bs.get(N('W')))) a.bc = null; }
+    const da = txt(inh('DA')); const dm = /\/([^\s/]+)\s+([\d.]+)\s+Tf/.exec(da);
+    if (dm) { a.fontSize = +dm[2]; const fo = drf && drf.lookup(N(dm[1])); const base = fo && fo.lookup && fo.lookup(N('BaseFont')); const bn = base ? base.asString().slice(1).replace(/^[A-Z]{6}\+/, '') : ''; a.font = FF_SF[bn] ? bn : (Object.keys(FF_FONTKEY).find(k => FF_FONTKEY[k] === dm[1]) || 'Helvetica'); }
+    const cm = /([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/.exec(da), gm = /([\d.]+)\s+g(\s|$)/.exec(da); a.color = cm ? ffRgbHex([+cm[1], +cm[2], +cm[3]]) : gm ? ffRgbHex([+gm[1], +gm[1], +gm[1]]) : '#000000';
+    const ff = num(inh('Ff'));
+    a.readOnly = !!(ff & 1); a.required = !!(ff & 2);
+    if (a.kind === 'text') { a.multiLine = !!(ff & (1 << 12)); a.password = !!(ff & (1 << 13)); a.fileSel = !!(ff & (1 << 20)); a.noSpell = !!(ff & (1 << 22)); a.noScroll = !!(ff & (1 << 23)); a.comb = !!(ff & (1 << 24)); a.rich = !!(ff & (1 << 25)); a.dv = txt(inh('DV')); a.align = num(inh('Q')); }
+    if (a.kind === 'dropdown' || a.kind === 'list') {
+      const opt = inh('Opt'); a.items = opt && opt.asArray ? opt.asArray().map(x => { const v = ctx.lookup(x) || x; if (v.asArray) { const p = v.asArray(); return { e: txt(ctx.lookup(p[0]) || p[0]), d: txt(ctx.lookup(p[1]) || p[1]) }; } return { d: txt(v), e: '' }; }) : [];
+      a.options = a.items.map(x => x.d); a.sort = !!(ff & (1 << 19)); a.allowCustom = !!(ff & (1 << 18)); a.multiSel = !!(ff & (1 << 21)); a.noSpell = !!(ff & (1 << 22)); a.commitNow = !!(ff & (1 << 26)); a.align = num(inh('Q'));
+      const dv = txt(inh('DV')); if (dv) { const i = a.items.findIndex(x => (x.e || x.d) === dv); if (i >= 0) a.defIdx = i; }
+    }
+    if (a.kind === 'radio') a.unison = !!(ff & (1 << 25));
+    if (ff & (1 << 16)) { a.kind = mk && mk.get(N('TP')) && num(mk.get(N('TP'))) === 1 ? 'image' : 'button'; const tp = mk && num(mk.get(N('TP'))); a.btnLayout = ['label', 'icon', 'iconTop', 'labelTop', 'iconLeft', 'labelLeft', 'over'][tp || 0]; const h = wd.get(N('H')); a.btnBehavior = { N: 'none', P: 'push', O: 'outline', I: 'invert' }[h ? h.asString().slice(1) : 'I']; }
+    if (a.kind === 'checkbox' || a.kind === 'radio') { const dv = inh('DV'), as = wd.get(N('AS')); a.defOn = !!(dv && as && dv.toString() === as.toString() && as.toString() !== '/Off'); }
+    // scripts
+    const jsOf = d => { if (!d) return ''; const j = d.lookup(N('JS')); if (!j) return ''; if (j.decodeText) return j.decodeText(); try { return new TextDecoder().decode(L.decodePDFRawStream(j).decode()); } catch (e) { return ''; } };
+    const faa = inh('AA');
+    if (faa && faa.lookup) {
+      const K = jsOf(faa.lookup(N('K'))), Fm = jsOf(faa.lookup(N('F'))), V = jsOf(faa.lookup(N('V'))), C = jsOf(faa.lookup(N('C')));
+      let m;
+      if ((m = /AFNumber_Format\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*\d+\s*,\s*"([^"]*)"\s*,\s*(true|false)/.exec(Fm))) a.fmt = { cat: 'number', dec: +m[1], sep: +m[2], neg: +m[3], cur: m[4], pre: m[5] === 'true' ? 1 : 0 };
+      else if ((m = /AFPercent_Format\(\s*(\d+)\s*,\s*(\d+)/.exec(Fm))) a.fmt = { cat: 'percent', dec: +m[1], sep: +m[2] };
+      else if ((m = /AFDate_FormatEx\(\s*"([^"]*)"/.exec(Fm))) a.fmt = { cat: 'date', date: m[1] };
+      else if ((m = /AFTime_FormatEx\(\s*"([^"]*)"/.exec(Fm))) a.fmt = { cat: 'time', time: 'c', timeCustom: m[1] };
+      else if ((m = /AFTime_Format\(\s*(\d)/.exec(Fm))) a.fmt = { cat: 'time', time: +m[1] };
+      else if ((m = /AFSpecial_Format\(\s*(\d)/.exec(Fm))) a.fmt = { cat: 'special', special: +m[1] };
+      else if ((m = /AFSpecial_KeystrokeEx\(\s*"([^"]*)"/.exec(K))) a.fmt = { cat: 'special', special: 4, mask: m[1] };
+      else if (Fm || K) a.kind === 'list' ? (a.selScript = K) : (a.fmt = { cat: 'custom', fs: Fm, ks: K });
+      if ((m = /AFRange_Validate\(\s*(true|false)\s*,\s*([-\d.]+)\s*,\s*(true|false)\s*,\s*([-\d.]+)/.exec(V))) a.val = { kind: 'range', from: m[1] === 'true' ? m[2] : '', to: m[3] === 'true' ? m[4] : '' };
+      else if (V) a.val = { kind: 'script', script: V };
+      if ((m = /AFSimple_Calculate\(\s*"(\w+)"\s*,\s*new Array\s*\(([^)]*)\)/.exec(C))) a.calc = { kind: 'op', op: m[1], fields: [...m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(x => x[1]) };
+      else if ((m = /\/\*\*\s*BVCALC\s*([\s\S]*?)\s*EVCALC\s*\*\*\//.exec(C))) a.calc = { kind: 'sfn', sfn: m[1] };
+      else if (C) a.calc = { kind: 'script', script: C };
+    }
+    if (a.kind === 'text' && a.fmt && a.fmt.cat === 'date' && /_af_date$/.test(a.name)) a.kind = 'date';
+    // widget actions
+    const waa = wd.lookup(N('AA')), acts = [];
+    const readAct = (trig, d) => {
+      for (let i = 0; d && i < 20; i++) {
+        const S = d.get(N('S')), s = S ? S.asString().slice(1) : '';
+        if (s === 'URI') acts.push({ trig, type: 'uri', url: txt(d.lookup(N('URI'))) });
+        else if (s === 'JavaScript') { const js = jsOf(d); if (!(a.kind === 'image' && /buttonImportIcon/.test(js))) acts.push({ trig, type: 'js', js }); }
+        else if (s === 'Named') acts.push({ trig, type: 'named', name: d.get(N('N')).asString().slice(1) });
+        else if (s === 'GoTo') { const D = d.lookup(N('D')); let pg = 1; if (D && D.asArray) { const ref = D.asArray()[0]; doc.getPages().forEach((p, j) => { if (p.ref === ref) pg = j + 1; }); } acts.push({ trig, type: 'goto', page: pg, zoom: 'Fit' }); }
+        else if (s === 'Launch') acts.push({ trig, type: 'launch', file: txt(d.lookup(N('F'))) });
+        else if (s === 'ResetForm') { const fl = d.lookup(N('Fields')); acts.push({ trig, type: 'reset', fields: fl && fl.asArray ? fl.asArray().map(x => txt(ctx.lookup(x) || x)) : [] }); }
+        else if (s === 'Hide') { const t = d.lookup(N('T')); const h = d.get(N('H')); acts.push({ trig, type: 'hide', fields: t && t.asArray ? t.asArray().map(x => txt(ctx.lookup(x) || x)) : [txt(t)], hide: !(h && h.toString() === 'false') }); }
+        else if (s === 'SubmitForm') { const fs = d.lookup(N('F')); const fl = num(d.get(N('Flags'))); acts.push({ trig, type: 'submit', url: txt(fs && fs.lookup ? fs.lookup(N('F')) : fs), fmt: fl & 256 ? 'PDF' : fl & 32 ? 'XFDF' : fl & 4 ? 'HTML' : 'FDF' }); }
+        const nx = d.lookup(N('Next')); d = nx && nx.asArray ? ctx.lookup(nx.asArray()[0]) : nx;
+      }
+    };
+    if (waa && waa.lookup) FF_TRIG.forEach(([t]) => readAct(t, waa.lookup(N(t))));
+    const A = wd.lookup(N('A')); if (A) readAct('U', A);
+    a.actions = acts;
+    if (a.kind === 'signature') { const lk = fd.lookup(N('Lock')); if (lk) { const act = lk.get(N('Action')); const fl = lk.lookup(N('Fields')); a.signed = { kind: 'lock', which: act ? act.asString().slice(1) : 'All', fields: fl && fl.asArray ? fl.asArray().map(x => txt(ctx.lookup(x) || x)) : [] }; } }
+  }
+}
+
+// hidden fields and push buttons aren't fillable, but Prepare Form must still show them
+const _importFormFieldsFF = importFormFields;
+importFormFields = async function () {
+  const r = await _importFormFieldsFF.apply(this, arguments);
+  state.ffExtra = {};
+  for (let n = 1; n <= state.totalPages; n++) {
+    const ps = state.pages[n]; if (!ps) continue;
+    let list = []; try { list = await ps.origPage.getAnnotations({ intent: 'display' }); } catch (e) { continue; }
+    state.ffExtra[n] = list.filter(d => d.subtype === 'Widget' && d.fieldName && (d.hidden || (d.fieldType === 'Btn' && d.pushButton))).map(d => ({
+      id: d.id, name: d.fieldName, rect: d.rect, readOnly: !!d.readOnly, multiLine: !!d.multiLine, maxLen: d.maxLen || 0, align: d.textAlignment || 0,
+      fontSize: (d.defaultAppearanceData && d.defaultAppearanceData.fontSize) || 0, exportValue: d.exportValue || d.buttonValue, options: (d.options || []).map(o => o.displayValue),
+      kind: d.fieldType === 'Tx' ? 'text' : d.fieldType === 'Ch' ? (d.combo ? 'dropdown' : 'list') : d.fieldType === 'Sig' ? 'signature' : d.pushButton ? 'button' : d.checkBox ? 'checkbox' : 'radio' }));
+  }
+  return r;
+};
+const _startPrepareFormFX = startPrepareForm;
+startPrepareForm = async function () {
+  const r = await _startPrepareFormFX.apply(this, arguments);
+  let added = 0;
+  Object.entries(state.ffExtra || {}).forEach(([n, list]) => list.forEach(f => {
+    if (state.annotations.some(a => a.type === 'form-field' && a.wid === f.id)) return;
+    state.annotations.push({ id: uid('fld'), page: +n, type: 'form-field', kind: f.kind, existing: true, wid: f.id, name: f.name, origName: f.name,
+      pts: [[f.rect[0], f.rect[3]], [f.rect[2], f.rect[1]]], origRect: f.rect.slice(), untouched: true, readOnly: f.readOnly, multiLine: f.multiLine, maxLen: f.maxLen, fontSize: f.fontSize, align: f.align, exportValue: f.exportValue, options: f.options });
+    if (state.formFieldStart) state.formFieldStart.add(f.name);
+    added++;
+  }));
+  if (added) { try { await ffReadExisting(); } catch (e) {} renderAllAnnots(); ffRenderPane(); }
+  return r;
 };
 </script>
 </body>
