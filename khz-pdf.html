@@ -1718,6 +1718,8 @@
   .sv-fn .sv-fname { width:100%; box-sizing:border-box; background:#1e1e1e; border:1px solid #555; color:#eee; padding:6px 8px; border-radius:3px; font-size:14px; }
   .sv-link { font-size:12px; color:#aaa; margin-top:6px; } .sv-link a { color:#5aa9ff; }
   .sv-ell { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:560px; }
+  .asc { display:flex; gap:16px; align-items:center; font-size:14px; padding:6px 2px 4px; } .asc-ic { flex:none; }
+  .asc-ov .ap-foot .ap-btn { min-width:92px; }
 </style>
 </head>
 <body>
@@ -24215,6 +24217,74 @@ showSaveDialog = async function () {
   // the go button text follows the old sync() — keep it in step
   const syncText = () => { go2.textContent = convertOn() ? 'Convert…' : ([...ov.querySelectorAll('.sv-place')].find(x => x.classList.contains('on')) || {}).dataset?.p === 'dl' ? 'Save' : 'Choose a Different Folder...'; };
   ov.addEventListener('click', () => setTimeout(syncText, 0)); ov.addEventListener('change', () => setTimeout(syncText, 0)); syncText();
+};
+
+// ================================================================
+//  "Do you want to save changes to 'Binder1.pdf' before closing?"  Yes / No / Cancel  (like Acrobat)
+//  • closing a tab (× or Ctrl+W), File › Close File, File › Exit Application (Ctrl+Q)
+//  • Yes saves (in place, or asks where for a new file) and only closes once it really saved
+//  Closing the whole window with its own × can only show the browser's "Leave site?" box.
+// ================================================================
+function askSaveBeforeClose(name) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const ov = esDialog('ask-close', 'KHZ PDF', `<div class="asc"><span class="asc-ic">${'<svg viewBox="0 0 32 32" width="34" height="34"><path d="M16 3L30 28H2z" fill="#f2c200" stroke="#a07c00" stroke-width="1.2" stroke-linejoin="round"/><path d="M16 11v9" stroke="#222" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="24" r="1.6" fill="#222"/></svg>'}</span><span>Do you want to save changes to '${escapeHtml(name)}' before closing?</span></div>`,
+      [{ label: 'Yes', primary: true, run: () => fin('yes') }, { label: 'No', run: () => fin('no') }, { label: 'Cancel', run: () => fin('cancel') }], 460);
+    ov.classList.add('asc-ov');
+    ov.querySelector('.ap-x').addEventListener('click', () => fin('cancel'));
+    ov.addEventListener('keydown', e => { if (e.key === 'Escape') fin('cancel'); if (e.key === 'n' || e.key === 'N') { ov.remove(); fin('no'); } if (e.key === 'y' || e.key === 'Y') { ov.remove(); fin('yes'); } });
+    setTimeout(() => { const b = ov.querySelector('.ap-ok'); if (b) b.focus(); }, 30);
+  });
+}
+// save the open document and wait until it really is saved (the user may cancel the Save window)
+let ascSaving = 0;
+['svSaveToHandle', 'svDownload'].forEach(fn => { const o = window[fn]; if (typeof o !== 'function') return; window[fn] = async function () { ascSaving++; try { return await o.apply(this, arguments); } finally { ascSaving--; } }; });
+async function ascSaveNow() {
+  await savePDF();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 10 * 60 * 1000) {
+    await new Promise(r => setTimeout(r, 200));
+    const open = $('sv-ov') || $('ask-replace') || $('prt-pw') || ascSaving > 0 || (typeof state._ffKeepGroup !== 'undefined' && state._ffKeepGroup);
+    if (!open) break;
+  }
+  return !state.dirty;
+}
+// ask (if needed) for the open document; true = go ahead and close it
+async function ascResolveActive() {
+  if (!state.pdfDoc || !state.dirty) return true;
+  const ans = await askSaveBeforeClose(state.fileName || 'Untitled.pdf');
+  if (ans === 'cancel') return false;
+  if (ans === 'yes') return await ascSaveNow();
+  state.dirty = false;   // No: throw the changes away
+  return true;
+}
+const _closeDocTabASC = closeDocTab;
+closeDocTab = async function (id) {
+  const t = state.docTabs.find(x => x.id === id); if (!t) return;
+  if (id !== state.activeTabId && t.dirty) { await switchDocTab(id); if (state.activeTabId !== id) return; }   // show it, then ask
+  if (id === state.activeTabId && !(await ascResolveActive())) return;
+  return _closeDocTabASC.apply(this, arguments);
+};
+// File › Close File without tabs
+const _closeFileASC = closeFile;
+closeFile = async function () {
+  if (state.docTabs && state.docTabs.length && state.activeTabId) return closeDocTab(state.activeTabId);
+  if (!(await ascResolveActive())) return;
+  return _closeFileASC.apply(this, arguments);
+};
+// File › Exit Application (Ctrl+Q): every unsaved tab is asked about, one by one
+exitApp = async function () {
+  const ids = state.docTabs.map(t => t.id);
+  for (const id of ids) {
+    const t = state.docTabs.find(x => x.id === id); if (!t) continue;
+    if (!(id === state.activeTabId ? state.dirty : t.dirty)) continue;
+    if (id !== state.activeTabId) { await switchDocTab(id); if (state.activeTabId !== id) return; }
+    if (!(await ascResolveActive())) return;
+    t.dirty = false;
+  }
+  state.dirty = false; state.docTabs.forEach(t => { t.dirty = false; });
+  window.close();
+  setTimeout(() => toast('The browser only lets you close this window yourself (Ctrl+W or its ×).'), 300);
 };
 </script>
 </body>
