@@ -23787,7 +23787,12 @@ loadBytes = async function (bytes, name, opts = {}) {
     if (!h && state._dropHandles) { const d = state._dropHandles.find(x => x.name === name); if (d) { try { h = await d.p; } catch (e) { h = null; } } }
     if (h && h.kind !== 'file') h = null;
   }
+  const copy = !opts.keep && bytes && bytes.slice ? bytes.slice() : null;
   const r = await _loadBytesWH.apply(this, arguments);
+  // every file opened (Open with, File › Open, drag in, Recent) gets Revert and shows in Recent files
+  if (copy && state.pdfDoc && typeof tabReplace !== 'undefined' && !tabReplace) {
+    if (!state.revertBytes || state.revertBytes.length !== copy.length) { state.revertBytes = copy; try { rememberRecent(name, copy); } catch (e) {} }
+  }
   if (!opts.keep) { state.saveHandle = h; if (h && typeof svRemember === 'function') { try { await svRemember(h); } catch (e) {} } }
   return r;
 };
@@ -23911,6 +23916,74 @@ async function showRestoreVersions() {
     { label: 'Cancel' }], 560);
   if (!all.length) ov.querySelectorAll('.ap-foot .ap-btn').forEach((btn, i) => { if (i < 2) btn.disabled = true; });
 }
+// keep Revert / Restore Previous Version in step with the open file every time the File menu opens
+(function () {
+  const m = document.querySelector('#menu-bar .menu-dropdown'); if (!m) return;
+  const sync = () => document.querySelectorAll('.file-menu .fm').forEach(x => {
+    const t = x.textContent;
+    if (/Restore Previous Ve/.test(t)) { x.classList.toggle('disabled', !state.pdfDoc); x.onclick = state.pdfDoc ? () => { if (typeof closeAllMenus === 'function') closeAllMenus(); showRestoreVersions(); } : null; x.removeAttribute('onclick'); }
+    else if (/^Re.?vert/.test(t.trim())) { x.classList.toggle('disabled', !state.revertBytes); x.onclick = state.revertBytes ? revertFile : null; x.removeAttribute('onclick'); }
+  });
+  m.addEventListener('mouseenter', sync); m.addEventListener('click', sync, true);
+})();
+
+// ================================================================
+//  ZOOM KEEPS WHAT YOU'VE SELECTED IN PLACE
+//  With text or an object selected (or while typing in it), zooming in or out with the toolbar,
+//  the zoom box, Ctrl +/- or the menu keeps that selection at the same spot on the screen.
+//  (Ctrl + mouse wheel and pinch still zoom around the pointer / fingers.)
+// ================================================================
+function zkSelectionAnchor() {
+  const area = $('canvas-area'), ar = area.getBoundingClientRect();
+  const visible = (x, y) => x >= ar.left && x <= ar.right && y >= ar.top && y <= ar.bottom;
+  const pageAt = el => { const w = el && el.closest && el.closest('.page-wrapper'); return w ? state.pages[+w.dataset.page] : null; };
+  const mk = (ps, cx, cy) => { if (!ps || !visible(cx, cy)) return null; const wr = ps.wrapper.getBoundingClientRect(); return { n: ps.n, pdf: ps.vp.convertToPdfPoint(cx - wr.left, cy - wr.top), clientX: cx, clientY: cy }; };
+  // 1. typing in a box
+  if (typeof activeEditor !== 'undefined' && activeEditor && activeEditor.el) {
+    const r = activeEditor.el.getBoundingClientRect(); const a = mk(pageAt(activeEditor.el), r.left + r.width / 2, r.top + r.height / 2); if (a) return a;
+  }
+  // 2. highlighted words (select text)
+  const sel = window.getSelection && window.getSelection();
+  if (sel && sel.rangeCount && !sel.isCollapsed && sel.toString().trim()) {
+    const rg = sel.getRangeAt(0), r = rg.getBoundingClientRect(), node = rg.startContainer.nodeType === 1 ? rg.startContainer : rg.startContainer.parentElement;
+    const a = mk(pageAt(node), r.left + r.width / 2, r.top + r.height / 2); if (a) return a;
+  }
+  // 3. a selected object (text block, picture, comment, field…), or the middle of several
+  const ids = new Set(state.msel || []); if (state.selectedId) ids.add(state.selectedId);
+  const objs = state.annotations.filter(a => ids.has(a.id));
+  if (objs.length) {
+    const n = objs[0].page, ps = state.pages[n];
+    if (ps && objs.every(a => a.page === n)) {
+      try {
+        const bs = objs.map(a => annotBBox(a, ps.vp)).filter(Boolean);
+        if (bs.length) {
+          const U = bboxOf(bs.flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]])), wr = ps.wrapper.getBoundingClientRect();
+          const a = mk(ps, wr.left + U.x + U.w / 2, wr.top + U.y + U.h / 2); if (a) return a;
+        }
+      } catch (e) {}
+    }
+  }
+  return null;
+}
+const _setZoomZK = setZoom;
+setZoom = function (scale, anchor) {
+  if (!anchor && state.pdfDoc && typeof scale !== 'string') { const a = zkSelectionAnchor(); if (a) return _setZoomZK.call(this, scale, a); }
+  return _setZoomZK.apply(this, arguments);
+};
+// typing in a box while zooming: the box grows/shrinks with the page instead of staying behind
+const _setZoomZK2 = setZoom;
+setZoom = function (scale) {
+  const ed = typeof activeEditor !== 'undefined' && activeEditor && activeEditor.el ? activeEditor.el : null;
+  const before = state.scale;
+  const r = _setZoomZK2.apply(this, arguments);
+  const after = state.scale;
+  if (ed && ed.isConnected && after && before && Math.abs(after - before) > 1e-6) {
+    const z = (parseFloat(ed.style.zoom) || 1) * after / before;
+    ed.style.zoom = z;
+    ed.dataset.zkZoom = z;
+  }
+  return r;
+};
 </script>
 </body>
 </html>
