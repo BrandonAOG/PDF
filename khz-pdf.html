@@ -1722,6 +1722,8 @@
   .asc-ov .ap-foot .ap-btn { min-width:92px; }
   .asc-ov .ap-dlg.es-dlg { top:50% !important; left:50% !important; transform:translate(-50%, -50%) !important; margin:0 !important; }
   #ask-reload .ap-foot .ap-btn { padding:4px 16px; width:auto; }
+  .dp-brand { display:flex; align-items:center; justify-content:center; gap:8px; font:11.5px 'Segoe UI',Tahoma,Arial,sans-serif; color:#333; line-height:1.25; }
+  .dp-brand .khz-mark { width:26px; height:26px; } .dp-brand .dp-bv { color:#777; } .dp-brand .dp-bd { color:#555; }
 </style>
 </head>
 <body>
@@ -4725,7 +4727,11 @@ async function prepareImageBitmaps(n) {
     const ol = await pg.getOperatorList({ annotationMode: pdfjsLib.AnnotationMode.DISABLE });
     const ids = [];
     ol.fnArray.forEach((fn, k) => {
-      if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) ids.push(ol.argsArray[k][0]);
+      if (fn === OPS.paintImageXObject) ids.push(ol.argsArray[k][0]);
+      else if (fn === OPS.paintImageXObjectRepeat) {   // pdf.js merges the same picture drawn many times in a row into one step
+        const a = ol.argsArray[k], times = a[3] && a[3].length ? a[3].length / 2 : 1;
+        for (let t = 0; t < times; t++) ids.push(a[0]);
+      }
       else if (fn === OPS.paintImageMaskXObject) ids.push(null);
     });
     for (let idx = 0; idx < ids.length; idx++) {
@@ -24434,6 +24440,145 @@ setTimeout(recOffer, 1500);
 
 // reloading or exiting on purpose: the choice was made, so no recovery offer afterwards
 async function recClearMine() { for (const k of await recKeys()) if (k.startsWith('rec:' + REC_SID + ':')) await recDel(k); }
+
+// ================================================================
+//  PICTURES CUT TO A SHAPE (clipping paths) — e.g. drawings exported from CAD where the words are a
+//  black picture cut out by the letter shapes. The app used to redraw those pictures itself, without
+//  the cut-out, so the labels showed as black blocks. Untouched, they're now left to the page itself.
+// ================================================================
+state.imgClipped = {};
+async function clipScan(n) {
+  const ps = state.pages[n]; if (!ps || ps.clipScanned) return; ps.clipScanned = true;
+  try {
+    const OPS = pdfjsLib.OPS, ol = await ps.origPage.getOperatorList({ annotationMode: pdfjsLib.AnnotationMode.DISABLE });
+    const stack = [false]; let pendingPath = null, idx = 0;
+    const complex = args => { try { const ops = args[0] || []; return ops.length > 6 || ops.some(o => o === OPS.curveTo || o === OPS.curveTo2 || o === OPS.curveTo3); } catch (e) { return false; } };
+    ol.fnArray.forEach((fn, i) => {
+      const a = ol.argsArray[i];
+      if (fn === OPS.save) stack.push(stack[stack.length - 1]);
+      else if (fn === OPS.restore) { if (stack.length > 1) stack.pop(); }
+      else if (fn === OPS.constructPath) pendingPath = a;
+      else if (fn === OPS.clip || fn === OPS.eoClip) { if (pendingPath && complex(pendingPath)) stack[stack.length - 1] = true; }
+      else if (fn === OPS.paintImageXObject || fn === OPS.paintImageMaskXObject) { if (stack[stack.length - 1]) state.imgClipped[`${n}:${idx}`] = true; idx++; }
+      else if (fn === OPS.paintImageXObjectRepeat) { const t = a[3] && a[3].length ? a[3].length / 2 : 1; for (let k = 0; k < t; k++) { if (stack[stack.length - 1]) state.imgClipped[`${n}:${idx}`] = true; idx++; } }
+    });
+  } catch (e) { console.warn('clip scan', e); }
+}
+const _prepareImageBitmapsCL = prepareImageBitmaps;
+prepareImageBitmaps = async function (n) { await clipScan(n); return _prepareImageBitmapsCL.apply(this, arguments); };
+const clippedUntouched = a => a && a.type === 'page-image' && !a.isNew && a.untouched && state.imgClipped[a.imgKey];
+const _wantedHiddenCL = wantedHidden;
+wantedHidden = function () { const r = _wantedHiddenCL.apply(this, arguments); r.images.forEach(k => { const a = state.annotations.find(x => x.type === 'page-image' && x.imgKey === k); if (clippedUntouched(a)) r.images.delete(k); }); return r; };
+const _appDrawsCL = appDraws;
+appDraws = function (a) { if (clippedUntouched(a)) return false; return _appDrawsCL.apply(this, arguments); };
+// a new document starts over
+const _loadBytesCL = loadBytes;
+loadBytes = async function () { state.imgClipped = {}; return _loadBytesCL.apply(this, arguments); };
+
+// ================================================================
+//  ROTATING A PAGE TURNS ITS TEXT BOXES AND STAMPS WITH IT (like Acrobat)
+//  Before, a text box kept its words upright inside the turned (now tall and narrow) box, so the
+//  words wrapped one per line ("BL / DT / R2…"). Now its look turns together with the page.
+// ================================================================
+const TR_TYPES = ['textbox', 'text-comment', 'native-image', 'stamp'];
+const trBase = a => a.textRot !== undefined ? a.textRot : ((state.pages[a.page] && state.pages[a.page].page.rotate) || 0);
+const _addAnnotationTR = addAnnotation;
+addAnnotation = function (a) { if (a && TR_TYPES.includes(a.type) && a.textRot === undefined && state.pages[a.page]) a.textRot = effRot(a.page); return _addAnnotationTR.apply(this, arguments); };
+const _annotGeometryTR = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (!a || !TR_TYPES.includes(a.type) || !a.pts || a.pts.length < 2 || a.vertical || state.editingId === a.id || !state.pages[a.page]) return _annotGeometryTR.apply(this, arguments);
+  const d = ((effRot(a.page) - trBase(a)) % 360 + 360) % 360;
+  if (!d || vp.rotation === undefined) return _annotGeometryTR.apply(this, arguments);
+  // lay it out the way it was made (box turned back), then turn the drawing to match the page
+  const V = bboxOf(a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+  const W = d === 180 ? V.w : V.h, H = d === 180 ? V.h : V.w;
+  const flat = { ...a, textRot: effRot(a.page), pts: [vp.convertToPdfPoint(V.x, V.y), vp.convertToPdfPoint(V.x + W, V.y + H)] };
+  const prims = _annotGeometryTR.call(this, flat, vp, forPdf);
+  if (!prims.length) return prims;
+  const M = d === 90 ? [0, 1, -1, 0, V.x + V.w + V.y, V.y - V.x] : d === 180 ? [-1, 0, 0, -1, 2 * V.x + V.w, 2 * V.y + V.h] : [0, -1, 1, 0, V.x - V.y, V.y + V.h + V.x];
+  return [{ k: 'group', m: M, prims: prims.map(p => ({ ...p, main: false })), main: true, x: V.x, y: V.y, w: V.w, h: V.h }];
+};
+// typing in a turned text box: it's laid out straight while you type, as before
+
+// ================================================================
+//  KHZ PDF WRITES ITS NAME INTO SAVED FILES (shown in File › Properties here and in Acrobat)
+//  Producer: "KHZ PDF 1.0 (Brandon Keilholz)" · Application: "KHZ PDF" · Custom: Developer = Brandon Keilholz
+//  Modified date set on save. Author is never changed. Digitally signed files are left as they are.
+// ================================================================
+const KHZ_PRODUCER = 'KHZ PDF 1.0 (Brandon Keilholz)', KHZ_CREATOR = 'KHZ PDF', KHZ_DEV = 'Brandon Keilholz';
+function brStamp(doc) {
+  if (state.digitalSigs && state.digitalSigs.length) return;   // keep signed files exactly as signed
+  const L = PDFLib, N = k => L.PDFName.of(k), T = s => L.PDFHexString.fromText(s);
+  let info; try { info = doc.getInfoDict(); } catch (e) { return; }
+  if (!info) return;
+  const now = new Date();
+  info.set(N('Producer'), T(KHZ_PRODUCER));
+  info.set(N('Creator'), T(KHZ_CREATOR));
+  info.set(N('Developer'), T(KHZ_DEV));
+  try { doc.setModificationDate(now); if (!info.get(N('CreationDate'))) doc.setCreationDate(now); } catch (e) {}
+  // the hidden XMP copy says the same (Acrobat may show that one instead)
+  try {
+    const md = doc.catalog.lookup(N('Metadata'));
+    if (md) {
+      let x = new TextDecoder().decode(md instanceof L.PDFRawStream ? L.decodePDFRawStream(md).decode() : (md.getUnencodedContents ? md.getUnencodedContents() : md.getContents()));
+      const iso = now.toISOString().replace(/\.\d{3}Z$/, 'Z'), esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const setTag = (tag, val) => {
+        const re1 = new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`), re2 = new RegExp(`${tag}="[^"]*"`);
+        if (re1.test(x)) x = x.replace(re1, `<${tag}>${esc(val)}</${tag}>`);
+        else if (re2.test(x)) x = x.replace(re2, `${tag}="${esc(val)}"`);
+      };
+      setTag('pdf:Producer', KHZ_PRODUCER); setTag('xmp:CreatorTool', KHZ_CREATOR); setTag('xmp:ModifyDate', iso); setTag('xmp:MetadataDate', iso);
+      const st = doc.context.stream(x, { Type: 'Metadata', Subtype: 'XML' });
+      doc.catalog.set(N('Metadata'), doc.context.register(st));
+    }
+  } catch (e) { console.warn('XMP stamp', e); }
+}
+const _writeFormFieldChangesBR = writeFormFieldChanges;
+writeFormFieldChanges = function (doc) { const r = _writeFormFieldChangesBR.apply(this, arguments); try { brStamp(doc); } catch (e) { console.warn('stamp', e); } return r; };
+
+// ---------- the Properties window: app branding at the bottom ----------
+const _showDocumentPropertiesBR = showDocumentProperties;
+showDocumentProperties = function () {
+  const r = _showDocumentPropertiesBR.apply(this, arguments);
+  const put = () => {
+    const f = document.querySelector('.dp-win .dp-foot'); if (!f || f.querySelector('.dp-brand')) return;
+    const sp = f.querySelector(':scope > span'); if (!sp) return;
+    sp.className = 'dp-brand';
+    sp.innerHTML = `<span class="khz-mark"></span><span><b>KHZ PDF</b> <span class="dp-bv">${typeof APP_BUILD !== 'undefined' ? 'Version 1.0 · build ' + escapeHtml(String(APP_BUILD)) : 'Version 1.0'}</span><br><span class="dp-bd">Developed by ${KHZ_DEV}</span></span>`;
+  };
+  put(); setTimeout(put, 0); setTimeout(put, 60);
+  if (r && r.then) r.then(put);
+  return r;
+};
+
+// after a save, the Properties window shows the new Application / Producer / Modified / Developer right away
+const _svWriteHandleBR = svWriteHandle;
+svWriteHandle = async function (handle, bytes) {
+  const r = await _svWriteHandleBR.apply(this, arguments);
+  try {
+    const c = state.dpCache;
+    if (c && !(state.digitalSigs && state.digitalSigs.length)) {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      c.creator = KHZ_CREATOR; c.producer = KHZ_PRODUCER;
+      c.modified = `D:${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+      if (!c.created) c.created = c.modified;
+      if (c.v && c.v.custom && c.v.custom.Developer === undefined) c.v.custom.Developer = KHZ_DEV;
+      if (state.docProps && state.docProps.custom && state.docProps.custom.Developer === undefined) state.docProps.custom.Developer = KHZ_DEV;
+    }
+  } catch (e) {}
+  return r;
+};
+
+// dates in the Properties window shown in your own time (files store "Z" = world time, or an offset)
+dpDate = function (s) {
+  const m = /D?:?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?\s*([Zz+\-])?\s*(\d{2})?'?(\d{2})?/.exec(s || ''); if (!m) return '';
+  const a = [+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0];
+  let d;
+  if (m[7] && /[Zz]/.test(m[7])) d = new Date(Date.UTC(...a));
+  else if (m[7] && m[8]) { const off = (+m[8] * 60 + (+m[9] || 0)) * (m[7] === '-' ? -1 : 1); d = new Date(Date.UTC(...a) - off * 60000); }
+  else d = new Date(...a);
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${(d.getHours() % 12) || 12}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+};
 </script>
 </body>
 </html>
