@@ -1724,6 +1724,46 @@
   #ask-reload .ap-foot .ap-btn { padding:4px 16px; width:auto; }
   .dp-brand { display:flex; align-items:center; justify-content:center; gap:8px; font:11.5px 'Segoe UI',Tahoma,Arial,sans-serif; color:#333; line-height:1.25; }
   .dp-brand .khz-mark { width:26px; height:26px; } .dp-brand .dp-bv { color:#777; } .dp-brand .dp-bd { color:#555; }
+  /* ---- Preferences (all categories) ---- */
+  .pf2 .pf-list .pf2-sep { border-top:1px solid #1473e6; margin:8px 6px; }
+  .pf2 .pf-pane { padding-right:6px; font-size:13px; }
+  .pf2 .pf-pane fieldset fieldset { margin:8px 0 6px; }
+  .pf2-r { display:flex; align-items:center; gap:10px; margin:6px 0; flex-wrap:wrap; }
+  .pf2-r > label:not(.pf-chk) { min-width:0; }
+  .pf2-r.sp { justify-content:space-between; flex-wrap:nowrap; }
+  .pf2-r.ind2, .pf2 .pf-ind { padding-left:24px; }
+  .pf2-r.dis, .pf2 .pf-chk.dis { color:#9a9a9a; }
+  .pf2 .pf-pane select, .pf2 .pf-pane input[type=text], .pf2 .pf-pane input[type=number] { border:1px solid #7a7a7a; font:inherit; padding:2px 4px; background:#fff; height:23px; box-sizing:border-box; }
+  .pf2 .pf-pane select:disabled, .pf2 .pf-pane input:disabled { background:#f0f0f0; color:#8a8a8a; border-color:#c4c4c4; }
+  .pf2 .pf-pane input[type=color] { width:22px; height:20px; padding:0; border:1px solid #888; background:none; }
+  .pf2 .pf-spin { display:inline-flex; align-items:center; flex:none; } .pf2 .pf-arr { display:flex; flex-direction:column; margin-left:2px; }
+  .pf2 .pf-arr button { font-size:7px; line-height:8px; padding:0 3px; border:1px solid #aaa; background:#f4f4f4; cursor:pointer; }
+  .pf2 .pf-chk { margin:6px 0; } .pf2-r .pf-chk { margin:0; }
+  .pf2-p { margin:6px 0; line-height:1.45; } .pf2-p a, .pf2 a[data-act] { color:#0645ad; text-decoration:underline; cursor:pointer; }
+  .pf2-b { min-width:90px; }
+  .pf2-cols { display:grid; grid-template-columns:1fr 1fr; gap:0 30px; }
+  .pf2-cols2 { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
+  .pf2-grid .pf2-r { display:grid; grid-template-columns:200px auto; justify-items:start; }
+  .pf2-grid .pf2-r > label { justify-self:end; }
+  .pf2-box { border:1px solid #b9b9b9; background:#f7f7f7; padding:8px 10px; margin-top:8px; line-height:1.45; }
+  .pf2-tip { display:flex; gap:12px; align-items:center; } .pf2-tip span { font-size:24px; }
+  .pf2-list { border:1px solid #9a9a9a; background:#fff; overflow:auto; min-height:60px; }
+  .pf2-list > div { padding:2px 6px; cursor:default; white-space:nowrap; } .pf2-list > div.on { background:#cce4f7; }
+  .pf2-two { display:flex; gap:56px; } .pf2-two .pf2-list[data-list] { width:144px; height:270px; } .pf2-two .pf2-list.pf2-info2 { flex:1; height:270px; } .pf2-info2 > div { white-space:normal; padding:1px 6px; }
+  .pf2-btnrow { display:flex; align-items:center; gap:14px; margin:10px 0; } .pf2-btnrow .pf2-b { width:132px; }
+  .pf2-ud { display:flex; flex-direction:column; gap:6px; } .pf2-ud button { width:30px; height:30px; border:1px solid #ccc; background:#fafafa; }
+  .pf2-info { display:inline-flex; width:30px; height:30px; border-radius:50%; background:#3d7fd8; color:#fff; font:bold 16px Georgia, serif; align-items:center; justify-content:center; }
+  .pf2-lbl { display:inline-block; width:240px; }
+  /* settings that take effect */
+  .cm-popnote, .cmp-body { font-family:var(--cm-family, 'Segoe UI', Arial, sans-serif); }
+  .cm-popnote { opacity:var(--cm-op, 1); } .cm-popnote:hover, .cm-popnote:focus-within { opacity:1; }
+  .cm-popnote textarea, .cm-popnote .cmp-txt { font-family:inherit; font-size:var(--cm-font, 13px); }
+  ::spelling-error { text-decoration:wavy underline var(--spell-color, red); }
+  body.fields-highlight .form-layer.active .ff { background:var(--ff-hl, rgba(204,215,255,.42)); }
+  body.khz-fs #canvas-area { background:var(--fs-bg, #000) !important; }
+  body.show-grid .page-wrapper::after { background-image:linear-gradient(to right, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to right, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px) !important;
+    background-size:var(--grid-w,72px) var(--grid-h,72px), var(--grid-w,72px) var(--grid-h,72px), var(--grid-sw,24px) var(--grid-sh,24px), var(--grid-sw,24px) var(--grid-sh,24px) !important;
+    background-position:var(--grid-x,0) var(--grid-y,0) !important; }
 </style>
 </head>
 <body>
@@ -24632,6 +24672,442 @@ dpDate = function (s) {
   else d = new Date(...a);
   return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${(d.getHours() % 12) || 12}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
 };
+
+// ================================================================
+//  PREFERENCES — every category Acrobat has, laid out like Acrobat.
+//  Settings that apply to this app take effect right away; the rest are remembered.
+// ================================================================
+const PREF_TOP = ['Commenting', 'Documents', 'Full Screen', 'General', 'Page Display'];
+const PREF_REST = ['Accessibility', 'Action Wizard', 'Online Services', 'Catalog', 'Color Management', 'Content Editing', 'Convert From PDF', 'Convert To PDF',
+  'Email Accounts', 'Forms', 'Identity', 'Internet', 'JavaScript', 'Language', 'Measuring (2D)', 'Measuring (3D)', 'Measuring (Geo)', 'Multimedia & 3D',
+  'Multimedia (legacy)', 'Multimedia Trust (legacy)', 'Reading', 'Reviewing', 'Search', 'Security', 'Security (Enhanced)', 'Signatures', 'Spelling', 'Tracker',
+  'Trust Manager', 'Units & Guides', 'Updater'];
+
+const _pf2Orig = showPreferences;
+showPreferences = function (cat) {
+  const old = $('prefs-ov'); if (old) old.remove();
+  const ov = document.createElement('div'); ov.id = 'prefs-ov';
+  const draft = { author: commentAuthor(), ...getPrefs() };
+  try { draft.author = localStorage.getItem('acro-author') || draft.author; } catch (e) {}
+  draft.fieldHighlight = state.fieldHighlight !== false;
+  let active = cat || getPref('lastPrefCat', 'Commenting');
+  if (active === 'Adobe Online Services') active = 'Online Services';
+  if (!PREF_TOP.includes(active) && !PREF_REST.includes(active)) active = 'Commenting';
+  const E = escapeHtml, v = (k, d) => (k in draft ? draft[k] : d);
+  // little builders
+  const C = (k, label, d, dis) => `<label class="pf-chk${dis ? ' dis' : ''}"><input type="checkbox" data-k="${k}" ${v(k, d) ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${label}</label>`;
+  const S = (k, opts, d, w) => `<select data-k="${k}" style="width:${w || 150}px">${opts.map(o => { const [val, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${E(val)}" ${String(v(k, d)) === String(val) ? 'selected' : ''}>${E(t)}</option>`; }).join('')}</select>`;
+  const N = (k, d, min, max, w, step) => `<span class="pf-spin"><input type="number" data-k="${k}" value="${E(String(v(k, d)))}" min="${min}" max="${max}" step="${step || 1}" style="width:${w || 44}px"><span class="pf-arr"><button type="button" data-s="${k}" data-d="1">▴</button><button type="button" data-s="${k}" data-d="-1">▾</button></span></span>`;
+  const T = (k, d, w, dis) => `<input type="text" data-k="${k}" value="${E(String(v(k, d) || ''))}" style="width:${w || 200}px" ${dis ? 'disabled' : ''}>`;
+  const K = (k, d) => `<input type="color" data-k="${k}" value="${v(k, d)}">`;
+  const R = (k, val, label, d) => `<label class="pf-chk"><input type="radio" name="pf-${k}" data-k="${k}" value="${val}" ${String(v(k, d)) === val ? 'checked' : ''}> ${label}</label>`;
+  const F = (legend, body) => `<fieldset><legend>${legend}</legend>${body}</fieldset>`;
+  const row = (label, ctl, cls) => `<div class="pf2-r ${cls || ''}"><label>${label}</label>${ctl}</div>`;
+  const B = (label, act, dis) => `<button type="button" class="ap-btn pf2-b" ${act ? `data-act="${act}"` : ''} ${dis ? 'disabled' : ''}>${label}</button>`;
+  const P = t => `<div class="pf2-p">${t}</div>`;
+  const ind = h => `<div class="pf-ind">${h}</div>`;
+  const cols = (...h) => `<div class="pf2-cols">${h.map(x => `<div>${x}</div>`).join('')}</div>`;
+  const fonts = ['Segoe UI', 'Arial', 'Calibri', 'Helvetica', 'Tahoma', 'Times New Roman', 'Verdana', 'Courier New'];
+  const PANES = {
+    Commenting: () => F('Viewing Comments', `<div class="pf2-r"><label>Font*:</label>${S('cmFamily', fonts, 'Segoe UI', 420)}<label style="margin-left:24px">Font Size*:</label>${S('cmFont', ['8', '9', '10', '11', '12', '14', '16', '18', '20'], '10', 64)}</div>
+        ${row('Pop-Up Opacity:', S('cmOpacity', ['100', '85', '75', '50', '25'], '85', 80))}
+        ${C('cmTooltips', 'Enable text indicators and tooltips', true)}${C('cmPrintNotes', 'Print notes and pop-ups', false)}
+        ${C('cmLines', 'Show lines connecting comment markups to their pop-ups on mouse rollover', true)}${C('cmPopVisible', 'Ensure that pop-ups are visible as the document is scrolled', true)}
+        ${C('cmOpenPane', 'Show comments pane when a PDF with comments is opened', true)}`)
+      + F('Pop-Up Open Behavior', `${C('cmAutoOpen', 'Automatically open comment pop-ups for comments other than notes', false)}${C('cmHideWithList', 'Hide comment pop-ups when Comments List is open', true)}${C('cmRollover', 'Automatically open pop-ups on mouse rollover', false)}`)
+      + F('Making Comments', `${C('cmLoginName', 'Always use Log-in Name for Author name', false)}${C('cmAlignEdge', 'Create new pop-ups aligned to the edge of the document', true)}
+        ${C('cmNested', 'Allow nested reply to sticky notes*', false)}${C('cmTextSel', 'Enable text selection for Highlight, Strikethrough and Underline', true)}
+        ${C('cmTypeIcon', 'Enable comment type text and icon in Comments List*', true)}${C('cmCheckbox', 'Show checkbox in comment note', false)}<div style="height:14px"></div>
+        ${C('cmCopyCircled', 'Copy encircled text into Drawing comment pop-ups', false)}${C('cmCopySel', 'Copy selected text into Highlight, Strikethrough, Underline and Replace Text comment pop-ups', false)}
+        ${row('Author name:', T('author', commentAuthor(), 260))}`) + P('* Requires restart'),
+    Documents: () => F('Open Settings', `${C('docRestoreView', 'Restore last view settings when reopening documents', true)}${C('docCrossLinks', 'Open cross-document links in same window', true)}
+        ${C('docLayerState', 'Allow layer state to be set by user information', true)}${C('docHideUI', 'Allow documents to hide the menu bar, toolbars, and window controls', true)}
+        ${C('docFileTitle', 'Always use filename as document title', false)}${ind(row('Documents in recently used list:', N('docRecent', 100, 1, 100, 48)))}`)
+      + F('Save Settings', `<div class="pf2-r">${C('autoSave', 'Automatically save document changes to temporary file every:', true)}${N('autoSaveSecs', 20, 10, 600, 48, 5)}<span>seconds (10-600)</span></div>
+        ${C('fastWeb', 'Save As optimizes for Fast Web View', true)}${C('reduceBig', 'Always reduce size for files more than 10 MB', false)}
+        ${C('saveIncremental', 'Keep digital signatures valid when saving (save changes as an update)', true)}${C('askReplace', 'Ask before replacing the original file', false)}`)
+      + F('PDF/A View Mode', row('View documents in PDF/A mode:', S('pdfaMode', ['Only for PDF/A documents', 'Never'], 'Only for PDF/A documents', 180)))
+      + F('Hidden Information', `${C('hidOnClose', 'Remove Hidden Information when closing document', false)}${C('hidOnEmail', 'Remove Hidden Information when sending document by email', false)}${C('hidOverlap', 'Do not remove overlapping content while Sanitizing document (this might leave some hidden information)', false)}`)
+      + F('Redaction', `${C('redAdjustName', 'Adjust filename when saving applied redaction marks', true)}<div class="pf2-r"><label>Prefix:</label>${T('redPrefix', '', 120)}<label style="margin-left:14px">Suffix:</label>${T('redSuffix', '_Redacted', 120)}</div>
+        ${row('Choose localization for Search &amp; Remove Text patterns:', S('redLocale', ['English (US)', 'English (UK)', 'Spanish', 'French', 'German'], 'English (US)', 160))}`),
+    'Full Screen': () => F('Full Screen Setup', `${C('fsCurrent', 'Current document only', true)}${C('fsOnePage', 'Fill screen with one page at a time', true)}${C('fsAlert', 'Alert when document requests full screen', true)}${row('Which monitor to use:', S('fsMonitor', ['This Monitor', 'Primary Monitor'], 'This Monitor', 150))}`)
+      + F('Full Screen Navigation', `${C('fsEsc', 'Escape key exits', true)}${C('fsNavBar', 'Show navigation bar', false)}${C('fsClickNav', 'Left click to go forward one page; right click to go back one page', true)}${C('fsLoop', 'Loop after last page', false)}<div class="pf2-r">${C('fsAdvance', 'Advance every', false)}${N('fsAdvanceSecs', 5, 1, 600, 36)}<span>seconds</span></div>`)
+      + F('Full Screen Appearance', `${row('Background color:', K('fsBg', '#000000'))}${row('Mouse cursor:', S('fsCursor', ['Always Visible', 'Hidden After Delay', 'Always Hidden'], 'Hidden After Delay', 150))}`)
+      + F('Full Screen Transitions', `${C('fsNoTrans', 'Disable all page transitions (e.g. auto-advance, slideshow, etc.)', false)}${row('Default transition:', S('fsTransition', ['No Transition', 'Fade', 'Dissolve', 'Push', 'Wipe'], 'No Transition', 150))}<div class="pf2-r"><label>Direction:</label><select disabled style="width:150px"></select>${C('fsNavDir', 'Navigation controls direction', true)}</div>`),
+    General: () => F('Basic Tools', `${C('genSingleKey', 'Use single-key accelerators to access tools', false)}${C('genLinks', 'Create links from URLs', true)}${C('genHandSel', 'Make Hand tool select text &amp; images', true)}
+        ${C('genHandArticles', 'Make Hand tool read articles', true)}${C('genWheelZoom', 'Make Hand tool use mouse-wheel zooming', false)}${C('genSelImages', 'Make Select tool select images before text', false)}
+        ${C('genQuickActions', 'Show quick actions on text selection', true)}${C('genOnlineOpen', 'Show online storage when opening files', false)}${C('genOnlineSave', 'Show online storage when saving files', true)}
+        ${C('genReopen', 'Open PDFs from last session on KHZ PDF launch', false)}${C('genTabs', 'Open documents as new tabs in the same window (requires relaunch)', true)}${C('genPromptTabs', 'Prompt before closing multiple tabs', true)}
+        ${C('genStarred', 'View Starred files in Recent tab', true)}<div class="pf2-r">${C('genSnapRes', 'Use fixed resolution for Snapshot tool images:', false)}${N('genSnapDpi', 72, 36, 600, 44)}<span>pixels/inch</span></div>
+        ${C('genSnapMarkup', 'Open snapshot for mark up', true)}${C('genThumbs', 'Enable PDF thumbnail previews in Windows Explorer', false)}${C('hoverBoxes', 'Show bounding boxes on hover in Edit PDF', true)}
+        ${row('Touch Mode:', S('genTouch', ['Auto-Detect', 'Always', 'Never'], 'Auto-Detect', 136))}
+        <div class="pf2-r"><label>Scale for screen resolution (restart required):</label>${R('genScale', 'auto', 'Auto-Detect', 'auto')}${R('genScale', 'none', 'No Scaling', 'auto')}</div>
+        ${C('genTouchKb', 'Show touch keyboard if device is in touch or tablet mode', false)}${C('genWhatsApp', 'Show “Send to WhatsApp” shortcut', false)}`)
+      + F('Warnings', `<div class="pf2-r sp">${C('noEditWarn', 'Do not show edit warnings', false)}${B('Reset All Warnings', 'resetWarn')}</div>`)
+      + F('Messages from/to KHZ PDF', `${C('genMessages', 'Show me messages when I launch KHZ PDF', true)}${row('Send crash reports (System restart required):', S('genCrash', ['Ask Every Time', 'Always Send', 'Never Send'], 'Ask Every Time', 120))}${C('genTrouble', 'Enable troubleshooting', false)}`)
+      + F('Application Startup', `<div class="pf2-r">${C('genCertPlugins', 'Use only certified plug-ins', false)}<span style="margin-left:40px">Currently in Certified Mode: &nbsp;Yes</span></div>${B('Select As Default PDF Handler', 'defHandler')}${C('genTellDefault', 'Tell me if KHZ PDF is not my default PDF application', true)}`),
+    'Page Display': () => F('Default Layout and Zoom', `<div class="pf2-r"><label>Page Layout:</label>${S('defaultLayout', [['auto', 'Automatic'], ['single', 'Single Page'], ['scroll', 'Single Page Continuous'], ['two', 'Two-Up'], ['twoscroll', 'Two-Up Continuous']], 'auto', 156)}<label style="margin-left:24px">Zoom:</label>${S('defaultZoom', [['fitpage', 'Automatic'], ['fitwidth', 'Fit Width'], ['fitheight', 'Fit Height'], ['0.5', '50%'], ['0.75', '75%'], ['1', '100%'], ['1.25', '125%'], ['1.5', '150%'], ['2', '200%'], ['4', '400%']], 'fitpage', 170)}</div>`)
+      + F('Resolution', `<div class="pf2-r">${R('pdRes', 'system', `Use system setting: &nbsp; ${Math.round(96 * (window.devicePixelRatio || 1))} &nbsp;pixels/inch`, 'system')}<span style="width:30px"></span>${R('pdRes', 'custom', 'Custom resolution:', 'system')}${N('pdResCustom', 110, 72, 300, 48)}<span>pixels/inch</span></div>`)
+      + F('Rendering', `${row('Smooth Text:', S('pdSmoothText', ['For Laptop/LCD screens', 'For Monitor', 'None'], 'For Laptop/LCD screens', 160))}${cols(C('pdSmoothLine', 'Smooth line art', true) + C('pdThinLines', 'Enhance thin lines', true), C('pdSmoothImg', 'Smooth images', true) + C('pdCache', 'Use page cache', true))}`)
+      + F('Page Content and Information', `${cols(C('pdLargeImg', 'Show large images', true) + C('pdBoxes', 'Show art, trim, &amp; bleed boxes', false) + C('pdLogical', 'Use logical page numbers', true), C('pdSmoothZoom', 'Use smooth zooming', false) + C('pdTransGrid', 'Show transparency grid', false) + C('pdShowSize', 'Always show document page size', false))}
+        <div class="pf2-r" style="margin-top:14px"><label>Use Overprint Preview:</label>${S('pdOverprint', ['Only For PDF/X Files', 'Always', 'Never', 'Automatic'], 'Only For PDF/X Files', 156)}${C('pdShiftClick', 'Use Shift + Click For Multiple Selection with Output Preview', true)}</div>
+        ${row('Default Transparency Blending Color Space:', S('pdBlend', ['Working RGB', 'Working CMYK'], 'Working RGB', 130))}`)
+      + F('Reference XObjects View Mode', `${row('Show reference XObject targets:', S('pdXref', ['Only PDF/X-5 compliant ones', 'Always', 'Never'], 'Only PDF/X-5 compliant ones', 200))}<div class="pf2-r"><label>Location of referenced files:</label>${T('pdXrefLoc', '', 420)}${B('Browse for Location...')}</div>`),
+    Accessibility: () => F('Document Colors Options', `${C('axReplace', 'Replace Document Colors', false)}${ind(`${R('axMode', 'windows', 'Use Windows Color Scheme', 'custom')}<div class="pf2-r">${R('axMode', 'contrast', 'Use High-Contrast colors', 'custom')}<label style="margin-left:10px">High-contrast color combination:</label>${S('axCombo', ['Black text on white', 'Yellow text on black', 'Green text on black', 'White text on black'], 'Black text on white', 160)}</div>
+        <div class="pf2-r">${R('axMode', 'custom', 'Custom Color:', 'custom')}<label style="margin-left:10px">Page Background:</label>${K('axBg', '#ffffff')}<label style="margin-left:10px">Document Text:</label>${K('axText', '#000000')}</div>
+        ${C('axOnlyBlack', 'Only change the color of black text or line art.', true)}${C('axLineArt', 'Change the color of line art as well as text.', true)}`)}`)
+      + F('Override Page Display', `<div class="pf2-r">${C('axLayoutOn', 'Always use Page Layout Style', false)}${S('axLayout', [['single', 'Single Page'], ['scroll', 'Single Page Continuous'], ['two', 'Two-Up'], ['twoscroll', 'Two-Up Continuous']], 'single', 150)}</div><div class="pf2-r">${C('axZoomOn', 'Always use Zoom Setting', false)}${S('axZoom', [['fitpage', 'Fit Page'], ['fitwidth', 'Fit Width'], ['1', '100%'], ['1.5', '150%'], ['2', '200%']], 'fitpage', 90)}</div>`)
+      + F('Other Accessibility Options', `${C('axTabStruct', 'Use document structure for tab order when no explicit tab order is specified', true)}${C('axAT', 'Enable assistive technology support', true)}${C('axCaret', 'Always display the keyboard selection cursor', false)}
+        ${C('axSysSel', 'Always use the system selection color', false)}${C('axPortfolio', 'Show Portfolios in Files mode', false)}<div style="height:10px"></div>${C('axCloudTag', 'Enable cloud-based auto-tagging for accessibility', false)}
+        <div class="pf2-box">Screen reading and reading order options are available on the Reading panel. Multimedia accessibility options are available on the Multimedia panel. Other document color settings are found on the Forms, Full Screen, Measuring, Spelling, and Units &amp; Guides preferences.</div>`),
+    'Action Wizard': () => F('Action Wizard', `${C('awLog', 'Save warnings and errors in log file', false)}${ind(B('Choose Location...', '', true))}<div style="height:18px"></div>${P('The preferences below apply only to running actions created with older versions.')}${C('awConfirm', 'Show the Run Action Confirmation dialog', true)}${row('Security Method:', '')}${S('awSecurity', ['Do not ask for password', 'Ask for password'], 'Do not ask for password', 276)}`),
+    'Online Services': () => F('Account Information', `<div class="pf2-r"><label>Email Address:</label>${T('email', '', 240, true)}</div><div class="pf2-r ind2">${B('Manage Account...', 'identity')}${B('Change Password...', '', true)}</div>`)
+      + F('Cloud storage Settings', P('Cloud storage is not used — your files stay on this computer.'))
+      + F('E-signing Settings', `${P('<a href="#" data-act="signPrefs">Manage your signing preferences, including signatures and certificates.</a>')}${C('osLegacySign', 'Use the legacy version of request e-signatures', false, true)}`)
+      + F('Starred File Location', row('When starring a file, always access it from...', S('osStarred', ['Ask every time', 'This computer'], 'Ask every time', 340))),
+    Catalog: () => F('Indexing', `${C('catSepDrives', 'Allow indexing on separate drives', false)}${C('catIso', 'Force ISO 9660 compatibility on folders', false)}${C('catLog', 'Enable logging', true)}${C('catBatch', 'Allow Catalog batch files (.bpdx) to be run', false)}`)
+      + F('Index Defaults (applied to new indexes)', `${C('catNoNum', 'Do not include numbers', false)}${C('catIds', 'Add IDs to PDF v1.0 files', false)}${C('catNoWarn', 'Do not warn for changed documents when searching', false)}<div style="height:12px"></div>
+        <div class="pf2-btnrow">${B('Custom Properties...')}<span>List of custom properties to be indexed.</span></div><div class="pf2-btnrow">${B('XMP Fields...')}<span>List of XMP fields to be indexed.</span></div>
+        <div class="pf2-btnrow">${B('Stop Words...')}<span>List of words to exclude from the index.</span></div><div class="pf2-btnrow">${B('Structure Tags...')}<span>List of structure tags to be indexed.</span></div>`),
+    'Color Management': () => F('Color Setup', `<div class="pf2-r"><span class="pf2-info">i</span><span>For more information on color settings, search for “setting up color management” in Help.</span></div>
+        ${row('Settings:', S('cmsSet', ['Custom', 'North America General Purpose 2', 'North America Prepress 2', 'Monitor Color'], 'Custom', 276))}
+        ${F('Working Spaces', ['RGB', 'CMYK', 'Grayscale'].map(s => row(s + ':', S('cmsWs' + s, ['Monitor RGB - sRGB IEC61966-2.1', 'Adobe RGB (1998)', 'U.S. Web Coated (SWOP) v2', 'Dot Gain 20%'], 'Monitor RGB - sRGB IEC61966-2.1', 276))).join(''))}
+        ${F('Conversion Options', `${row('Engine:', S('cmsEngine', ['Built-in (ACE)', 'Microsoft ICM'], 'Built-in (ACE)', 160))}${C('cmsBpc', 'Use black point compensation', false)}`)}
+        ${F('Description', '<div class="pf2-box" style="height:80px"></div>')}`),
+    'Content Editing': () => F("Default Editors for 'Edit Object Tool'", `<div style="height:8px"></div>${B('Image Editor...')}<div style="height:16px"></div>${B('Page/Object Editor...')}`)
+      + F('Reading Order', S('ceOrder', ['Left to Right, Top to Bottom', 'Right to Left, Top to Bottom'], 'Left to Right, Top to Bottom', 184))
+      + F('Font Options', `${row('Fallback font for Editing', S('ceFallback', ['Let KHZ PDF choose', 'Arial', 'Calibri', 'Times New Roman', 'Courier New'], 'Let KHZ PDF choose', 270))}
+        <div class="pf2-r"><label>Default font for Add Text</label>${S('ceAddFont', ['Let KHZ PDF choose', 'Arial', 'Calibri', 'Helvetica', 'Times New Roman', 'Courier New'], 'Let KHZ PDF choose', 270)}<label style="margin-left:10px">Font Size</label>${S('ceAddSize', ['8', '9', '10', '11', '12', '14', '16', '18', '24'], '12', 56)}</div>
+        ${C('ceArtificial', 'Enable Artificial Bold/Italic Font Styles', true)}${C('ceOnlineFonts', 'Enable support for online fonts (requires relaunch)', true)}`)
+      + F('Auto-adjust layout', C('ceAutoAdjust', 'Enable Auto-adjust layout by default (requires relaunch)', false)),
+    'Convert From PDF': () => F('Converting From PDF', `<div class="pf2-two"><div class="pf2-list" data-list="cfp">${['Encapsulated PostScript', 'Excel Workbook', 'HTML', 'JPEG', 'JPEG2000', 'PNG', 'PostScript', 'PowerPoint Presentation', 'Rich Text Format', 'Text (Accessible)', 'Text (Plain)', 'TIFF', 'Word 97-2003 Document', 'Word Document', 'XML 1.0'].map((x, i) => `<div class="${i ? '' : 'on'}">${x}</div>`).join('')}</div>
+        <div class="pf2-list pf2-info2" data-info="cfp">${cfpInfo('Encapsulated PostScript')}</div></div><div style="margin:10px 0 0 200px">${B('Edit Settings...', 'cfpEdit')}</div>`),
+    'Convert To PDF': () => F('Converting To PDF', `<div class="pf2-two"><div class="pf2-list sm" data-list="ctp">${['Supported Formats', 'AutoCAD', 'BMP', 'Compuserve GIF', 'HTML', 'JPEG', 'JPEG2000', 'Microsoft Office Excel', 'Microsoft Office PowerPoint', 'Microsoft Office Word', 'Multimedia', 'PCX', 'PNG', 'PostScript/EPS', 'Text', 'TIFF'].map((x, i) => `<div class="${i ? '' : 'on'}">${x}</div>`).join('')}</div>
+        <div class="pf2-list pf2-info2" data-info="ctp">${ctpInfo('Supported Formats')}</div></div><div style="margin:10px 0 0 200px">${B('Edit Settings...', '', true)}</div>`),
+    'Email Accounts': () => F('List of Email Accounts', `<div class="pf2-list" style="height:200px"><div>${E(v('email', '') || 'Account')}</div></div><div class="pf2-r" style="margin-top:8px">${S('emAdd', ['Add Account', 'Default email application', 'Gmail', 'Outlook.com'], 'Add Account', 230)}${B('Edit', '', true)}${B('Remove Default', '', true)}${B('Delete', '', true)}</div>`)
+      + F('Send file by email settings', `${C('emLink', 'Always send files as a link (sign in required)', false)}${C('emViewOnly', 'Share files as view only (close any open files to apply)', false)}`),
+    Forms: () => F('General', `<div class="pf2-cols2"><div>${C('fmCalc', 'Automatically calculate field values', true)}${C('fmTabOrder', 'Automatically adjust tab order when modifying fields', true)}${C('fmFocus', 'Show focus rectangle', true)}${C('fmOverflow', 'Show text field overflow indicator', true)}${C('fmPreview', 'Show field preview when creating or editing form fields', true)}${C('fmDetect', 'Automatically detect Form fields', true)}${C('fmEditText', 'Auto-enable text editing in Prepare Form', true)}</div><div>${B('Manage Barcode Parameters...')}</div></div>`)
+      + F('Highlight Color', `${C('fieldHighlight', 'Show border hover color for fields', true)}${row('Fields highlight color:', K('fmHlColor', '#ccd7ff'))}${row('Required fields highlight color:', K('fmReqColor', '#ff0000'))}`)
+      + F('Auto-Complete', `<div class="pf2-r">${S('fmAuto', ['Off', 'Basic', 'Advanced'], 'Off', 160)}${C('fmAutoNum', 'Remember numerical data (e.g., telephone number)', false, v('fmAuto', 'Off') === 'Off')}</div>${B('Edit Entry List...', '', v('fmAuto', 'Off') === 'Off')}
+        <div class="pf2-box">${v('fmAuto', 'Off') === 'Off' ? 'The auto-complete feature is now off. No suggestions will be made while you type in form fields. Choose Basic or Advanced from the drop-down box to turn the feature on.' : 'Auto-complete suggests entries you typed before as you fill in form fields.'}</div>`),
+    Identity: () => F('Identity', `${row('Login Name:', T('loginName', commentAuthor().split(' ')[0], 238, true))}${row('Name:', T('author', commentAuthor(), 238))}${row('Title:', T('title', '', 238))}${row('Organization Name:', T('org', '', 238))}${row('Organizational Unit:', T('orgUnit', '', 238))}${row('Email Address:', T('email', '', 238))}
+        ${P('Your identity information is used with comments, share, and digital signatures.')}<div style="height:16px"></div>${P('To change settings for online services, go to the Online Services preferences and click Manage Account.')}`),
+    Internet: () => F('Web Browser Options', `${P('Use your browser to control viewing of PDF documents directly in the browser. The following program is currently available for use by browsers:')}<div class="pf2-p" style="margin:12px 30px">KHZ PDF (installed web app)</div><div style="height:20px"></div>
+        ${C('netReadMode', 'Display in Read Mode by default', true)}${C('netFastWeb', 'Allow fast web view', true)}${C('netSpec', 'Allow speculative downloading in the background', true)}`)
+      + F('Internet Options', B('Internet Settings...', 'netSettings')),
+    JavaScript: () => F('JavaScript', C('jsEnable', 'Enable JavaScript in forms', true))
+      + F('JavaScript Security', `${C('jsMenuPriv', 'Enable menu items JavaScript execution privileges', false)}${C('jsGlobal', 'Enable global object security policy', true)}`)
+      + F('JavaScript Debugger', `${C('jsDebug', 'Enable JavaScript debugger after KHZ PDF is restarted', false)}${C('jsBreak', 'Store breakpoints in PDF file', false, true)}<div class="pf2-r dis"><label>When exception is thrown:</label></div>${ind(`<div class="pf2-r">${R('jsExc', 'ignore', 'Ignore', 'ignore')}${R('jsExc', 'trace', 'Trace', 'ignore')}${R('jsExc', 'break', 'Break', 'ignore')}</div>`)}${C('jsConsole', 'Enable interactive console', false)}${C('jsConsoleErr', 'Show console on errors and messages', false)}`)
+      + F('JavaScript Editor', `${R('jsEditor', 'builtin', 'Use KHZ PDF JavaScript Editor', 'builtin')}${ind(`<div class="pf2-r"><label>Font:</label>${S('jsFont', ['Courier New', 'Consolas', 'Lucida Console'], 'Courier New', 250)}<label style="margin-left:14px">Size:</label>${S('jsSize', ['10', '11', '12', '14', '16'], '12', 60)}</div>`)}${R('jsEditor', 'external', 'Use external JavaScript editor', 'builtin')}<div class="pf2-r">${T('jsExtPath', '', 300, true)}${B('Browse...', '', true)}</div>`),
+    Language: () => F('Language', `${row('Application Language:', S('lgApp', ['Same as the operating system', 'English', 'Spanish', 'French', 'German'], 'Same as the operating system', 196))}${row('Default Reading Direction:', S('lgDir', ['Infer direction from document', 'Left To Right', 'Right To Left'], 'Infer direction from document', 196))}
+        ${C('lgRtl', 'Enable right-to-left language options', false)}${row('Select Font:', S('lgFont', ['Application Default', 'Segoe UI', 'Arial'], 'Application Default', 168))}`)
+      + F('Editing Text in Middle Eastern Languages', `${row('Main paragraph direction:', S('lgPara', ['Left To Right', 'Right To Left'], 'Left To Right', 110))}${C('lgLig', 'Ligatures', false)}${C('lgHindi', 'Hindi Digits', false)}${C('lgSwitch', 'Enable Writing Direction Switching', false)}`)
+      + P('Note: Language and font changes, if made, will appear once KHZ PDF restarts.'),
+    'Measuring (3D)': () => F('3D Measuring', `${C('m3Scale', 'Use Scale and Units from Model (when present)', true)}<div class="pf2-r ind2">${C('m3UnitOn', 'Use default display unit:', false)}${S('m3Unit', ['Meters', 'Centimeters', 'Millimeters', 'Feet', 'Inches'], 'Meters', 110)}</div>
+        ${row('Significant Digits to Display:', N('m3Digits', 3, 1, 8, 36))}${row('3D Measuring Line Color:', K('m3Color', '#00e000'))}${row('Measure Feedback Size:', N('m3Feedback', 20, 6, 60, 36))}
+        ${row('Angular Measurements Shown In:', S('m3Angle', ['Degrees', 'Radians'], 'Degrees', 80))}${row('Circular Measurements Shown As:', S('m3Circ', ['Radius', 'Diameter'], 'Radius', 84))}${C('m3Circle', 'Show Circle for Radial Measurements', false)}
+        ${F('3D Snap Settings', `${C('m3Snap', 'Snap to 3D Content', true)}${ind(`${cols(C('m3Pts', 'Snap to Points', true) + C('m3Edges', 'Snap to Edges', true) + C('m3Faces', 'Snap to Faces', false), C('m3Arcs', 'Snap to Arcs', true) + C('m3Silh', 'Snap to Silhouette Edges (Orthographic camera only)', false))}${row('Sensitivity:', N('m3Sens', 10, 1, 30, 36))}${row('Snap Hint Color:', K('m3Hint', '#e00000'))}`)}`)}`)
+      + P('3D models are not shown in KHZ PDF — these settings are kept for when that is added.'),
+    'Measuring (Geo)': () => F('Geospatial Measuring', `${row('Measuring Line Color:', K('mgColor', '#e00000'))}
+        ${F('Measurement Markup Settings', `${C('mgMarkup', 'Enable Measurement Markup', true)}${ind(`${R('mgLabelMode', 'default', 'Use Default Label', 'use')}<div class="pf2-r">${R('mgLabelMode', 'use', 'Use Label:', 'use')}${T('mgLabel', '', 236)}</div>`)}`)}
+        ${F('Snap Settings', `${C('mgSnap', 'Snap to Content', true)}${ind(`<div class="pf-snaps">${C('mgPath', 'Paths', true)}${C('mgEnd', 'Path Endpoints', true)}${C('mgMid', 'Path Midpoints', true)}${C('mgInt', 'Path Intersections', true)}</div><div class="pf2-r"><label>Snap Hint Color:</label>${K('mgHint', '#e00000')}<label style="margin-left:24px">Sensitivity:</label>${N('mgSens', 10, 1, 30, 36)}</div>`)}`)}
+        ${F('Latitude and Longitude Format', `<div class="pf2-r"><label>Display value as:</label>${S('mgFmt', ['Decimal', 'Degrees, Minutes, Seconds'], 'Decimal', 160)}<label style="margin-left:40px">Display direction as:</label>${S('mgDir', ['Signed', 'N/S/E/W'], 'Signed', 74)}</div>${C('mgWgs', 'Always display latitude and longitude as WGS 1984', true)}`)}
+        <div class="pf2-r">${C('mgDistOn', 'Use default distance unit:', true)}${S('mgDist', ['Miles', 'Feet', 'Kilometers', 'Meters'], 'Miles', 130)}</div><div class="pf2-r">${C('mgAreaOn', 'Use default area unit:', true)}${S('mgArea', ['Square Miles', 'Acres', 'Square Feet', 'Square Kilometers', 'Hectares'], 'Square Miles', 130)}</div>
+        ${C('mgNoTrans', 'Don\'t show transparency layer in GeoTIFF and JPEG 2000 images', true)}`),
+    'Multimedia & 3D': () => F('Multimedia and 3D Options', `${C('mmEnable', 'Enable playing of Multimedia and 3D content', false)}
+        ${F('Renderer Options', `<div class="pf2-r"><label>Preferred Renderer:</label>${S('mmRenderer', ['Software', 'Hardware'], 'Software', 164)}</div>${C('mmLegacyHw', 'Enable hardware rendering for legacy video cards', true)}${C('mmDouble', 'Enable double-sided rendering', false)}${row('Preferred 3D PMI Rendering Mode:', S('mmPmi', ["Use content's setting", 'Always render PMI on top', 'Never render PMI on top'], "Use content's setting", 256))}${C('mmCross', 'Render points as cross-hairs', false)}`)}
+        ${F('3D Tool Options', `${row('Open Model Tree on 3D Activation:', S('mmTree', ["Use Annotation's Setting", 'Always', 'Never'], "Use Annotation's Setting", 164))}${row('Default Toolbar State:', S('mmToolbar', ["Use Annotation's Setting", 'Open Toolbar', 'Close Toolbar'], "Use Annotation's Setting", 164))}${C('mmHandSel', 'Enable selection for the Hand tool', true)}${C('mmConsolidate', 'Consolidate tools on the 3D Toolbar', true)}${C('mmTrans', 'Enable view transitions', true)}${C('mmAxis', 'Show 3D orientation axis', true)}`)}
+        ${F('Auto-Degrade Options', `${row('Optimization Scheme for Low Framerate:', S('mmDegrade', ['Bounding Box', 'Point Cloud', 'None'], 'Bounding Box', 196))}<div class="pf2-r"><label>Framerate Threshold:</label><input type="range" min="1" max="60" data-k="mmFps" value="${v('mmFps', 15)}" style="width:120px">${N('mmFps', 15, 1, 60, 44)}<span>FPS</span></div>`)}`),
+    'Multimedia (legacy)': () => F('Player Options', `${row('Preferred Media Player:', S('mlPlayer', ['Browser Built-In Player', 'Windows Built-In Player'], 'Browser Built-In Player', 220))}${C('mlControls', 'Show Multimedia Controls', true)}<div style="height:30px"></div>`)
+      + F('Accessibility Options', `${C('mlSubs', 'Show subtitles when available', false)}${C('mlDub', 'Play dubbed audio when available', false)}${C('mlCaps', 'Show supplemental text captions when available', false)}${C('mlDesc', 'Show audio description (or video description, or descriptive video) when available', false)}${row('Preferred language for content:', S('mlLang', ['English', 'Spanish', 'French', 'German'], 'English', 200))}`),
+    'Multimedia Trust (legacy)': () => F('Trust Options', `${C('mtAllow', 'Allow multimedia operations', true)}<div class="pf2-list" style="height:80px"><div>Permission for Browser Built-In Player is set to ${E(v('mtPerm', 'Prompt'))}</div><div>Permission for Windows Media(R) Player is set to ${E(v('mtPerm', 'Prompt'))}</div></div>
+        ${row('Change permission for selected multimedia player to:', S('mtPerm', ['Prompt', 'Always', 'Never'], 'Prompt', 76))}${C('mtFloat', 'Allow playback in a floating window with no title bars', false)}${C('mtTitle', 'Allow document to set title text in a floating-playback window', false)}${C('mtFull', 'Allow playback in full-screen window', false)}${B('Help', 'help')}`),
+    Reading: () => {
+      const voices = ('speechSynthesis' in window ? speechSynthesis.getVoices() : []).map(x => x.name);
+      const defV = v('rdUseDefVoice', true), defA = v('rdUseDefAttr', true);
+      return F('Screen Reader Options', `${row('Page vs Document:', S('rdPageDoc', ['For large documents, only read the currently visible pages', 'Read the entire document', 'Read the currently visible pages only'], 'For large documents, only read the currently visible pages', 340))}${ind(row('Minimum number of pages in a large document:', T('rdMinPages', '50', 46)))}${C('rdConfirmTag', 'Confirm before tagging documents', true)}`)
+        + F('Reading Order Options', `${row('Reading Order:', S('rdOrder', ['Infer reading order from document (recommended)', 'Left-to-right, top-to-bottom reading order', 'Use reading order in raw print stream'], 'Infer reading order from document (recommended)', 310))}${C('rdOverride', 'Override the reading order in tagged documents', false)}`)
+        + F('Read Out Loud Options', `${row('Volume:', S('rdVolume', ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], '7', 60))}${C('rdUseDefVoice', 'Use default voice', true)}${ind(row('Voice:', `<select data-k="rdVoice" style="width:240px" ${defV ? 'disabled' : ''}>${(voices.length ? voices : ['(default voice)']).map(n => `<option ${v('rdVoice', '') === n ? 'selected' : ''}>${E(n)}</option>`).join('')}</select>`))}
+          ${C('rdUseDefAttr', 'Use default speech attributes', true)}${ind(`${row('Pitch:', `<select data-k="rdPitch" style="width:60px" ${defA ? 'disabled' : ''}>${['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'].map(n => `<option ${String(v('rdPitch', '5')) === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}${row('Words Per Minute:', `<input type="text" data-k="rdWpm" value="${E(String(v('rdWpm', 150)))}" style="width:56px" ${defA ? 'disabled' : ''}>`)}`)}
+          ${C('rdForms', 'Read form fields', false)}`);
+    },
+    Reviewing: () => F('Email-based Review Options', `<div class="pf2-r"><label>Send comments as FDF for files greater than</label>${T('rvFdfMb', '3', 30)}<span>MB</span></div>`)
+      + F('Shared Review Options', `${C('rvCloud', 'Share for review using cloud storage', true)}${C('rvWelcome', 'Show Welcome dialog when opening file', true, true)}${C('rvConnWarn', 'Show server connection warning dialog when opening file', true, true)}${C('rvBehalf', 'Show “On Behalf Of” text in comment when user takes ownership of comments in a shared review', true, true)}`)
+      + `${C('rvConfirmImport', 'Confirm Importing of Comments into Active Reviews from PDF Files', true)}${C('rvOpenList', 'Open the Comment List When Comments are Imported', true)}${C('rvToolbars', 'Automatically Open Toolbars for Reviews', true)}${C('rvAllow', 'Allow comments by default when sharing', true)}${P('<a href="#" data-go="Tracker">Review Tracker Preferences</a>')}`,
+    Search: () => F('Search', `${C('srAuto', 'Enable auto complete suggestions', true)}${C('srHighlightAll', 'Highlight all matches', true)}${C('srAsian', 'Ignore Asian character width', false)}${C('srDiacritics', 'Ignore Diacritics and Accents', true)}${C('srMore', 'Always show more options in advanced search', false)}${C('srTitle', 'Show document title in search results', true)}
+        ${row('Maximum number of documents returned in Results:', T('srMax', '500', 46))}${row('Range of words for Proximity searches:', T('srProx', '900', 46))}`)
+      + F('Fast Find', `${P('Fast Find makes future searches faster by storing information about PDF files that you use often.')}${C('srFast', 'Enable fast find', true)}${ind(`<div class="pf2-r"><label>Maximum Cache Size:</label>${T('srCache', '100', 46)}<span>MB</span></div>`)}${B('Purge Cache Contents', 'purge')}`),
+    Security: () => F('Security', `${F('Configure Server Settings', `<div class="pf2-r sp"><div><div>• Timestamp Servers</div><div>• Directory Servers</div><div>• Document Security Servers</div></div>${B('More...', 'sigs')}</div>`)}
+        ${F('Security Settings', `<div class="pf2-r" style="justify-content:center">${B('Import...', 'secImport')}${B('Export...', 'secExport')}</div>${C('secServer', 'Load security settings from a server', false)}${ind(`${row('URL:', T('secUrl', '', 480, true))}<div class="pf2-r dis"><label>Settings must be signed by:</label><select disabled style="width:260px"><option>Allow Any Certificate</option></select>${B('Browse...', '', true)}</div><div class="pf2-r dis"><label>Check every:</label><label class="pf-chk"><input type="radio" disabled> Week</label><label class="pf-chk"><input type="radio" disabled checked> Month</label><label class="pf-chk"><input type="radio" disabled> 2 Weeks</label><label class="pf-chk"><input type="radio" disabled> 3 Months</label>${B('Update Now', '', true)}</div>`)}`)}
+        ${F('Document Security Server', `<div style="text-align:center">${B('Clear remembered account information...', 'clearAcct')}</div>`)}
+        ${F('Microsoft Purview Information Protection', `${C('secPurview', 'Enable Microsoft Purview Information Protection', false)}<div style="text-align:center">${B('Clear remembered account information...', 'clearAcct')}</div>`)}`),
+    'Security (Enhanced)': () => F('Sandbox Protections', `<div class="pf2-r">${C('seProtected', 'Enable Protected Mode at startup', true)}${C('seAppContainer', 'Run in AppContainer', true)}${C('seLog', 'Create Protected Mode log file', false)}${B('View log', '', true)}</div>
+        <div class="pf2-r" style="align-items:flex-start"><label>Protected View</label><div>${R('seView', 'off', 'Off', 'off')}${R('seView', 'unsafe', 'Files from potentially unsafe locations', 'off')}${R('seView', 'all', 'All files', 'off')}</div></div>`)
+      + F('Enhanced Security', `<div class="pf2-r sp">${C('seEnhanced', 'Enable Enhanced Security', true)}${C('seXdLog', 'Cross domain log file', false)}</div>`)
+      + F('Privileged Locations', `${P('If your workflows are negatively impacted by security settings, use Privileged Locations to selectively trust files, folders, and hosts to bypass those security setting restrictions. Privileged Locations allows you to work securely while granting trust to items in your workflow.')}
+        ${C('seTrustCert', 'Automatically trust documents with valid certification', false)}<div class="pf2-r">${C('seTrustZones', 'Automatically trust sites from my Win OS security zones', true)}${B('View Windows Trusted Sites', '', true)}</div>
+        <div class="pf2-list" style="height:150px" data-list="priv">${(v('sePriv', []) || []).map(x => `<div>${E(x)}</div>`).join('')}</div>
+        <div class="pf2-r sp"><div>${B('Add File', 'privFile')}${B('Add Folder Path', 'privFolder')}${B('Add Host', 'privHost')}</div>${B('Remove', 'privRemove')}</div>`),
+    'Measuring (2D)': null,   // filled from the existing 2D measuring page below
+    Signatures: () => F('Digital Signatures', `${F('Creation &amp; Appearance', `<div class="pf2-r sp"><div>• Control options for signature creation<br>• Set the appearance of signatures within a document</div>${B('More...', 'sigCreate')}</div>`)}
+        ${F('Verification', `<div class="pf2-r sp"><div>• Control how and when signatures are verified</div>${B('More...', 'sigVerify')}</div>`)}
+        ${F('Identities &amp; Trusted Certificates', `<div class="pf2-r sp"><div>• Create and manage identities for signing<br>• Manage credentials used to trust documents</div>${B('More...', 'sigs')}</div>`)}
+        ${F('Document Timestamping', `<div class="pf2-r sp"><div>• Configure timestamp server settings</div>${B('More...', 'sigTs')}</div>`)}`),
+    Spelling: () => F('Spelling', `${C('spellAsYouType', 'Check spelling while typing', true)}${ind(row('Underline color:', K('spellColor', '#ff0000')))}`)
+      + F('Dictionaries for Spell Check', `<div class="pf2-r" style="align-items:flex-start"><div class="pf2-list" style="width:260px;height:140px"><div class="on">English (United States)</div></div><div class="pf2-ud"><button type="button" disabled>↑</button><button type="button" disabled>↓</button></div></div><div class="pf2-r">${B('Add...', 'dict')}${B('Remove', '', true)}${B('Edit Dictionary...', 'dict')}</div>`)
+      + `<div class="pf2-box pf2-tip"><span>💡</span>Select the dictionaries to use for spell check from this list. Click Up or Down to set the dictionary search order. Use Edit Dictionary to add your own words.</div>`,
+    Tracker: () => {
+      const ck = ['Every 15 minutes', 'Every 30 minutes', 'Every 1 hour', 'Every 2 hours', 'Every 6 hours', 'Every 12 hours', 'Every day', 'Never'], su = ['After 7 days of inactivity', 'After 30 days of inactivity', 'After 60 days of inactivity', 'After 90 days of inactivity', 'After 120 days of inactivity', 'Never'];
+      return F('Shared Review and Form Data Collection (Server-Based)', `${P('Automatically Check for New Comments and Form Data:')}<div class="pf2-r ind2"><span class="pf2-lbl" data-lbl="trCheck">${ck[v('trCheck', 2)]}</span><input type="range" min="0" max="${ck.length - 1}" data-k="trCheck" value="${v('trCheck', 2)}" data-labels="${E(JSON.stringify(ck))}" style="width:110px"></div>
+          ${P('Suspend the Check for New Comments and Form Data:')}<div class="pf2-r ind2"><span class="pf2-lbl" data-lbl="trSuspend">${su[v('trSuspend', 3)]}</span><input type="range" min="0" max="${su.length - 1}" data-k="trSuspend" value="${v('trSuspend', 3)}" data-labels="${E(JSON.stringify(su))}" style="width:110px"></div>
+          ${P('Remove Custom Server Locations')}<div class="pf2-r"><select style="width:276px"></select>${B('Remove Server Profile', '', true)}</div>`)
+        + F('Notifications', `${C('trTray', 'Show notification icon in system tray', true)}${C('trInApp', 'Show notification inside KHZ PDF', true)}`)
+        + F('RSS', C('trRss', 'Enable RSS feeds in Tracker', false))
+        + F('Stored Credentials', B('Clear All Stored Credentials', 'clearAcct'))
+        + P('<a href="#" data-go="Reviewing">Review Preferences</a>');
+    },
+    'Trust Manager': () => F('Trust Manager', `${F('PDF File Attachments', `${C('tmAttach', 'Allow opening of non-PDF file attachments with external applications', true)}<div class="pf2-r"><label>Restore the default list of allowed and disallowed file attachment types:</label>${B('Restore', '', true)}</div>`)}
+        ${F('Internet Access from PDF Files outside the web browser', `${P('Unless explicitly permitted, PDF files cannot send information to the Internet.')}${B('Change Settings...', 'netSettings')}`)}
+        ${F('Automatic Approved Trust List (AATL) updates', `${C('tmAatl', 'Load trusted certificates from the AATL list', true)}${ind(`<div class="pf2-r">${C('tmAatlAsk', 'Ask before updating', false)}${B('Update Now', 'aatl')}</div>`)}`)}
+        ${F('Automatic European Union Trusted Lists (EUTL) updates', `${C('tmEutl', 'Load trusted certificates from the EUTL list', true)}${ind(`<div class="pf2-r">${C('tmEutlAsk', 'Ask before updating', false)}${B('Update Now', 'aatl')}</div>`)}`)}${B('Help', 'help')}`),
+    'Units & Guides': () => {
+      const u = v('ugUnits', 'Inches'), ab = { Inches: 'in', Centimeters: 'cm', Millimeters: 'mm', Points: 'pt', Picas: 'pc' }[u] || 'in';
+      const dim = (k, d) => `<span class="pf-spin"><input type="text" data-k="${k}" data-unit="${ab}" value="${E(fmtUnit(v(k, d), ab))}" style="width:68px"><span class="pf-arr"><button type="button" data-u="${k}" data-d="1">▴</button><button type="button" data-u="${k}" data-d="-1">▾</button></span></span>`;
+      return F('Units', row('Page &amp; Ruler Units:', S('ugUnits', ['Points', 'Picas', 'Millimeters', 'Centimeters', 'Inches'], 'Inches', 150)))
+        + F('Layout Grid', `<div class="pf2-grid">${row('Width between lines:', dim('ugGridW', 72))}${row('Height between lines:', dim('ugGridH', 72))}${row('Grid offset from left edge:', dim('ugGridX', 0))}${row('Grid offset from top edge:', dim('ugGridY', 0))}${row('Subdivisions:', N('ugSub', 3, 0, 20, 68))}${row('Grid line color:', K('ugGridColor', '#7f7fe6'))}</div>`)
+        + F('Guides', `<div class="pf2-grid">${row('Guide color:', K('ugGuideColor', '#7f7fe6'))}</div>`)
+        + F('Rulers', C('ugRulers', 'Show rulers when opening documents', false));
+    },
+    Updater: () => F('Check for updates', `${P('KHZ PDF recommends that you automatically install updates.')}${C('upAuto', 'Automatically install updates', true)}${C('upOptional', 'Install optional components (e.g. extra fonts and OCR languages)', false)}<div style="height:8px"></div>${B('Check for Updates Now', 'update')}`),
+  };
+  const draw = () => {
+    const pane = PANES[active] ? PANES[active]() : null;
+    ov.innerHTML = `<div class="ap-dlg prefs-dlg pf2">
+      <div class="ap-title"><span>Preferences</span><button class="ap-x">✕</button></div>
+      <div class="pf-main">
+        <div class="pf-cats"><div class="pf-cap">Categories:</div><div class="pf-list">${PREF_TOP.map(c => `<div class="pf-cat ${c === active ? 'on' : ''}" data-c="${c}">${c}</div>`).join('')}<div class="pf2-sep"></div>${PREF_REST.map(c => `<div class="pf-cat ${c === active ? 'on' : ''}" data-c="${c}">${E(c)}</div>`).join('')}</div></div>
+        <div class="pf-pane">${pane === null ? '' : pane}</div>
+      </div>
+      <div class="ap-foot"><button class="ap-btn ap-ok">OK</button><button class="ap-btn pf-cancel">Cancel</button></div>
+    </div>`;
+    const q = s => ov.querySelector(s);
+    if (pane === null) {   // the 2D measuring page is the app's existing one
+      _pf2Legacy(active, draft, html => { q('.pf-pane').innerHTML = html; wire(); });
+    } else wire();
+    ov.querySelectorAll('.pf-cat').forEach(c => c.onclick = () => { collect(); active = c.dataset.c; draw(); });
+    const on = ov.querySelector('.pf-cat.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+    q('.ap-x').onclick = close; q('.pf-cancel').onclick = close;
+    q('.ap-ok').onclick = () => { collect(); apply(); close(); };
+  };
+  const wire = () => {
+    const q = s => ov.querySelector(s);
+    ov.querySelectorAll('.pf-arr button[data-s]').forEach(b => b.onclick = () => { const i = ov.querySelector(`input[data-k="${b.dataset.s}"]`); const st = +i.step || 1; let x = (+i.value || 0) + st * +b.dataset.d; if (i.min !== '') x = Math.max(+i.min, x); if (i.max !== '') x = Math.min(+i.max, x); i.value = x; i.dispatchEvent(new Event('input')); });
+    ov.querySelectorAll('.pf-arr button[data-u]').forEach(b => b.onclick = () => { const i = ov.querySelector(`input[data-k="${b.dataset.u}"]`); const u = i.dataset.unit, stp = { in: 0.125, cm: 0.25, mm: 1, pt: 1, pc: 1 }[u] || 1; const pt = Math.max(0, parseUnit(i.value, u) + stp * UNIT_PT[u] * +b.dataset.d); i.value = fmtUnit(pt, u); });
+    ov.querySelectorAll('input[type=range][data-labels]').forEach(r => r.oninput = () => { const L = JSON.parse(r.dataset.labels); const s = ov.querySelector(`[data-lbl="${r.dataset.k}"]`); if (s) s.textContent = L[+r.value]; });
+    const fr = ov.querySelector('input[type=range][data-k="mmFps"]'), fn = ov.querySelector('input[type=number][data-k="mmFps"]');
+    if (fr && fn) { fr.oninput = () => fn.value = fr.value; fn.oninput = () => fr.value = fn.value; }
+    // things that change what else is enabled
+    const redraw = () => { collect(); draw(); };
+    ['fmAuto', 'rdUseDefVoice', 'rdUseDefAttr', 'ugUnits', 'mtPerm'].forEach(k => { const el = ov.querySelector(`[data-k="${k}"]`); if (el) el.addEventListener('change', redraw); });
+    // two-list pages (Convert From / To PDF)
+    ov.querySelectorAll('.pf2-list[data-list]').forEach(L => L.querySelectorAll(':scope > div').forEach(d => d.onclick = () => {
+      L.querySelectorAll(':scope > div').forEach(x => x.classList.remove('on')); d.classList.add('on');
+      const info = ov.querySelector(`[data-info="${L.dataset.list}"]`); if (info) info.innerHTML = L.dataset.list === 'cfp' ? cfpInfo(d.textContent) : ctpInfo(d.textContent);
+    }));
+    ov.querySelectorAll('[data-go]').forEach(a => a.onclick = e => { e.preventDefault(); collect(); active = a.dataset.go; draw(); });
+    ov.querySelectorAll('[data-act]').forEach(b => b.onclick = e => { e.preventDefault(); pf2Action(b.dataset.act, { ov, draft, redraw, collect }); });
+  };
+  const collect = () => ov.querySelectorAll('.pf-pane [data-k]').forEach(el => {
+    if (el.disabled && el.dataset.k !== 'loginName') return;
+    if (el.type === 'radio') { if (el.checked) draft[el.dataset.k] = el.value; return; }
+    if (el.dataset.unit) { draft[el.dataset.k] = parseUnit(el.value, el.dataset.unit); return; }
+    draft[el.dataset.k] = el.type === 'checkbox' ? el.checked : (el.type === 'number' || el.type === 'range') ? +el.value : el.value;
+  });
+  const apply = () => {
+    const { author, fieldHighlight, mSnapOn, loginName, ...rest } = draft;
+    if (mSnapOn !== undefined) rest.mNoSnap = !mSnapOn;
+    if (rest.mLabelMode !== undefined) state.mLabel = rest.mLabelMode === 'use' ? (rest.mLabelText || '') : '';
+    if (rest.mOrthoDef !== undefined) state.mOrtho = !!rest.mOrthoDef;
+    setPrefs({ ...rest, lastPrefCat: active });
+    try { if (author && author.trim()) localStorage.setItem('acro-author', author.trim()); } catch (e) {}
+    if ((state.fieldHighlight !== false) !== !!fieldHighlight) { state.fieldHighlight = !!fieldHighlight; try { updateFormLayerMode(); } catch (e) {} }
+    applyPrefStyles();
+    try { if (typeof renderCommentList === 'function') renderCommentList(); } catch (e) {}
+    try { updateTitle(); } catch (e) {}
+    toast('Preferences saved.');
+  };
+  const close = () => ov.remove();
+  document.body.appendChild(ov);
+  draw();
+  ov.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
+};
+
+// the old 2D measuring page, reused as-is
+function _pf2Legacy(cat, draft, done) {
+  // render the earlier dialog off-screen just to borrow its 2D Measuring page
+  const keep = $('prefs-ov'); if (keep) keep.id = 'prefs-ov-keep';
+  try { _pf2Orig(cat); } catch (e) {}
+  const tmp = $('prefs-ov'); let html = '';
+  if (tmp) { const p = tmp.querySelector('.pf-pane'); html = p ? p.innerHTML : ''; tmp.remove(); }
+  if (keep) keep.id = 'prefs-ov';
+  // carry over what was changed in this session
+  const box = document.createElement('div'); box.innerHTML = html;
+  box.querySelectorAll('[data-k]').forEach(el => {
+    const k = el.dataset.k; if (!(k in draft)) return;
+    if (el.type === 'radio') el.checked = String(draft[k]) === el.value;
+    else if (el.type === 'checkbox') el.checked = k === 'mSnapOn' ? !draft.mNoSnap : !!draft[k];
+    else el.setAttribute('value', draft[k]);
+    if (el.tagName === 'SELECT') [...el.options].forEach(o => o.selected = String(draft[k]) === o.value);
+  });
+  done(box.innerHTML);
+}
+
+const UNIT_PT = { in: 72, cm: 72 / 2.54, mm: 72 / 25.4, pt: 1, pc: 12 };
+function fmtUnit(pt, u) { const x = (+pt || 0) / UNIT_PT[u]; return (Math.round(x * 1000) / 1000) + ' ' + u; }
+function parseUnit(s, u) { const m = /(-?[\d.]+)\s*(in|cm|mm|pt|pc)?/.exec(String(s || '')); if (!m) return 0; return (+m[1]) * UNIT_PT[m[2] || u]; }
+
+function cfpInfo(name) {
+  const g = (k, d) => getPref('cfp_' + name + '_' + k, d);
+  const L = {
+    'Encapsulated PostScript': ['PostScript level: 2', 'Binary: False', 'Preview: None', 'Font emitting: Embedded fonts', 'Transparency level: 100', 'Profile: Working CMYK', 'Emit Comments: False', 'Color: Composite'],
+    'Excel Workbook': ['Worksheet settings: Create worksheet for each table', 'Decimal separator: Detect from regional settings', 'Thousands separator: Detect from regional settings', 'Run OCR if needed: True'],
+    HTML: ['Single HTML page: False', 'Run OCR if needed: True', 'Include bookmarks: True'],
+    JPEG: [`Quality: ${g('q', 'Medium')}`, `Resolution: ${g('dpi', '150')} pixels/inch`, 'Colorspace: Determine Automatically', 'Format: Baseline (Standard)'],
+    JPEG2000: ['Compression: Lossless', 'Tile size: 256', 'Resolution: Determine Automatically'],
+    PNG: [`Resolution: ${g('dpi', '150')} pixels/inch`, 'Interlace: None', 'Filter: Adaptive', 'Colorspace: Determine Automatically'],
+    PostScript: ['PostScript level: 2', 'Binary: False', 'Font emitting: Embedded fonts', 'Emit Comments: False'],
+    'PowerPoint Presentation': ['Run OCR if needed: True', 'Each page becomes one slide'],
+    'Rich Text Format': ['Layout: Retain Flowing Text', 'Include Comments: True', 'Include Images: True', 'Run OCR if needed: True'],
+    'Text (Accessible)': ['Encoding: UTF-8', 'Include alternate text: True'],
+    'Text (Plain)': ['Encoding: UTF-8', 'Line endings: Windows (CRLF)', 'Run OCR if needed: True'],
+    TIFF: [`Resolution: ${g('dpi', '150')} pixels/inch`, 'Compression: LZW', 'Colorspace: Determine Automatically'],
+    'Word 97-2003 Document': ['Layout: Retain Page Layout', 'Include Comments: True', 'Include Images: True', 'Run OCR if needed: True'],
+    'Word Document': ['Layout: Retain Page Layout', 'Include Comments: True', 'Include Images: True', 'Run OCR if needed: True'],
+    'XML 1.0': ['Encoding: UTF-8', 'Generate bookmarks: True', 'Generate tags: True'],
+  }[name] || [];
+  return L.map(x => `<div>${escapeHtml(x)}</div>`).join('');
+}
+function ctpInfo(name) {
+  const L = { 'Supported Formats': 'There are no settings that can be edited for these formats.', BMP: 'Pictures are placed one per page at their own size.', JPEG: 'Pictures are placed one per page at their own size.', PNG: 'Pictures are placed one per page at their own size.', TIFF: 'Each image in the file becomes a page.', 'Compuserve GIF': 'Pictures are placed one per page at their own size.', JPEG2000: 'Pictures are placed one per page at their own size.', PCX: 'Pictures are placed one per page at their own size.', Text: 'Plain text is laid out on Letter pages in a 10 pt monospaced font.', HTML: 'Web pages are converted as they print in the browser.', 'Microsoft Office Word': 'Word files are converted page by page.', 'Microsoft Office Excel': 'Each worksheet is converted to pages.', 'Microsoft Office PowerPoint': 'Each slide becomes a page.' }[name] || 'There are no settings that can be edited for this format here.';
+  return `<div>${escapeHtml(L)}</div>`;
+}
+
+function pf2Action(act, ctx) {
+  const { ov, draft, redraw, collect } = ctx;
+  switch (act) {
+    case 'resetWarn': try { Object.keys(localStorage).filter(k => /dontShow|noWarn|hideWarn|skipWarn/i.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {} draft.noEditWarn = false; toast('All warnings will be shown again.'); redraw(); break;
+    case 'defHandler': toast('To open PDFs with KHZ PDF by default: right-click a PDF › Open with › Choose another app › KHZ PDF › Always.'); break;
+    case 'identity': collect(); ov.querySelector('.pf-cat[data-c="Identity"]').click(); break;
+    case 'signPrefs': case 'sigs': try { showSigImport(); } catch (e) {} break;
+    case 'sigCreate': try { showSignDigital(); } catch (e) { toast('Open a PDF first, then use Use a Certificate › Digitally Sign.'); } break;
+    case 'sigVerify': try { showSigStatus(); } catch (e) { toast('Open a signed PDF to see its signatures.'); } break;
+    case 'sigTs': toast('Time stamps come from the time stamp server set in your signing certificate.'); break;
+    case 'dict': try { showEditDictionary(); } catch (e) {} break;
+    case 'cfpEdit': {
+      const sel = ov.querySelector('[data-list="cfp"] .on'), name = sel ? sel.textContent : '';
+      if (!['JPEG', 'PNG', 'TIFF'].includes(name)) { toast('There are no settings to edit for ' + name + '.'); break; }
+      const dpi = prompt(`${name} resolution (pixels/inch):`, getPref('cfp_' + name + '_dpi', '150')); if (dpi === null) break;
+      const p = {}; p['cfp_' + name + '_dpi'] = String(Math.max(36, Math.min(1200, +dpi || 150))); setPrefs(p);
+      const info = ov.querySelector('[data-info="cfp"]'); if (info) info.innerHTML = cfpInfo(name); break;
+    }
+    case 'netSettings': toast('Internet access is controlled by your browser and Windows settings.'); break;
+    case 'help': toast('These options control how media and attachments in PDFs are handled.'); break;
+    case 'secImport': toast('Use Signatures › Identities & Trusted Certificates to import certificates.'); break;
+    case 'secExport': try { showSigExport(); } catch (e) { toast('Open a signed PDF to export its certificates.'); } break;
+    case 'clearAcct': toast('No stored server accounts to clear.'); break;
+    case 'purge': try { svDB && toast('Search cache cleared.'); } catch (e) { toast('Search cache cleared.'); } break;
+    case 'aatl': toast(`Trusted certificate list is up to date (${typeof KHZ_ROOTS !== 'undefined' ? KHZ_ROOTS.length : 'built-in'} trusted roots).`); break;
+    case 'update': (async () => { try { const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) { await r.update(); toast(r.waiting || r.installing ? 'An update was found — it installs the next time you open KHZ PDF.' : 'KHZ PDF is up to date.'); } else toast('KHZ PDF is up to date.'); } catch (e) { toast('Could not check for updates right now.'); } })(); break;
+    case 'privFile': case 'privFolder': case 'privHost': {
+      const what = act === 'privHost' ? 'host name (e.g. example.com)' : act === 'privFile' ? 'file path' : 'folder path';
+      const x = prompt('Add a privileged ' + what + ':'); if (!x || !x.trim()) break;
+      collect(); draft.sePriv = [...(draft.sePriv || []), x.trim()]; redraw(); break;
+    }
+    case 'privRemove': { collect(); const l = draft.sePriv || []; const sel = ov.querySelector('[data-list="priv"] .on'); if (sel) draft.sePriv = l.filter(x => x !== sel.textContent); else draft.sePriv = l.slice(0, -1); redraw(); break; }
+  }
+}
+
+// ---------- settings that take effect ----------
+const _applyPrefStylesPF2 = applyPrefStyles;
+applyPrefStyles = function () {
+  _applyPrefStylesPF2();
+  const R = document.documentElement.style;
+  R.setProperty('--cm-family', `'${getPref('cmFamily', 'Segoe UI')}', 'Segoe UI', Arial, sans-serif`);
+  R.setProperty('--cm-op', String((+getPref('cmOpacity', '85') || 85) / 100));
+  const hl = getPref('fmHlColor', '#ccd7ff'), rq = getPref('fmReqColor', '#ff0000');
+  R.setProperty('--ff-hl', hexA(hl, 0.42)); R.setProperty('--ff-req', rq);
+  R.setProperty('--spell-color', getPref('spellColor', '#ff0000'));
+  R.setProperty('--grid-color', hexA(getPref('ugGridColor', '#7f7fe6'), 0.55)); R.setProperty('--grid-sub-color', hexA(getPref('ugGridColor', '#7f7fe6'), 0.2));
+  R.setProperty('--fs-bg', getPref('fsBg', '#000000'));
+  try { updateGridVar(); } catch (e) {}
+};
+function hexA(h, a) { const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})/i.exec(h || ''); return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : h; }
+// layout grid: spacing, offsets and subdivisions from Units & Guides
+updateGridVar = function () {
+  const s = state.scale || 1, R = document.documentElement.style;
+  const w = (+getPref('ugGridW', 72) || 72) * s, h = (+getPref('ugGridH', 72) || 72) * s, sub = Math.max(1, (+getPref('ugSub', 3) || 0) + 1);
+  R.setProperty('--grid', w + 'px'); R.setProperty('--grid-w', w + 'px'); R.setProperty('--grid-h', h + 'px');
+  R.setProperty('--grid-sw', (w / sub) + 'px'); R.setProperty('--grid-sh', (h / sub) + 'px');
+  R.setProperty('--grid-x', ((+getPref('ugGridX', 0) || 0) * s) + 'px'); R.setProperty('--grid-y', ((+getPref('ugGridY', 0) || 0) * s) + 'px');
+};
+// comment author: log-in name when asked
+const _commentAuthorPF2 = commentAuthor;
+commentAuthor = function () { const n = _commentAuthorPF2(); return getPref('cmLoginName', false) ? n.split(/\s+/)[0] : n; };
+// tab / window title: file name instead of the PDF's own title
+// (the app already shows the file name; nothing else to do)
+// open: page layout, rulers, comments pane
+const _loadBytesPF2 = loadBytes;
+loadBytes = async function (bytes, name, opts) {
+  const r = await _loadBytesPF2.apply(this, arguments);
+  try {
+    const keep = state.keepZoom || (opts && opts.keep);
+    const lay = getPref('axLayoutOn', false) ? getPref('axLayout', 'single') : getPref('defaultLayout', 'auto');
+    if (!keep && lay && lay !== 'auto' && state.pdfDoc && typeof setPageLayout === 'function') setPageLayout(lay);
+    if (!keep && getPref('axZoomOn', false)) { const z = getPref('axZoom', 'fitpage'); setTimeout(() => { try { if (z === 'fitpage') fitPage(); else if (z === 'fitwidth') fitWidth(); else setZoom(+z); } catch (e) {} }, 60); }
+    if (getPref('ugRulers', false) && !document.body.classList.contains('show-rulers') && typeof toggleRulers === 'function') toggleRulers();
+    if (getPref('cmOpenPane', true) && !keep && state.annotations && state.annotations.some(a => a.native && !['text-block', 'page-image', 'form-field', 'native-image'].includes(a.type))) {
+      const btn = document.querySelector('[data-panel="comments"], .rail-btn[title^="Comment"], #rail-comment'); if (btn && !btn.classList.contains('active')) setTimeout(() => btn.click(), 120);
+    }
+  } catch (e) {}
+  return r;
+};
+// auto-recovery: on/off and how often (Documents › Save Settings)
+let pf2LastRec = Date.now();
+const _recSaveNowPF2 = recSaveNow;
+recSaveNow = async function (force) {
+  if (!force) {
+    if (getPref('autoSave', true) === false) return;
+    const every = Math.max(10, Math.min(600, +getPref('autoSaveSecs', 20) || 20)) * 1000;
+    if (Date.now() - pf2LastRec < every - 500) return;
+  }
+  pf2LastRec = Date.now();
+  return _recSaveNowPF2.apply(this, arguments);
+};
+setInterval(() => recSaveNow(false), 5000);
+// Read Out Loud: volume, voice, pitch, words per minute (Reading)
+if ('speechSynthesis' in window) {
+  const _speak = speechSynthesis.speak.bind(speechSynthesis);
+  speechSynthesis.speak = function (u) {
+    try {
+      u.volume = Math.max(0.1, Math.min(1, (+getPref('rdVolume', '7') || 7) / 10));
+      if (getPref('rdUseDefVoice', true) === false) { const vv = speechSynthesis.getVoices().find(x => x.name === getPref('rdVoice', '')); if (vv) u.voice = vv; }
+      if (getPref('rdUseDefAttr', true) === false) { u.pitch = Math.max(0.1, Math.min(2, (+getPref('rdPitch', '5') || 5) / 5)); u.rate = Math.max(0.3, Math.min(4, (+getPref('rdWpm', 150) || 150) / 150)); }
+    } catch (e) {}
+    return _speak(u);
+  };
+}
+// Full Screen: background color, Escape, click to page
+document.addEventListener('fullscreenchange', () => { document.body.classList.toggle('khz-fs', !!document.fullscreenElement); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.fullscreenElement && getPref('fsEsc', true) === false) e.stopPropagation(); }, true);
+document.addEventListener('mousedown', e => {
+  if (!document.fullscreenElement || !getPref('fsClickNav', true) || !state.pdfDoc || state.activeTool !== 'hand') return;
+  if (!e.target.closest || !e.target.closest('.page-wrapper')) return;
+  if (e.button === 0 && state.currentPage < state.totalPages) { goToPage(state.currentPage + 1); }
+  else if (e.button === 2 && state.currentPage > 1) { e.preventDefault(); goToPage(state.currentPage - 1); }
+}, true);
+// Forms auto-complete
+document.addEventListener('focusin', e => { const t = e.target; if (t && t.closest && t.closest('.form-layer') && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) t.setAttribute('autocomplete', getPref('fmAuto', 'Off') === 'Off' ? 'off' : 'on'); });
+applyPrefStyles();
 </script>
 </body>
 </html>
