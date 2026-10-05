@@ -1721,6 +1721,7 @@
   .asc { display:flex; gap:16px; align-items:center; font-size:14px; padding:6px 2px 4px; } .asc-ic { flex:none; }
   .asc-ov .ap-foot .ap-btn { min-width:92px; }
   .asc-ov .ap-dlg.es-dlg { top:50% !important; left:50% !important; transform:translate(-50%, -50%) !important; margin:0 !important; }
+  #ask-reload .ap-foot .ap-btn { padding:4px 16px; width:auto; }
 </style>
 </head>
 <body>
@@ -24287,6 +24288,152 @@ exitApp = async function () {
   window.close();
   setTimeout(() => toast('The browser only lets you close this window yourself (Ctrl+W or its ×).'), 300);
 };
+
+// ================================================================
+//  Reload (F5 / Ctrl+R) with unsaved changes: our own box, centred, in plain words —
+//  Save and Reload · Reload Without Saving · Cancel.
+//  (The browser's own "Reload app? Changes you made may not be saved." box only appears now when
+//   reloading from the browser's menu/button, which a web page can't change.)
+// ================================================================
+function rlDirtyTabs() {
+  const out = [];
+  (state.docTabs || []).forEach(t => { const d = t.id === state.activeTabId ? state.dirty : t.dirty; if (d) out.push(t); });
+  if (!out.length && state.dirty) out.push({ id: state.activeTabId, name: state.fileName || 'Untitled.pdf' });
+  return out;
+}
+function rlAsk(names) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const list = names.length === 1 ? `'${escapeHtml(names[0])}' has` : `${names.length} documents have`;
+    const ov = esDialog('ask-reload', 'Reload KHZ PDF?', `<div class="asc"><span class="asc-ic"><svg viewBox="0 0 32 32" width="34" height="34"><path d="M16 3L30 28H2z" fill="#f2c200" stroke="#a07c00" stroke-width="1.2" stroke-linejoin="round"/><path d="M16 11v9" stroke="#222" stroke-width="2.6" stroke-linecap="round"/><circle cx="16" cy="24" r="1.6" fill="#222"/></svg></span>
+      <span>${list} unsaved changes.<br>Reloading now will lose them.${names.length > 1 ? `<br><span style="color:#666;font-size:12px">${names.map(escapeHtml).join(', ')}</span>` : ''}</span></div>`,
+      [{ label: 'Save and Reload', primary: true, run: () => fin('save') }, { label: 'Reload Without Saving', run: () => fin('discard') }, { label: 'Cancel', run: () => fin('cancel') }], 520);
+    ov.classList.add('asc-ov');
+    ov.querySelector('.ap-x').addEventListener('click', () => fin('cancel'));
+    ov.addEventListener('keydown', e => { if (e.key === 'Escape') fin('cancel'); });
+    setTimeout(() => { const b = ov.querySelector('.ap-ok'); if (b) b.focus(); }, 30);
+  });
+}
+async function rlReload() {
+  const dirty = rlDirtyTabs();
+  if (!dirty.length) { location.reload(); return; }
+  const ans = await rlAsk(dirty.map(t => t.name || 'Untitled.pdf'));
+  if (ans === 'cancel') return;
+  if (ans === 'save') {
+    for (const t of dirty) {
+      if (t.id && t.id !== state.activeTabId) { await switchDocTab(t.id); if (state.activeTabId !== t.id) return; }
+      if (!(await ascSaveNow())) return;   // they cancelled a Save window: stay
+      t.dirty = false;
+    }
+  }
+  state.dirty = false; (state.docTabs || []).forEach(t => { t.dirty = false; });
+  if (typeof recClearMine === 'function') await recClearMine();
+  location.reload();
+}
+document.addEventListener('keydown', e => {
+  const isReload = e.key === 'F5' || ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'r' || e.key === 'R'));
+  if (!isReload || !rlDirtyTabs().length) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (!$('ask-reload')) rlReload();
+}, true);
+
+// ================================================================
+//  AUTO-RECOVERY (like Acrobat): while a document has unsaved changes, a recovery copy is kept about
+//  once a minute (and when the window is hidden). If KHZ PDF is closed with the ×, the computer restarts
+//  or the browser crashes, the next start offers "Recover unsaved changes?".
+//  Copies are deleted as soon as the file is saved, or closed with "No".
+// ================================================================
+const REC_SID = 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let recGen = 0, recBusy = false;
+const recWritten = {};   // tab id → change counter at the last copy
+// this window's copies are "alive" while it's open (other windows don't offer them)
+if (navigator.locks) navigator.locks.request('khz-rec-' + REC_SID, () => new Promise(() => {})).catch(() => {});
+async function recKeys() {
+  try { const db = await svDB(); return await new Promise(res => { const out = []; const c = db.transaction('kv').objectStore('kv').openKeyCursor(); c.onsuccess = () => { const cur = c.result; if (!cur) return res(out); if (String(cur.key).startsWith('rec:')) out.push(cur.key); cur.continue(); }; c.onerror = () => res(out); }); } catch (e) { return []; }
+}
+async function recDel(key) { try { const db = await svDB(); await new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete(key); t.oncomplete = r; t.onerror = r; }); } catch (e) {} }
+const recKey = tabId => `rec:${REC_SID}:${tabId || 'main'}`;
+const _markDirtyREC = markDirty;
+markDirty = function () { recGen++; return _markDirtyREC.apply(this, arguments); };
+const _pushHistoryREC = pushHistory;
+pushHistory = function () { recGen++; return _pushHistoryREC.apply(this, arguments); };
+// keep a copy of every document that has unsaved changes
+async function recSaveNow(force) {
+  if (recBusy || !state.pdfDoc) return; recBusy = true;
+  try {
+    // the open tab
+    const id = state.activeTabId || 'main';
+    if (state.dirty) {
+      const editing = (typeof activeEditor !== 'undefined' && activeEditor) || state.drag;
+      if ((force || !editing) && recWritten[id] !== recGen) {
+        const snap = await tabSnapshot();
+        if (snap) { let h = snap.saveHandle; try { structuredClone(h); } catch (e) { h = null; }
+          await svPut(recKey(id), { name: state.fileName || 'Untitled.pdf', time: Date.now(), bytes: snap.bytes, annotations: snap.annotations, handle: h, page: snap.page });
+          recWritten[id] = recGen; }
+      }
+    } else if (recWritten[id] !== undefined) { await recDel(recKey(id)); delete recWritten[id]; }
+    // tabs in the background keep their copy from when they were left
+    for (const t of state.docTabs || []) {
+      if (t.id === state.activeTabId) continue;
+      if (t.dirty && t.snap && recWritten[t.id] !== t.snap) {
+        let h = t.snap.saveHandle; try { structuredClone(h); } catch (e) { h = null; }
+        await svPut(recKey(t.id), { name: t.name, time: Date.now(), bytes: t.snap.bytes, annotations: t.snap.annotations, handle: h, page: t.snap.page });
+        recWritten[t.id] = t.snap;
+      } else if (!t.dirty && recWritten[t.id] !== undefined) { await recDel(recKey(t.id)); delete recWritten[t.id]; }
+    }
+    // closed tabs: their copies go
+    const live = new Set((state.docTabs || []).map(t => t.id).concat(['main', state.activeTabId]));
+    for (const k of Object.keys(recWritten)) if (!live.has(k)) { await recDel(recKey(k)); delete recWritten[k]; }
+  } catch (e) { console.warn('recovery copy not kept', e); }
+  finally { recBusy = false; }
+}
+setInterval(() => recSaveNow(false), 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') recSaveNow(true); });
+// saved or closed on purpose: no copy needed
+const _updateTitleREC = updateTitle;
+updateTitle = function () { const r = _updateTitleREC.apply(this, arguments); if (!state.dirty && recWritten[state.activeTabId || 'main'] !== undefined) setTimeout(() => recSaveNow(true), 0); return r; };
+const _closeDocTabREC = closeDocTab;
+closeDocTab = async function (id) { const r = await _closeDocTabREC.apply(this, arguments); if (!state.docTabs.some(t => t.id === id)) { await recDel(recKey(id)); delete recWritten[id]; } return r; };
+const _exitAppREC = exitApp;
+exitApp = async function () { const before = state.dirty; await _exitAppREC.apply(this, arguments); if (!state.dirty && !(state.docTabs || []).some(t => t.dirty)) { for (const k of await recKeys()) if (k.startsWith('rec:' + REC_SID + ':')) await recDel(k); } };
+
+// ---------- next start: offer what was left behind ----------
+async function recOffer() {
+  const keys = await recKeys(); if (!keys.length) return;
+  let held = new Set();
+  try { if (navigator.locks) { const q = await navigator.locks.query(); (q.held || []).forEach(l => { if (l.name.startsWith('khz-rec-')) held.add(l.name.slice(8)); }); } } catch (e) {}
+  const items = [];
+  for (const k of keys) { const sid = k.split(':')[1]; if (sid === REC_SID || held.has(sid)) continue; const v = await svGet(k); if (v && v.bytes) items.push({ k, ...v }); else await recDel(k); }
+  if (!items.length) return;
+  items.sort((a, b) => b.time - a.time);
+  const fmtT = t => new Date(t).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const ov = esDialog('rec-ov', 'Recover Unsaved Changes', `<div class="es-note">KHZ PDF was closed while ${items.length === 1 ? 'this document had' : 'these documents had'} unsaved changes. Choose what to bring back:</div>
+    <div class="bk-list">${items.map((it, i) => `<label class="bk-row"><input type="checkbox" checked data-i="${i}"><span class="bk-n">${escapeHtml(it.name)}</span><span class="bk-t">changes from ${fmtT(it.time)}</span><span class="bk-s"></span></label>`).join('')}</div>
+    <div class="es-note">Recovered documents open with their changes still unsaved — save them to keep them. Anything you don't recover is deleted.</div>`,
+    [{ label: 'Recover', primary: true, run: async o => {
+        const pick = [...o.querySelectorAll('input[data-i]')].filter(c => c.checked).map(c => items[+c.dataset.i]);
+        for (const it of pick) {
+          try {
+            state._openHandle = it.handle || null;
+            showLoading(true, `Recovering ${it.name}…`);
+            await loadBytes(new Uint8Array(it.bytes), it.name);
+            if (it.annotations && it.annotations.length) { state.annotations.push(...it.annotations); renderAllAnnots(); }
+            if (it.page && typeof goToPage === 'function') goToPage(it.page);
+            markDirty();
+          } catch (e) { toast(`Couldn't recover ${it.name}: ${e.message}`); }
+          finally { showLoading(false); }
+        }
+        for (const it of items) await recDel(it.k);
+        if (pick.length) toast(`Recovered ${pick.length} document${pick.length > 1 ? 's' : ''}. Save to keep the changes.`);
+      } },
+     { label: 'Discard', run: async () => { if (!confirm('Delete the unsaved changes? This can\'t be undone.')) return false; for (const it of items) await recDel(it.k); } },
+     { label: 'Later' }], 560);
+  ov.classList.add('asc-ov');
+}
+setTimeout(recOffer, 1500);
+
+// reloading or exiting on purpose: the choice was made, so no recovery offer afterwards
+async function recClearMine() { for (const k of await recKeys()) if (k.startsWith('rec:' + REC_SID + ':')) await recDel(k); }
 </script>
 </body>
 </html>
