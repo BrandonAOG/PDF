@@ -1,0 +1,27 @@
+{
+  "name": "KHZ PDF",
+  "short_name": "KHZ PDF",
+  "description": "View, edit, comment on, sign and organize PDF files.",
+  "id": "./khz-pdf.html",
+  "start_url": "./khz-pdf.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#1e1e1e",
+  "theme_color": "#1b4f8f",
+  "orientation": "any",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    { "action": "./khz-pdf.html", "accept": { "application/pdf": [".pdf"] } }
+  ],
+  "shortcuts": [
+    { "name": "Open a PDF", "url": "./khz-pdf.html", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KHZ PDF</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#1b4f8f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="KHZ PDF">
+<meta name="application-name" content="KHZ PDF">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27g%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%271%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%232368bd%27/%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%230f2a4d%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2714%27%20fill%3D%27url%28%23g%29%27/%3E%3Cpath%20d%3D%27M40%200h10a14%2014%200%200%201%2014%2014v10z%27%20fill%3D%27%23e2332b%27/%3E%3Ctext%20x%3D%2731%27%20y%3D%2740%27%20font-family%3D%27Segoe%20UI%2CArial%2CHelvetica%2Csans-serif%27%20font-size%3D%2721%27%20font-weight%3D%27800%27%20fill%3D%27%23fff%27%20text-anchor%3D%27middle%27%3EKHZ%3C/text%3E%3Crect%20x%3D%2715%27%20y%3D%2746%27%20width%3D%2732%27%20height%3D%273.2%27%20rx%3D%271.6%27%20fill%3D%27%23e2332b%27/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
@@ -12671,6 +12677,7 @@ function buildHelpMenu() {
     + fmItem('', 'KHZ PDF &Tutorials...', "showHelpCenter('tutorials')")
     + fmItem('', '&Quick Start Tutorials...', "showHelpCenter('reader')")
     + SEP
+    + fmItem('', '&Install KHZ PDF as an App...', 'khzInstall()')
     + fmItem('', '&About KHZ PDF...', 'showAboutApp()')
     + fmItem('', 'About &Plug-Ins...', 'showPlugins()')
     + SEP
@@ -19605,6 +19612,40 @@ async function hfShrinkPages(hf) {
     state.headerFooter = hfKeep;
     if (Math.abs(state.scale - zoom) > 0.001) setZoom(zoom);
   } catch (e) { showLoading(false); handleWriteError(e); }
+}
+
+// ================================================================
+//  INSTALL AS AN APP (when served from a web address such as GitHub Pages):
+//  • manifest.json + icons/ + sw.js next to this file → Chrome/Edge show "Install KHZ PDF"
+//  • works offline after the first visit; PDFs can be opened with KHZ PDF from Explorer / Finder
+//  • Help › Install KHZ PDF as an App…
+// ================================================================
+let khzInstallEvt = null;
+const khzWeb = /^https?:$/.test(location.protocol);
+if (khzWeb && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('offline support not available', e)));
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); khzInstallEvt = e; });
+window.addEventListener('appinstalled', () => { khzInstallEvt = null; toast('KHZ PDF is installed. Open it from your Start menu, desktop or Dock.'); });
+const khzStandalone = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone;
+async function khzInstall() {
+  if (khzStandalone()) { toast('You are already using the installed KHZ PDF app.'); return; }
+  if (khzInstallEvt) { khzInstallEvt.prompt(); const r = await khzInstallEvt.userChoice; if (r.outcome !== 'accepted') toast('Install cancelled.'); khzInstallEvt = null; return; }
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const safari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+  const msg = !khzWeb
+    ? '<p>This copy was opened from a file on your computer, so it can’t be installed from here.</p><p>Open KHZ PDF from its web address (for example <b>https://brandonaog.github.io/PDF/</b>) in Chrome or Edge, then choose <b>Help › Install KHZ PDF as an App…</b> again, or click the install icon at the right end of the address bar.</p>'
+    : ios ? '<p>On iPhone / iPad: tap the <b>Share</b> button in Safari, then <b>Add to Home Screen</b>.</p>'
+    : safari ? '<p>In Safari on a Mac: choose <b>File › Add to Dock…</b></p>'
+    : '<p>In Chrome or Edge, click the install icon at the right end of the address bar (a monitor with a down arrow), or open the browser menu (⋮ or …) and choose <b>Install KHZ PDF…</b> / <b>Apps › Install this site as an app</b>.</p><p>If you don’t see it yet, reload the page once and try again.</p>';
+  esDialog('khz-install', 'Install KHZ PDF as an App', msg, [{ label: 'OK', primary: true }], 460);
+}
+// "Open with KHZ PDF" from Explorer / Finder once installed
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async params => {
+    if (!params.files || !params.files.length) return;
+    try { const f = await params.files[0].getFile(); loadPDFFromFile(f); } catch (e) { toast('Could not open that file: ' + e.message); }
+  });
 }
 </script>
 </body>
