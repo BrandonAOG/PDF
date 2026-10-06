@@ -8646,7 +8646,7 @@ async function detectFormFields(n) {
   const texts = tc.items.filter(it => it.str && it.str.trim()).map(it => {
     const t = pdfjsLib.Util.transform(vp1.transform, it.transform);
     const fh = Math.hypot(t[2], t[3]) || 10;
-    return { x: t[4], y: t[5] - fh * 0.8, w: it.width, h: fh, base: t[5], str: it.str, fh };
+    return { x: t[4], y: t[5] - fh * 0.8, w: it.width, h: fh, base: t[5], str: it.str, fh, font: it.fontName };
   });
   const existing = state.annotations.filter(a => a.page === n && a.type === 'form-field').map(a => bboxOf(a.pts.map(p => V(p[0], p[1]))));
   Object.values(state.formFields && state.formFields[n] ? { x: state.formFields[n] } : {}).flat().forEach(f => existing.push(bboxOf([V(f.rect[0], f.rect[1]), V(f.rect[2], f.rect[3])])));
@@ -8657,25 +8657,51 @@ async function detectFormFields(n) {
   const OPS = pdfjsLib.OPS;
   let ctm = [1, 0, 0, 1, 0, 0]; const stack = [];
   const lines = [], boxes = [];
+  // paths that are only used to clip (logos, pictures) or that are painted in a light grey (decorative
+  // separators) aren't fill-in lines; check-box squares drawn as outlines (not rectangles) still count
+  const PAINT = new Set([OPS.stroke, OPS.closeStroke, OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke].filter(v => v !== undefined));
+  const STROKES = new Set([OPS.stroke, OPS.closeStroke].filter(v => v !== undefined));
+  const lum = c => { if (!c) return 0; const v = [c[0], c[1], c[2]].map(Number); const k = v.some(x => x > 1) ? 255 : 1; return (0.299 * v[0] + 0.587 * v[1] + 0.114 * v[2]) / k; };
+  const rgbArgs = a => a && (Array.isArray(a) ? a : [a[0], a[1], a[2]]);
+  let fillC = [0, 0, 0], strokeC = [0, 0, 0];
+  const st2 = [];
   ol.fnArray.forEach((fn, k) => {
     const args = ol.argsArray[k];
-    if (fn === OPS.save) stack.push(ctm.slice());
-    else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+    if (fn === OPS.save) { stack.push(ctm.slice()); st2.push([fillC, strokeC]); }
+    else if (fn === OPS.restore) { ctm = stack.pop() || [1, 0, 0, 1, 0, 0]; const c = st2.pop(); if (c) [fillC, strokeC] = c; }
     else if (fn === OPS.transform) ctm = mMul(args, ctm);
+    else if (fn === OPS.setFillRGBColor) fillC = rgbArgs(args);
+    else if (fn === OPS.setStrokeRGBColor) strokeC = rgbArgs(args);
+    else if (fn === OPS.setFillGray && args) fillC = [args[0], args[0], args[0]];
+    else if (fn === OPS.setStrokeGray && args) strokeC = [args[0], args[0], args[0]];
     else if (fn === OPS.constructPath) {
+      const paint = ol.fnArray[k + 1];
+      if (!PAINT.has(paint)) return;   // a clipping path / no-op
+      const light = lum(STROKES.has(paint) ? strokeC : fillC) > 0.5;
       const ops = args[0], co = args[1]; let j = 0, cur = null;
+      const segs = [], pts = []; let onlyLines = true;
       ops.forEach(op => {
-        if (op === OPS.moveTo) { cur = mApply(ctm, co[j], co[j + 1]); j += 2; }
-        else if (op === OPS.lineTo) { const p = mApply(ctm, co[j], co[j + 1]); j += 2; if (cur) lines.push([V(...cur), V(...p)]); cur = p; }
-        else if (op === OPS.curveTo) j += 6; else if (op === OPS.curveTo2 || op === OPS.curveTo3) j += 4;
+        if (op === OPS.moveTo) { cur = mApply(ctm, co[j], co[j + 1]); pts.push(V(...cur)); j += 2; }
+        else if (op === OPS.lineTo) { const p = mApply(ctm, co[j], co[j + 1]); j += 2; if (cur) segs.push([V(...cur), V(...p)]); pts.push(V(...p)); cur = p; }
+        else if (op === OPS.curveTo) { j += 6; onlyLines = false; } else if (op === OPS.curveTo2 || op === OPS.curveTo3) { j += 4; onlyLines = false; }
         else if (op === OPS.rectangle) {
-          const [x, y, w, h] = co.slice(j, j + 4); j += 4;
+          const [x, y, w, h] = co.slice(j, j + 4); j += 4; onlyLines = false;
           const a = V(...mApply(ctm, x, y)), b = V(...mApply(ctm, x + w, y + h));
           const r = bboxOf([a, b]);
-          if (r.h <= 1.6 && r.w > 30) lines.push([[r.x, r.y + r.h / 2], [r.x + r.w, r.y + r.h / 2]]);
-          else boxes.push(r);
+          if (r.h <= 1.6 && r.w > 30) { if (!light) lines.push([[r.x, r.y + r.h / 2], [r.x + r.w, r.y + r.h / 2]]); }
+          else if (!light || r.h > 4) boxes.push(r);
         }
       });
+      // a square outline drawn with lines (often a filled frame with a hole) is a check box
+      if (onlyLines && segs.length >= 4 && pts.length) {
+        const b = bboxOf(pts);
+        const axis = segs.every(([p, q]) => Math.abs(p[0] - q[0]) < 0.3 || Math.abs(p[1] - q[1]) < 0.3);
+        const onFrame = pts.every(([x, y]) => Math.min(x - b.x, b.x + b.w - x, y - b.y, b.y + b.h - y) < Math.max(1.3, b.w * 0.12));
+        const sides = [0, 1, 2, 3].every(i => segs.some(([p, q]) => i < 2 ? Math.abs(p[1] - q[1]) < 0.3 && Math.abs(p[0] - q[0]) > b.w * 0.8 && Math.abs(p[1] - (i ? b.y + b.h : b.y)) < 1.3
+          : Math.abs(p[0] - q[0]) < 0.3 && Math.abs(p[1] - q[1]) > b.h * 0.8 && Math.abs(p[0] - (i === 3 ? b.x + b.w : b.x)) < 1.3));
+        if (b.w >= 7 && b.w <= 20 && Math.abs(b.w - b.h) < 1.5 && axis && onFrame && sides && segs.length <= 24) { boxes.push(b); return; }
+      }
+      if (!light) segs.forEach(sg => lines.push(sg));
     }
   });
   // horizontal "fill-in" lines
@@ -8688,7 +8714,10 @@ async function detectFormFields(n) {
     const h = 14;
     const r = { x: l.x1 + 1, y: l.y - h, w: l.x2 - l.x1 - 2, h: h - 0.8 };
     if (r.w > vp1.width * 0.97) return;                                         // page-wide rules are separators
-    if (texts.some(t => overlap(r, { x: t.x, y: t.y, w: t.w, h: t.h }) > 0.25)) return;  // text already sits on it (heading underline / printed value)
+    const onIt = texts.filter(t => overlap(r, { x: t.x, y: t.y, w: t.w, h: t.h }) > 0.25);
+    if (onIt.length && onIt.every(t => /^\s*(\d{1,2}|[a-z])[.)]?\s*$/i.test(t.str) && t.x + t.w < r.x + r.w * 0.3)) {   // "1." printed at the start of a numbered row
+      const e = Math.max(...onIt.map(t => t.x + t.w)) + 3; r.w -= e - r.x; r.x = e;
+    } else if (onIt.length) return;  // text already sits on it (heading underline / printed value)
     cands.push({ kind: 'text', r, label: labelFor(texts, r) });
   });
   // empty boxes the height of a line of text → text fields
@@ -8706,9 +8735,9 @@ async function detectFormFields(n) {
   // 2. typed underscores and box characters
   texts.forEach(t => {
     const re = /_{3,}/g; let m;
-    const total = textWidth(t.str, 100) || 1;
+    const tw = ffMeasurer(t.font), total = tw(t.str) || 1;
     while ((m = re.exec(t.str))) {
-      const x0 = t.x + textWidth(t.str.slice(0, m.index), 100) / total * t.w, x1 = t.x + textWidth(t.str.slice(0, m.index + m[0].length), 100) / total * t.w;
+      const x0 = t.x + tw(t.str.slice(0, m.index)) / total * t.w, x1 = t.x + tw(t.str.slice(0, m.index + m[0].length)) / total * t.w;
       const r = { x: x0, y: t.base - Math.max(12, t.fh * 1.1), w: x1 - x0, h: Math.max(12, t.fh * 1.1) };
       cands.push({ kind: 'text', r, label: (t.str.slice(0, m.index).replace(/[:\s]+$/, '').trim()) || labelFor(texts, r) });
     }
@@ -8717,6 +8746,17 @@ async function detectFormFields(n) {
       const x0 = t.x + textWidth(t.str.slice(0, m.index), 100) / total * t.w;
       cands.push({ kind: 'checkbox', r: { x: x0, y: t.base - t.fh * 0.85, w: t.fh * 0.9, h: t.fh * 0.9 }, label: t.str.slice(m.index + 1).trim() || labelFor(texts, { x: x0, y: t.base - t.fh, w: t.fh, h: t.fh }, true) });
     }
+  });
+  // rows in a numbered table ("1.", "2." …) take the column heading + the row number: Name 1, Email Address 1, Delete 1
+  const enumOf = t => { const m = /^\s*(\d{1,2})[.)]\s*$/.exec(t.str); return m ? m[1] : null; };
+  cands.forEach(c => {
+    const bot = c.r.y + c.r.h;
+    const num = texts.filter(t => enumOf(t) && t.x + t.w <= c.r.x + 4 && Math.abs(t.base - bot) < Math.max(9, c.r.h)).sort((a, b) => (b.x + b.w) - (a.x + a.w))[0];
+    if (!num) return;
+    const pad = c.kind === 'checkbox' ? 12 : 0;
+    const head = texts.filter(t => !enumOf(t) && t.base < c.r.y + 1 && c.r.y - t.base < 260 && t.x < c.r.x + c.r.w + pad && t.x + t.w > c.r.x - pad)
+      .sort((a, b) => b.base - a.base)[0];
+    if (head) c.label = cleanLabel(head.str) + ' ' + enumOf(num);
   });
   // add (skip duplicates / existing fields)
   let added = 0;
@@ -8731,6 +8771,14 @@ async function detectFormFields(n) {
     added++;
   });
   return added;
+}
+// widths measured in the PDF's own font (pdf.js loads it under the font's name), so a line of
+// underscores after a label starts where it really starts on the page
+function ffMeasurer(fontName) {
+  const c = ffMeasurer.cv || (ffMeasurer.cv = document.createElement('canvas').getContext('2d'));
+  let ok = false;
+  try { if (fontName && document.fonts && document.fonts.check('100px "' + fontName + '"')) { c.font = '100px "' + fontName + '", sans-serif'; ok = [...document.fonts].some(f => f.family.replace(/"/g, '') === fontName && f.status === 'loaded'); } } catch (e) {}
+  return ok ? (str => { c.font = '100px "' + fontName + '", sans-serif'; return c.measureText(str).width; }) : (str => textWidth(str, 100));
 }
 function labelFor(texts, r, rightSide) {
   const same = texts.filter(t => Math.abs((t.base) - (r.y + r.h)) < Math.max(8, r.h * 0.9));
@@ -16997,7 +17045,7 @@ area.addEventListener('mousedown', e => {
     mgrp = { x: e.clientX, y: e.clientY, moved: false, items: state.msel.map(id => state.annotations.find(a => a.id === id)).filter(a => a && !a.locked) };
     return;
   }
-  const hitOk = hit && mqCandidates(n).some(a => a.id === hit.annot.id);
+  const hitOk = hit && (mqCandidates(n).some(a => a.id === hit.annot.id) || (state.prepareMode && hit.annot.type === 'form-field'));
   if (hitOk || (hit && tool === 'edit-text')) { if (state.msel.length) mselSet([]); return; }   // ordinary click on an object
   if (tool === 'select' && e.target.closest('.textLayer span, .textLayer br')) return;   // text: normal text selection
   e.preventDefault(); e.stopPropagation();
@@ -27949,6 +27997,27 @@ hitTest = function (n) {
   const _wcd = winColorDialog;
   winColorDialog = function () { const r = _wcd.apply(this, arguments); const ov = $('win-cdlg-ov'); if (ov && typeof topZ === 'function') ov.style.zIndex = Math.max(+getComputedStyle(ov).zIndex || 0, topZ() + 6); return r; };
 })();
+
+// ================================================================
+//  PREPARE FORM: clicking and drag-selecting work on the form fields only (like Acrobat) —
+//  the page's pictures, text and comments can't be grabbed by accident while laying out fields
+// ================================================================
+const _mqCandidatesPF = mqCandidates;
+mqCandidates = function (n) {
+  if (state.prepareMode) return state.annotations.filter(a => a.page === n && a.type === 'form-field');
+  return _mqCandidatesPF.apply(this, arguments);
+};
+const _hitTestPF = hitTest;
+hitTest = function (n) {
+  if (!state.prepareMode) return _hitTestPF.apply(this, arguments);
+  const all = state.annotations, keep = all.filter(a => a.page !== n || a.type === 'form-field');
+  if (keep.length === all.length) return _hitTestPF.apply(this, arguments);
+  state.annotations = keep;
+  let r; try { r = _hitTestPF.apply(this, arguments); } finally {
+    const added = state.annotations.filter(a => !keep.includes(a)); state.annotations = all; if (added.length) all.push(...added);
+  }
+  return r;
+};
 </script>
 </body>
 </html>
