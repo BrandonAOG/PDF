@@ -1764,6 +1764,11 @@
   body.show-grid .page-wrapper::after { background-image:linear-gradient(to right, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to right, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px) !important;
     background-size:var(--grid-w,72px) var(--grid-h,72px), var(--grid-w,72px) var(--grid-h,72px), var(--grid-sw,24px) var(--grid-sh,24px), var(--grid-sw,24px) var(--grid-sh,24px) !important;
     background-position:var(--grid-x,0) var(--grid-y,0) !important; }
+  /* tools pane: full list when nothing is open, icons only once a tool is picked */
+  body.rp-list #right-icon-sidebar { display:none !important; }
+  #right-icon-sidebar .ri-fill { flex:1; }
+  #right-icon-sidebar .ri-search { margin-bottom:4px; }
+  #right-icon-sidebar .ri-expand { color:#c8c8c8; margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -1948,9 +1953,9 @@
   <button class="tb-btn" onclick="setActiveTool('arrow')" data-tip="Draw arrow"><span class="ic" data-ic="arrowr"></span></button>
   <button class="tb-btn" onclick="setActiveTool('ellipse')" data-tip="Draw oval"><span class="ic" data-ic="circle"></span></button>
   <button class="tb-btn" onclick="setActiveTool('rectangle')" data-tip="Draw rectangle"><span class="ic" data-ic="rect"></span></button>
-  <button class="tb-btn" onclick="setActiveTool('cloud')" data-tip="Draw cloud"><span class="ic" data-ic="cloud"></span></button>
-  <button class="tb-btn" onclick="setActiveTool('polygon')" data-tip="Draw polygon"><span class="ic" data-ic="hexagon"></span></button>
-  <button class="tb-btn" onclick="setActiveTool('line')" data-tip="Draw lines"><span class="ic" data-ic="polyline"></span></button>
+  <button class="tb-btn" onclick="dtPick('cloud-pts')" data-tip="Draw cloud"><span class="ic" data-ic="cloud"></span></button>
+  <button class="tb-btn" onclick="dtPick('polygon-pts')" data-tip="Draw polygon"><span class="ic" data-ic="hexagon"></span></button>
+  <button class="tb-btn" onclick="dtPick('polyline-pts')" data-tip="Draw connected lines"><span class="ic" data-ic="polyline"></span></button>
   <div class="tb-sep" style="background:transparent;width:20px"></div>
   <button class="tb-btn" onclick="showMore()" data-tip="More tools"><span class="ic" data-ic="dots"></span></button>
   <div class="tb-right">
@@ -3518,23 +3523,35 @@ function polygonPts(b) {
   for (let i = 0; i < 6; i++) { const t = (i / 6) * Math.PI * 2 - Math.PI / 2; out.push([cx + Math.cos(t) * b.w / 2, cy + Math.sin(t) * b.h / 2]); }
   return out;
 }
-function cloudPts(b, s) {
-  const r = Math.max(4, 7 * s), out = [];
-  const corners = rectPts(b);
-  for (let e = 0; e < 4; e++) {
-    const [ax, ay] = corners[e], [bx, by] = corners[(e + 1) % 4];
-    const len = Math.hypot(bx - ax, by - ay);
-    const n = Math.max(1, Math.round(len / (r * 2)));
-    const nx = (by - ay) / (len || 1), ny = -(bx - ax) / (len || 1); // outward normal (clockwise rect)
+// scalloped edge around any closed shape (Acrobat's Cloud tool)
+function cloudPolyPts(P, s, open) {
+  // Acrobat-style cloud: a row of round scallops bulging outward, each a little more than a half circle
+  if (!P || P.length < (open ? 2 : 3)) return P;
+  const step = Math.max(8, 16 * s), out = [];
+  const inside = (x, y) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+  let area = 0; for (let i = 0; i < P.length; i++) { const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length]; area += x1 * y2 - x2 * y1; }
+  for (let e = 0; e < (open ? P.length - 1 : P.length); e++) {
+    const [ax, ay] = P[e], [bx, by] = P[(e + 1) % P.length];
+    const len = Math.hypot(bx - ax, by - ay); if (len < 0.5) continue;
+    let nx = (by - ay) / len, ny = -(bx - ax) / len;                 // a normal to this side
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    if (P.length >= 3 && Math.abs(area) > 1) { if (inside(mx + nx * 0.5, my + ny * 0.5)) { nx = -nx; ny = -ny; } }
+    else if (area < 0) { nx = -nx; ny = -ny; }
+    const n = Math.max(1, Math.round(len / step));
     for (let i = 0; i < n; i++) {
-      for (let k = 0; k <= 8; k++) {
-        const t = (i + k / 8) / n, bulge = Math.sin(k / 8 * Math.PI) * r;
-        out.push([ax + (bx - ax) * t - nx * bulge, ay + (by - ay) * t - ny * bulge]);
-      }
+      const p0 = [ax + (bx - ax) * i / n, ay + (by - ay) * i / n], p1 = [ax + (bx - ax) * (i + 1) / n, ay + (by - ay) * (i + 1) / n];
+      const half = len / n / 2, h = half * 0.45;                       // centre sits a bit inside the side
+      const cx = (p0[0] + p1[0]) / 2 - nx * h, cy = (p0[1] + p1[1]) / 2 - ny * h, R = Math.hypot(half, h);
+      const a0 = Math.atan2(p0[1] - cy, p0[0] - cx), a1 = Math.atan2(p1[1] - cy, p1[0] - cx), aO = Math.atan2(ny, nx);
+      const TAU = Math.PI * 2, norm = x => ((x % TAU) + TAU) % TAU;
+      let d = norm(a1 - a0); if (norm(aO - a0) > d) d = d - TAU;      // sweep through the outside
+      const K = 14;
+      for (let k = (out.length ? 1 : 0); k <= K; k++) { const t = a0 + d * k / K; out.push([cx + R * Math.cos(t), cy + R * Math.sin(t)]); }
     }
   }
   return out;
 }
+function cloudPts(b, s) { return cloudPolyPts(rectPts(b), s); }
 
 // Returns drawing primitives in viewport coordinates for an annotation.
 function annotGeometry(a, vp, forPdf) {
@@ -3559,7 +3576,7 @@ function annotGeometry(a, vp, forPdf) {
       a.segs.forEach(len => { out.push({ k: 'line', pts: V.slice(i, i + len), stroke: color, width: lw }); i += len; });
       return out;
     }
-    case 'polyline': return [{ k: a.closed ? 'poly' : 'line', pts: V, stroke: color, width: lw, fill: a.closed ? (a.fill || null) : null, dash: a.dash ? a.dash.map(v => v * s) : null }, ...(a.closed || V.length < 2 ? [] : lineEndPrims(a, V[0], V[1], V[V.length - 1], V[V.length - 2], color, lw, s))];
+    case 'polyline': return [{ k: a.closed ? 'poly' : 'line', pts: a.cloud ? cloudPolyPts(V, s, !a.closed) : V, stroke: color, width: lw, fill: a.closed ? (a.fill || null) : null, dash: a.dash ? a.dash.map(v => v * s) : null }, ...(a.closed || V.length < 2 ? [] : lineEndPrims(a, V[0], V[1], V[V.length - 1], V[V.length - 2], color, lw, s))];
     case 'native-image': return a.dataUrl ? [{ k: 'image', x: box.x, y: box.y, w: box.w, h: box.h, href: a.dataUrl }] : [];
     case 'arrow': {
       return [{ k: 'line', pts: [V[0], V[1]], stroke: color, width: lw, dash: a.dash ? a.dash.map(v => v * s) : null }, ...lineEndPrims(a, V[0], V[1], V[1], V[0], color, lw, s)];
@@ -4264,6 +4281,7 @@ async function importNativeAnnots() {
     if (L && L.size && L.size() === 4) info.L = L.asArray().map(x => x.asNumber());   // true direction (pdf.js sorts these)
     { const LL = d.get(N('LL')); if (LL && LL.asNumber) info.ll = LL.asNumber(); const LLE = d.get(N('LLE')); if (LLE && LLE.asNumber) info.lle = LLE.asNumber(); const LLO = d.get(N('LLO')); if (LLO && LLO.asNumber) info.llo = LLO.asNumber(); const CP = d.get(N('CP')); if (CP) info.cp = String(CP); }
     if (String(d.get(N('Subtype'))) === '/FreeText') { try { info.apText = apTextLines(d, lk); } catch (e) {} }
+    { const be = lk(d.get(N('BE'))); if (be && be.get && String(be.get(N('S'))) === '/C') info.cloudy = true; }
     const ds = d.get(N('DS'));
     info.font = ds ? (ds.decodeText ? ds.decodeText() : String(ds)) : '';
     const ic = lk(d.get(N('IC')));
@@ -4312,7 +4330,7 @@ async function importNativeAnnots() {
         case 'PolyLine': case 'Polygon': {
           const v = d.vertices; if (!v || v.length < 2) break;
           const pts = typeof v[0] === 'number' ? Array.from({ length: v.length / 2 }, (_, i) => [v[2 * i], v[2 * i + 1]]) : v.map(p => [p.x, p.y]);
-          a = { ...base, type: 'polyline', pts, closed: d.subtype === 'Polygon', fill: raw.fill, le: d.subtype === 'PolyLine' && raw.le && raw.le.some(x => x !== 'None') ? raw.le : undefined };
+          a = { ...base, type: 'polyline', pts, closed: d.subtype === 'Polygon', cloud: d.subtype === 'Polygon' && raw.cloudy ? true : undefined, fill: raw.fill, le: d.subtype === 'PolyLine' && raw.le && raw.le.some(x => x !== 'None') ? raw.le : undefined };
           if (/Dimension$/.test(raw.it || '') && raw.ratio) Object.assign(a, mImported(raw, base, d.subtype === 'Polygon' ? 'area' : 'perim'));
           break;
         }
@@ -4545,7 +4563,7 @@ async function writeNativeAnnot(doc, lp, a, vp1, rot, tmp, mainCtx) {
       dict.Subtype = 'Line'; dict.L = [V[0][0], V[0][1], V[1][0], V[1][1]];
       { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); if (a.fill) dict.IC = hexToRgb01(a.fill); }
       break;
-    case 'polyline': dict.Subtype = a.closed ? 'Polygon' : 'PolyLine'; dict.Vertices = V.flat(); if (a.fill) dict.IC = hexToRgb01(a.fill); if (!a.closed) { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); } break;
+    case 'polyline': dict.Subtype = a.closed ? 'Polygon' : 'PolyLine'; dict.Vertices = V.flat(); if (a.closed && a.cloud) dict.BE = { S: PDFLib.PDFName.of('C'), I: 1 }; if (a.fill) dict.IC = hexToRgb01(a.fill); if (!a.closed) { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); } break;
     case 'freehand': {
       dict.Subtype = 'Ink';
       const segs = a.segs || [V.length]; let i = 0;
@@ -9112,7 +9130,7 @@ function activateToolGroup(group) {
       + cb('sign', '', "setActiveTool('draw')", 'title="Draw free form"') + cb('stamp', '', "setActiveTool('stamp')", 'title="Add stamp"')
       + cb('clip', '', "setActiveTool('attach-file')", 'title="Attach file"') + '<div class="ctx-sep"></div>'
       + cb('arrowr', '', "setActiveTool('arrow')", 'title="Arrow"') + cb('circle', '', "setActiveTool('ellipse')", 'title="Oval"') + cb('rect', '', "setActiveTool('rectangle')", 'title="Rectangle"')
-      + cb('cloud', '', "setActiveTool('cloud')", 'title="Cloud"') + cb('hexagon', '', "setActiveTool('polygon')", 'title="Polygon"') + cb('polyline', '', "setActiveTool('line')", 'title="Line"')
+      + cb('cloud', '', "dtPick('cloud-pts')", 'title="Cloud"') + cb('hexagon', '', "dtPick('polygon-pts')", 'title="Polygon"') + cb('polyline', '', "dtPick('polyline-pts')", 'title="Connected Lines"')
       + '<div class="ctx-sep"></div><input type="color" id="ink-color" title="Color" value="' + (state.inkColor || '#ff0000') + '" onchange="state.inkColor=this.value">'
       + cb('morelist', 'Comments list', 'toggleCommentPanel(true)'),
     'fill-sign': cb('T', 'Add text', "setActiveTool('add-text')") + cb('sign', 'Sign yourself', 'showSignModal()') + '<div class="ctx-sep"></div>'
@@ -9416,7 +9434,7 @@ const CM_SUBJECT = { rectangle: 'Rectangle', ellipse: 'Oval', polygon: 'Polygon'
   highlight: 'Highlight', underline: 'Underline', strikethrough: 'Strikethrough', textbox: 'Text Box', 'text-comment': 'Text Comment', sticky: 'Sticky Note',
   stamp: 'Stamp', callout: 'Callout', 'measure-dist': 'Distance', check: 'Check', cross: 'Cross', dot: 'Dot', attach: 'File Attachment', signature: 'Signature',
   'native-image': 'Stamp', 'redact-area': 'Redact', polyline: 'Connected Lines' };
-function subjectOf(a) { return a.subject || (a.type === 'polyline' && a.closed ? 'Polygon' : CM_SUBJECT[a.type]) || COMMENT_TYPES[a.type] || a.type; }
+function subjectOf(a) { return a.subject || (a.type === 'polyline' && a.closed ? (a.cloud ? 'Cloud' : 'Polygon') : CM_SUBJECT[a.type]) || COMMENT_TYPES[a.type] || a.type; }
 const CM_ICON = { rectangle: 'rect', ellipse: 'circle', polygon: 'hexagon', cloud: 'cloud', line: 'cm_lines', arrow: 'arrowr', freehand: 'cm_pencil', highlight: 'highlight',
   underline: 'cm_ul', strikethrough: 'cm_strike', textbox: 'cm_textbox', 'text-comment': 'T', sticky: 'comment', stamp: 'stamp', callout: 'cm_textbox', 'measure-dist': 'measure',
   attach: 'clip', signature: 'sign', 'native-image': 'stamp', polyline: 'polyline', check: 'T', cross: 'T', dot: 'T', 'redact-area': 'redact' };
@@ -9449,8 +9467,8 @@ function cmShapesMenu(btn) {
     { icon: '◯', label: 'Draw Oval', action: () => setActiveTool('ellipse') },
     { icon: '➔', label: 'Draw Arrow', action: () => setActiveTool('arrow') },
     { icon: '╱', label: 'Draw Line', action: () => setActiveTool('line') },
-    { icon: '⬠', label: 'Draw Polygon', action: () => setActiveTool('polygon') },
-    { icon: '☁', label: 'Draw Cloud', action: () => setActiveTool('cloud') },
+    { icon: '⬠', label: 'Draw Polygon', action: () => dtPick('polygon-pts') },
+    { icon: '☁', label: 'Draw Cloud', action: () => dtPick('cloud-pts') },
     '-',
     { icon: '📏', label: 'Measure Distance', action: () => setActiveTool('measure-dist') },
   ]);
@@ -13776,10 +13794,10 @@ const DRAW_TOOLS = [
   { tool: 'ellipse', ic: 'dt_oval', label: 'Oval', tip: 'Draw ovals' },
   { tool: 'callout', ic: 'dt_callout', label: 'Text Callout', tip: 'Add text callout' },
   { tool: 'polygon-pts', ic: 'dt_polygon', label: 'Polygon', tip: 'Draw polygons' },
-  { tool: 'cloud', ic: 'dt_cloud', label: 'Cloud', tip: 'Draw cloud' },
+  { tool: 'cloud-pts', ic: 'dt_cloud', label: 'Cloud', tip: 'Draw cloud' },
   { tool: 'polyline-pts', ic: 'dt_conn', label: 'Connected Lines', tip: 'Draw connected lines' },
 ];
-state.lastShape = getPref('lastShape', 'rectangle');
+state.lastShape = getPref('lastShape', 'rectangle'); if (state.lastShape === 'cloud') state.lastShape = 'cloud-pts';
 const _toolNameDT = toolName;
 toolName = function (t) { const d = DRAW_TOOLS.find(x => x.tool === t); return d ? d.label : _toolNameDT(t); };
 
@@ -13803,7 +13821,7 @@ function dtPick(tool) {
   const b = document.querySelector('#ctx-content .dt-btn');
   if (b) { const d = DRAW_TOOLS.find(x => x.tool === tool); b.dataset.tool = tool; b.querySelector('.ic').innerHTML = icon(d.ic); }
   syncCommentToolbar();
-  if (tool === 'polygon-pts') toast('Click to add each corner. Click the first corner (or double-click) to finish.');
+  if (tool === 'polygon-pts' || tool === 'cloud-pts') toast('Click to add each corner. Click the first corner (or double-click) to finish.');
   if (tool === 'polyline-pts') toast('Click to add each point. Double-click or press Enter to finish.');
   if (tool === 'callout') toast('Click where the arrow should point, then type the callout text.');
 }
@@ -13862,7 +13880,7 @@ annotGeometry = function (a, vp, forPdf) {
 
 // ---------- Polygon and Connected Lines: click to place each point ----------
 let dtDraw = null, dtFinishedAt = 0;
-function dtVertexTool() { return state.activeTool === 'polygon-pts' || state.activeTool === 'polyline-pts'; }
+function dtVertexTool() { return state.activeTool === 'polygon-pts' || state.activeTool === 'polyline-pts' || state.activeTool === 'cloud-pts'; }
 function dtPageAt(e) {
   const w = e.target.closest && e.target.closest('.page-wrapper'); if (!w) return null;
   const n = +w.dataset.page, ps = state.pages[n], r = w.getBoundingClientRect();
@@ -13873,7 +13891,7 @@ function dtPreview() {
   const { n, pts, cur, closed } = dtDraw, ps = state.pages[n];
   const view = cur ? [...pts, cur] : pts;
   if (view.length < 1) return;
-  renderPageAnnots(n, { id: 'preview', page: n, type: 'polyline', pts: toPdfPts(ps, view.length === 1 ? [view[0], view[0]] : view), closed: false, color: state.inkColor || '#ff0000', width: 2 });
+  renderPageAnnots(n, { id: 'preview', page: n, type: 'polyline', cloud: dtDraw.tool === 'cloud-pts' || undefined, pts: toPdfPts(ps, view.length === 1 ? [view[0], view[0]] : view), closed: false, color: state.inkColor || '#ff0000', width: 2 });
   if (closed !== undefined) {}
 }
 function dtFinish(close) {
@@ -13881,10 +13899,11 @@ function dtFinish(close) {
   if (!d) return;
   const ps = state.pages[d.n];
   let pts = d.pts.filter((p, i, arr) => i === 0 || Math.hypot(p[0] - arr[i - 1][0], p[1] - arr[i - 1][1]) > 2);
-  const polygon = d.tool === 'polygon-pts';
+  const polygon = d.tool === 'polygon-pts' || d.tool === 'cloud-pts';
   renderPageAnnots(d.n);
   if (pts.length < (polygon ? 3 : 2)) { toast(polygon ? 'A polygon needs at least 3 corners.' : 'Connected lines need at least 2 points.'); return; }
   const a = { id: uid('annot'), page: d.n, type: 'polyline', pts: toPdfPts(ps, pts), closed: polygon || !!close, color: state.inkColor || '#ff0000', width: 2 };
+  if (d.tool === 'cloud-pts') { a.cloud = true; a.subject = 'Cloud'; }
   if (polygon && state.inkFill) a.fill = state.inkFill;
   if (state.inkOpacity !== undefined && state.inkOpacity < 1) a.op = state.inkOpacity;
   addAnnotation(a);
@@ -13898,7 +13917,7 @@ dtArea.addEventListener('mousedown', e => {
   if (dtDraw && dtDraw.n !== hit.n) dtFinish();
   if (!dtDraw) dtDraw = { tool: state.activeTool, n: hit.n, pts: [] };
   const first = dtDraw.pts[0];
-  if (dtDraw.tool === 'polygon-pts' && first && dtDraw.pts.length >= 3 && Math.hypot(hit.v[0] - first[0], hit.v[1] - first[1]) < 9) { dtFinishedAt = Date.now(); dtFinish(true); return; }
+  if ((dtDraw.tool === 'polygon-pts' || dtDraw.tool === 'cloud-pts') && first && dtDraw.pts.length >= 3 && Math.hypot(hit.v[0] - first[0], hit.v[1] - first[1]) < 9) { dtFinishedAt = Date.now(); dtFinish(true); return; }
   if (e.detail >= 2) { dtFinishedAt = Date.now(); dtFinish(); return; }   // double-click finishes
   dtDraw.pts.push(hit.v);
   dtDraw.cur = null;
@@ -13916,7 +13935,7 @@ dtArea.addEventListener('mousemove', e => {
   }
   dtDraw.cur = v;
   const first = dtDraw.pts[0];
-  dtArea.classList.toggle('dt-close', dtDraw.tool === 'polygon-pts' && dtDraw.pts.length >= 3 && Math.hypot(v[0] - first[0], v[1] - first[1]) < 9);
+  dtArea.classList.toggle('dt-close', (dtDraw.tool === 'polygon-pts' || dtDraw.tool === 'cloud-pts') && dtDraw.pts.length >= 3 && Math.hypot(v[0] - first[0], v[1] - first[1]) < 9);
   dtPreview();
 }, true);
 document.addEventListener('keydown', e => {
@@ -13929,7 +13948,7 @@ const _setActiveToolDT = setActiveTool;
 setActiveTool = function (tool) {
   if (dtDraw && tool !== dtDraw.tool) { const n = dtDraw.n; dtDraw = null; renderPageAnnots(n); }
   const r = _setActiveToolDT.apply(this, arguments);
-  dtArea.classList.toggle('dt-vertex', tool === 'polygon-pts' || tool === 'polyline-pts');
+  dtArea.classList.toggle('dt-vertex', tool === 'polygon-pts' || tool === 'polyline-pts' || tool === 'cloud-pts');
   return r;
 };
 
@@ -25108,6 +25127,99 @@ document.addEventListener('mousedown', e => {
 // Forms auto-complete
 document.addEventListener('focusin', e => { const t = e.target; if (t && t.closest && t.closest('.form-layer') && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) t.setAttribute('autocomplete', getPref('fmAuto', 'Off') === 'Off' ? 'off' : 'on'); });
 applyPrefStyles();
+
+// ================================================================
+//  RIGHT-HAND TOOLS PANE like Acrobat:
+//  · nothing open → the full list with names (no icon strip beside it)
+//  · a tool is picked → icons only, with Search at the top and an expand button at the bottom
+//  · the list and the strip show the same tools, Acrobat's standard 13 by default
+// ================================================================
+if (!TC_RAIL_DEF.includes('measure')) TC_RAIL_DEF.splice(TC_RAIL_DEF.indexOf('protect') + 1, 0, 'measure');
+// people who never changed their tools get the new standard set (the old default had no Measure)
+(() => { const r = getPref('railTools', null); const old = ['create', 'combine', 'edit', 'request', 'fill-sign', 'export', 'organize', 'send', 'comment', 'scan', 'protect'];
+  if (r && r.length === old.length && r.every((k, i) => k === old[i])) setPrefs({ railTools: TC_RAIL_DEF.slice() }); })();
+
+state.rpListClosed = false;   // the person closed the list (or picked a tool)
+function rpListWanted() {
+  return !!state.pdfDoc && !state.rpListClosed && !state.activeToolGroup && !state.prepareMode && (state.rightPaneMode || 'none') === 'none'
+    && !document.body.classList.contains('center-view') && !document.body.classList.contains('read-mode');
+}
+function rpSync() {
+  const list = rpListWanted();
+  const rp = $('right-panel'); if (!rp) return;
+  if (list) {
+    $('rp-tools').classList.remove('hidden'); $('rp-format').classList.add('hidden'); rp.classList.remove('hidden');
+    document.body.classList.remove('rp-hidden');
+  } else if ((state.rightPaneMode || 'none') === 'none' && !$('rp-tools').classList.contains('hidden')) {
+    rp.classList.add('hidden'); $('rp-tools').classList.add('hidden');
+    if (!$('comment-panel').classList.contains('open')) document.body.classList.add('rp-hidden');
+  }
+  document.body.classList.toggle('rp-list', list);
+}
+
+// the list: same tools as the strip, in the same order
+function rpRenderList() {
+  const box = document.querySelector('#rp-tools #tg-all .tool-group-content'); if (!box) return;
+  const all = TC_ALL(), keys = tcRail().filter(k => all.some(t => t[0] === k));
+  box.innerHTML = keys.map(k => { const t = all.find(x => x[0] === k); return `<div class="tool-item" data-tool="${k}"><span class="tool-icon" style="color:${t[3]}"><span class="ic">${icon(t[2])}</span></span><span class="tool-name">${escapeHtml(t[1])}</span></div>`; }).join('')
+    + `<div class="tool-item" data-tool="__more"><span class="tool-icon" style="color:#c2c2c2"><span class="ic">${icon('moretools')}</span></span><span class="tool-name">More Tools</span></div>`;
+  box.querySelectorAll('.tool-item').forEach(it => {
+    it.onclick = () => { state.rpListClosed = true; rpSync(); if (it.dataset.tool === '__more') showToolsCenter(); else tcRunTool(it.dataset.tool); };
+    if (it.dataset.tool !== '__more') it.addEventListener('contextmenu', e => { e.preventDefault(); tcMenu(it, it.dataset.tool, true); });
+  });
+  const s = $('tool-search-input'); if (s && s.value) filterTools(s.value);
+}
+
+// the strip: Search at the top, expand at the bottom
+const _tcRenderRailRP = tcRenderRail;
+tcRenderRail = function () {
+  _tcRenderRailRP.apply(this, arguments);
+  const rail = $('right-icon-sidebar'); if (!rail) return;
+  rail.insertAdjacentHTML('afterbegin', `<button class="ri-btn ri-search" title="Search tools" onclick="rpOpenList(true)"><span class="ic">${icon('find')}</span></button>`);
+  rail.insertAdjacentHTML('beforeend', `<span class="ri-fill"></span><button class="ri-btn ri-expand" title="Expand tools pane" onclick="rpOpenList(false)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14 M9 12h11 M16 8l4 4-4 4"/></svg></button>`);
+  rail.querySelectorAll('.ri-btn[data-g]').forEach(b => b.addEventListener('click', () => { state.rpListClosed = true; }, true));
+  rpRenderList();
+};
+function rpOpenList(focus) {
+  if (!state.pdfDoc) { showToolsCenter(); return; }
+  // leave the open tool, like Acrobat when the tools list is brought back
+  if (state.activeToolGroup) { try { deactivateContextTool(); } catch (e) {} }
+  state.rpListClosed = false;
+  if ((state.rightPaneMode || 'none') !== 'none') setRightPaneMode('none');
+  rpSync();
+  if (focus) setTimeout(() => { const s = $('tool-search-input'); if (s) { s.focus(); s.select(); } }, 30);
+}
+
+// keep the pane in step with whatever opens or closes
+const _setRightPaneModeRP = setRightPaneMode;
+setRightPaneMode = function (mode) { const r = _setRightPaneModeRP.apply(this, arguments); rpSync(); return r; };
+const _activateToolGroupRP = activateToolGroup;
+activateToolGroup = function () { state.rpListClosed = true; const r = _activateToolGroupRP.apply(this, arguments); rpSync(); return r; };
+const _deactivateContextToolRP = deactivateContextTool;
+deactivateContextTool = function () { const r = _deactivateContextToolRP.apply(this, arguments); state.rpListClosed = false; rpSync(); return r; };
+// the arrow on the edge: closes the list to icons, or opens it again
+const _toggleRightPanelRP = toggleRightPanel;
+toggleRightPanel = function () {
+  if ((state.rightPaneMode || 'none') === 'none' && !state.activeToolGroup) {
+    if (document.body.classList.contains('rp-list')) { state.rpListClosed = true; rpSync(); }
+    else rpOpenList(false);
+    return;
+  }
+  return _toggleRightPanelRP.apply(this, arguments);
+};
+const _loadBytesRP = loadBytes;
+loadBytes = async function () { const r = await _loadBytesRP.apply(this, arguments); state.rpListClosed = false; setTimeout(rpSync, 0); return r; };
+const _closeFileRP = typeof closeFile === 'function' ? closeFile : null;
+if (_closeFileRP) closeFile = function () { const r = _closeFileRP.apply(this, arguments); setTimeout(rpSync, 0); return r; };
+const _showDocViewRP = typeof showDocView === 'function' ? showDocView : null;
+if (_showDocViewRP) showDocView = function () { const r = _showDocViewRP.apply(this, arguments); setTimeout(rpSync, 0); return r; };
+// Edit PDF, Organize, Combine and the rest close the list too
+['startEditMode', 'showOrganize', 'showCombineFiles', 'showOCR', 'showMeasure', 'showPrepareForm', 'showShareModal', 'showRequestSign'].forEach(fn => {
+  const f = window[fn]; if (typeof f !== 'function') return;
+  window[fn] = function () { state.rpListClosed = true; const r = f.apply(this, arguments); setTimeout(rpSync, 0); return r; };
+});
+tcRenderRail();
+rpSync();
 </script>
 </body>
 </html>
