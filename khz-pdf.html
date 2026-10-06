@@ -4366,6 +4366,14 @@ async function importNativeAnnots() {
     if (L && L.size && L.size() === 4) info.L = L.asArray().map(x => x.asNumber());   // true direction (pdf.js sorts these)
     { const LL = d.get(N('LL')); if (LL && LL.asNumber) info.ll = LL.asNumber(); const LLE = d.get(N('LLE')); if (LLE && LLE.asNumber) info.lle = LLE.asNumber(); const LLO = d.get(N('LLO')); if (LLO && LLO.asNumber) info.llo = LLO.asNumber(); const CP = d.get(N('CP')); if (CP) info.cp = String(CP); }
     if (String(d.get(N('Subtype'))) === '/FreeText') { try { info.apText = apTextLines(d, lk); } catch (e) {} }
+    if (String(d.get(N('Subtype'))) === '/FreeText') try {   // border colour the file's own appearance uses (Acrobat: black unless set)
+      const ap = lk(d.get(N('AP'))), st = ap && ap.get && lk(ap.get(N('N')));
+      if (st) { const txt = bytesToLatin1(st instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(st).decode() : st.getContents()).split('BT')[0];
+        const m = txt.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+RG/) , g = txt.match(/(^|\s)([\d.]+)\s+G(\s|$)/);
+        if (m) info.apStroke = '#' + [m[1], m[2], m[3]].map(v => Math.round(Math.min(1, +v) * 255).toString(16).padStart(2, '0')).join('');
+        else if (g) { const v = Math.round(Math.min(1, +g[2]) * 255).toString(16).padStart(2, '0'); info.apStroke = '#' + v + v + v; } }
+    } catch (e) {}
+    { const ro = d.get(N('Rotate')); info.rotate = ro && ro.asNumber ? ((ro.asNumber() % 360) + 360) % 360 : 0; }   // text turned with the page (Acrobat on rotated pages)
     { const be = lk(d.get(N('BE'))); if (be && be.get && String(be.get(N('S'))) === '/C') { info.cloudy = true; const I = be.get(N('I')); info.cloudI = I && I.asNumber ? I.asNumber() : 1; } }
     const ds = d.get(N('DS'));
     info.font = ds ? (ds.decodeText ? ds.decodeText() : String(ds)) : '';
@@ -4435,10 +4443,11 @@ async function importNativeAnnots() {
         case 'FreeText': {
           const da = d.defaultAppearanceData || {};
           a = { ...base, type: 'textbox', pts: rectPtsPdf, fontSize: da.fontSize || 12, color: rgbHex(da.fontColor) || '#000000',
-                fill: rgbHex(d.color), borderW: raw.width, borderColor: raw.strokeColor || rgbHex(da.fontColor) || '#000000', pad: raw.width > 0 ? 2 : 0,
+                fill: rgbHex(d.color), borderW: raw.width, borderColor: raw.strokeColor || raw.apStroke || rgbHex(da.fontColor) || '#000000', pad: raw.width > 0 ? 2 : 0,
                 family: /calibri/i.test(raw.font + ' ' + (da.fontName || '')) ? 'calibri' : 'sans' };
           // keep the text where the file's own appearance puts it (Bluebeam etc. place it lower than Acrobat's top margin)
-          if (!raw.cl && raw.apText && raw.apText.length) {
+          // (a box turned with a rotated page has its appearance drawn turned too: its line positions don't apply)
+          if (!raw.cl && !raw.rotate && raw.apText && raw.apText.length) {
             const L0 = raw.apText[0], top = Math.max(r[1], r[3]), left = Math.min(r[0], r[2]);
             const off = top - L0.y, dx = L0.x - left;
             if (off > 0 && off < Math.abs(r[3] - r[1]) + 2 && dx >= 0 && dx < 40) {
