@@ -24044,6 +24044,13 @@ if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async params => {
     for (const fh of params.files || []) {
       try {
+        // already open in a tab? just switch to it
+        try {
+          if (state.saveHandle && state.saveHandle.isSameEntry && await state.saveHandle.isSameEntry(fh)) { window.focus(); continue; }
+          let hit = null;
+          for (const t of state.docTabs || []) { const h = t.snap && t.snap.saveHandle; if (h && h.isSameEntry && await h.isSameEntry(fh)) { hit = t; break; } }
+          if (hit && typeof switchDocTab === 'function') { await switchDocTab(hit.id); continue; }
+        } catch (e) {}
         const f = await fh.getFile();
         state._openHandle = fh;
         showLoading(true, 'Loading PDF...');
