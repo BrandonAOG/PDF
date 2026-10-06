@@ -14091,7 +14091,7 @@ dragSelected = function (d, ps, vx, vy, e) {
 };
 
 // ---------- creating: press at the arrow point, drag to where the box goes (live), release, type ----------
-let coNew = null;
+let coNew = null, coTyping = false;
 function coPreviewAnnot(n, tipV, curV) {
   const ps = state.pages[n], s = state.scale, w = CALLOUT_W * s, h = 30 * s;
   const right = curV[0] >= tipV[0];
@@ -14103,7 +14103,8 @@ dtArea.addEventListener('mousedown', e => {
   const hit = dtPageAt(e); if (!hit) return;
   if (e.target.closest('.inline-editor')) return;
   e.preventDefault(); e.stopPropagation();
-  if (activeEditor) activeEditor.finish(true);
+  // a click outside the box being typed in just finishes it (like Acrobat) — it doesn't start another callout
+  if (activeEditor || coTyping) { if (activeEditor) activeEditor.finish(true); return; }
   coNew = { n: hit.n, tip: hit.v, cur: [hit.v[0] + 48 * state.scale, hit.v[1] - 50 * state.scale], moved: false };
   renderPageAnnots(hit.n, coPreviewAnnot(hit.n, coNew.tip, coNew.cur));
 }, true);
@@ -14120,9 +14121,12 @@ window.addEventListener('mouseup', e => {
   const V = pre.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])), s = state.scale;
   const bx = Math.min(V[0][0], V[1][0]), by = Math.min(V[0][1], V[1][1]), bw = Math.abs(V[1][0] - V[0][0]);
   renderPageAnnots(d.n, pre);
+  coTyping = true;
   inlineEdit(ps, { x: bx + 4 * s, y: by + 4 * s, w: bw - 8 * s, size: 12 * s, text: '', multiline: true, wrap: true }).then(txt => {
-    if (!txt || !txt.trim()) { renderPageAnnots(d.n); return; }
-    const a = { ...pre, id: uid('annot'), text: txt }; applyTextDefaults(a); if (lastEditorRuns && lastEditorRuns.text === txt) setRichText(a, txt, lastEditorRuns.styles);
+    coTyping = false;
+    txt = txt || '';
+    // left empty: the callout stays (type in it later by double-clicking), like Acrobat
+    const a = { ...pre, id: uid('annot'), text: txt.trim() ? txt : '' }; applyTextDefaults(a); if (lastEditorRuns && lastEditorRuns.text === txt) setRichText(a, txt, lastEditorRuns.styles);
     addAnnotation(a);
     if (!state.keepTool) { setActiveTool('select'); selectAnnot(a.id); }
   });
@@ -25274,6 +25278,45 @@ annotGeometry = function (a, vp, forPdf) {
   } else if (a.type === 'cloud') prims[0] = { ...p, pts: rectPts(bboxOf((a.pts || []).map(q => vp.convertToViewportPoint(q[0], q[1])))), dash: a.dash ? a.dash.map(v => v * s) : null };
   if (a.noBorder) prims[0] = { ...prims[0], stroke: null };
   return prims;
+};
+// ================================================================
+//  TEXT CALLOUT: the arrow joins the middle of the box side facing the arrow point, like Acrobat.
+//  Moving the box or the arrow point re-picks the side; the short bend keeps its length.
+// ================================================================
+coLeader = function (a, vp, box) {
+  const s = vp.scale, T = vp.convertToViewportPoint(a.tip[0], a.tip[1]);
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  if (a.knee) {   // a bend the person placed: join the side facing it
+    const K = vp.convertToViewportPoint(a.knee[0], a.knee[1]);
+    const mids = [[box.x, cy], [box.x + box.w, cy], [cx, box.y], [cx, box.y + box.h]];
+    const E = mids.reduce((m, p) => Math.hypot(K[0] - p[0], K[1] - p[1]) < Math.hypot(K[0] - m[0], K[1] - m[1]) ? p : m);
+    return { T, K, E };
+  }
+  const L = (a.kneeLen !== undefined ? a.kneeLen : 14) * s;
+  // join the side the arrow point lies beyond: a line from the box centre to the point leaves through
+  // that side, so a wide box mostly uses its long top/bottom sides (as Acrobat does)
+  const dx = (T[0] - cx) / Math.max(1, box.w / 2), dy = (T[1] - cy) / Math.max(1, box.h / 2);
+  let E, K;
+  if (Math.abs(dx) > Math.abs(dy)) { const left = dx < 0; E = [left ? box.x : box.x + box.w, cy]; K = [E[0] + (left ? -L : L), cy]; }
+  else { const up = dy < 0; E = [cx, up ? box.y : box.y + box.h]; K = [cx, E[1] + (up ? -L : L)]; }
+  return { T, K, E };
+};
+// once the box or the arrow point moves, the bend follows the box instead of staying put
+function coFreeKnee(a, vp) {
+  if (!a || !a.knee || !a.tip) return;
+  const b = coBox(a, vp); if (!b) { a.knee = null; return; }
+  const { K, E } = coLeader(a, vp, b);
+  a.kneeLen = Math.max(4, Math.min(60, Math.hypot(K[0] - E[0], K[1] - E[1]) / vp.scale));
+  a.knee = null;
+}
+const _dragSelectedCO2 = dragSelected;
+dragSelected = function (d, ps, vx, vy, e) {
+  const a = d && d.annot;
+  if (a && a.type === 'callout' && a.tip && a.knee && !d.coAll) {
+    const kneeHandle = d.handle && d.handle.kind === 'co' && d.handle.part === 'knee';
+    if (!kneeHandle && Math.hypot(vx - d.start[0], vy - d.start[1]) >= DRAG_THRESHOLD) { coFreeKnee(a, ps.vp); d.origKnee = null; }
+  }
+  return _dragSelectedCO2.apply(this, arguments);
 };
 </script>
 </body>
