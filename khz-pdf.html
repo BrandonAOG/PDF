@@ -16419,7 +16419,7 @@ async function notifCheckDue() {
 // ---------- Grid: quick tools + recent files ----------
 const QUICK_TOOLS = ['Edit PDF', 'Combine Files', 'Organize Pages', 'Fill & Sign', 'Comment', 'Measure', 'Compress PDF', 'Protect', 'Export PDF', 'Prepare Form', 'Redact', 'Request E-signatures', 'Scan & OCR', 'Compare Files', 'Create PDF'];
 async function showQuickTools(btn) {
-  const items = [...document.querySelectorAll('#tg-all .tool-item')].map(it => ({ name: it.querySelector('.tool-name').textContent.trim(), html: it.querySelector('.tool-icon').outerHTML, on: it.getAttribute('onclick') }));
+  const items = [...document.querySelectorAll('#tg-all .tool-item')].map(it => ({ name: it.querySelector('.tool-name').textContent.trim(), html: it.querySelector('.tool-icon').outerHTML, on: it.getAttribute('onclick'), tool: it.dataset.tool }));
   const pick = QUICK_TOOLS.map(n => items.find(i => i.name.toLowerCase() === n.toLowerCase())).filter(Boolean);
   items.forEach(i => { if (pick.length < 12 && !pick.includes(i)) pick.push(i); });
   const recent = (await recentList()).slice(0, 5);
@@ -16428,7 +16428,7 @@ async function showQuickTools(btn) {
     <div class="hp-head sub"><b>Recent files</b></div>
     <div class="qt-recent">${recent.length ? recent.map(f => `<button class="qt-file" data-n="${escapeHtml(f.name)}"><span class="ic">${icon('createpdf')}</span><span class="qt-fn">${escapeHtml(f.name)}</span><span class="np-time">${notifAgo(f.date)}</span></button>`).join('') : '<div class="np-time" style="padding:6px 14px 12px">No recent files yet.</div>'}</div>`, 380);
   if (!p) return;
-  p.querySelectorAll('.qt-tool').forEach(b => b.onclick = () => { p.closeMe(); const t = pick[+b.dataset.i]; showDocView(); try { new Function(t.on)(); } catch (e) { console.warn(e); } });
+  p.querySelectorAll('.qt-tool').forEach(b => b.onclick = () => { p.closeMe(); const t = pick[+b.dataset.i]; showDocView(); try { if (t.on) new Function(t.on)(); else if (t.tool === '__more') showToolsCenter(); else if (t.tool) tcRunTool(t.tool); } catch (e) { console.warn(e); } });
   p.querySelectorAll('.qt-file').forEach(b => b.onclick = () => { p.closeMe(); showDocView(); openRecent(b.dataset.n); });
   p.querySelector('[data-all]').onclick = () => { p.closeMe(); showToolsCenter(); };
 }
@@ -16486,7 +16486,7 @@ setPrefs = function (o) { const r = _setPrefsNT.apply(this, arguments); if (o &&
 (function () {
   const btns = document.querySelectorAll('.tabbar-right .hdr-btn');
   const bell = [...btns].find(b => /notif/i.test(b.title || b.dataset.qtip || ''));
-  const grid = [...btns].find(b => /apps/i.test(b.title || b.dataset.qtip || ''));
+  const grid = [...btns].find(b => /apps|quick tools/i.test(b.title || b.dataset.qtip || '') || b.querySelector('[data-ic="apps"]'));
   const acct = [...btns].find(b => b.classList.contains('avatar'));
   if (bell) { bell.id = 'hdr-bell'; bell.onclick = () => showNotifications(bell); }
   if (grid) { grid.id = 'hdr-grid'; grid.title = 'Quick tools'; grid.onclick = () => showQuickTools(grid); }
