@@ -15024,8 +15024,8 @@ async function showPrintDialog() {
   if (!requireDoc()) return;
   if (state.ov && state.ov.changed && typeof ovCommit === 'function') await ovCommit();
   if (activeEditor) activeEditor.finish(true);
-  prState.srcBytes = null; prState.bytes = null;
-  state.pr = { ...prDefaults(), ...(state.prLast || {}), which: 'all', range: String(state.currentPage) };
+  prState.srcBytes = prState.areaBytes || null; prState.bytes = null;   // areaBytes: Print Selected Area (crop tool)
+  state.pr = { ...prDefaults(), ...(state.prLast || {}), which: prState.areaPage ? 'pages' : 'all', range: String(prState.areaPage || state.currentPage) };
   const old = $('pr-ov'); if (old) old.remove();
   const ov = document.createElement('div'); ov.id = 'pr-ov';
   document.body.appendChild(ov);
@@ -15033,7 +15033,7 @@ async function showPrintDialog() {
   ov.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') prClose(); });
   prRebuild();
 }
-function prClose() { const ov = $('pr-ov'); if (ov) ov.remove(); if (prState.view) { try { prState.view.destroy(); } catch (e) {} prState.view = null; } }
+function prClose() { const ov = $('pr-ov'); if (ov) ov.remove(); prState.areaBytes = null; prState.areaPage = 0; if (prState.view) { try { prState.view.destroy(); } catch (e) {} prState.view = null; } }
 const prState = { bytes: null, view: null, sheet: 1, sheets: 0, scale: 1, gen: 0, busy: false };
 function prRender() {
   const P = state.pr, ov = $('pr-ov'); if (!ov) return;
@@ -18242,7 +18242,7 @@ const _writeFormFieldChangesDP = writeFormFieldChanges;
 writeFormFieldChanges = function (doc) { const r = _writeFormFieldChangesDP.apply(this, arguments); try { dpApply(doc); } catch (e) { console.warn('document properties not written', e); } return r; };
 // a new document forgets the old settings
 const _loadBytesDP = loadBytes;
-loadBytes = async function () { state.docProps = null; state.dpCache = null; const r = await _loadBytesDP.apply(this, arguments); dpOpenView(); return r; };
+loadBytes = async function (b, n, opts) { state.docProps = null; state.dpCache = null; const r = await _loadBytesDP.apply(this, arguments); if (!(opts && opts.keep) && !state.keepZoom) dpOpenView(); return r; };   // a reload after an edit (crop, insert…) keeps your view
 
 // ---------- honour the PDF's Initial View when it opens ----------
 async function dpOpenView() {
@@ -19593,6 +19593,7 @@ async function cropDialog(sel) {
         <label><input type="radio" name="spb-ps" value="fixed" checked> Fixed Sizes</label><label class="spb-sel">Page Sizes: <select id="spb-fixed">${sizeOpts}</select></label>
         <label><input type="radio" name="spb-ps" value="custom"> Custom</label><span class="spb-cust">${spin('spb-w', 'Width:')}${spin('spb-h', 'Height:')}</span>
         <span></span><span class="spb-off">${spin('spb-x', 'XOffset:')}${spin('spb-y', 'YOffset:')}<label><input type="checkbox" id="spb-center" checked> Center</label></span>
+        <span></span><span class="spb-off"><label><input type="checkbox" id="spb-fit" ${getPref('cropFit', true) ? 'checked' : ''}> Scale content to fit the new page size</label><label>Orientation: <select id="spb-orient"><option value="auto">Auto (match the crop)</option><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label></span>
       </div>
     </fieldset>
     <fieldset class="spb-grp"><legend>Page Range</legend>
@@ -19629,7 +19630,14 @@ async function cropDialog(sel) {
       g.strokeRect(m.l * sc + 0.5, m.t * sc + 0.5, Math.max(1, (VW - m.l - m.r) * sc - 1), Math.max(1, (VH - m.t - m.b) * sc - 1));
     });
     const c = M.CropBox;
-    q('#spb-size').innerHTML = `Cropped page size: ${inch(VW - c.l - c.r)} w x ${inch(VH - c.t - c.b)} h in<br>Original page size: ${inch(VW)} w x ${inch(VH)} h in`;
+    let ns = '';
+    try {
+      if (q('[name=spb-ps][value=custom]').checked) ns = `${q('#spb-w').value} w x ${q('#spb-h').value} h in`;
+      else { const f = CP_SIZES.find(z => z[0] === q('#spb-fixed').value); if (f && f[1]) { let [w, h] = [f[1], f[2]]; const o = q('#spb-orient').value, cw = VW - c.l - c.r, chh = VH - c.t - c.b;
+        if ((o === 'landscape' && w < h) || (o === 'portrait' && w > h) || (o === 'auto' && (cw > chh) !== (w > h) && Math.abs(cw - chh) > 1)) [w, h] = [h, w];
+        ns = `${w} w x ${h} h in` + (q('#spb-fit').checked ? ' (content scaled to fit)' : ''); } }
+    } catch (e) {}
+    q('#spb-size').innerHTML = `Cropped page size: ${inch(VW - c.l - c.r)} w x ${inch(VH - c.t - c.b)} h in<br>Original page size: ${inch(VW)} w x ${inch(VH)} h in` + (ns ? `<br><b>New page size: ${ns}</b>` : '');
   }
   const fill = () => { ['t', 'b', 'l', 'r'].forEach(k => q('#spb-' + k).value = inch(M[cur][k])); draw(); };
   const clampM = m => { m.l = clamp(m.l, 0, VW - 2 - m.r); m.r = clamp(m.r, 0, VW - 2 - m.l); m.t = clamp(m.t, 0, VH - 2 - m.b); m.b = clamp(m.b, 0, VH - 2 - m.t); };
@@ -19654,10 +19662,13 @@ async function cropDialog(sel) {
     q('#spb-fixed').disabled = custom; q('#spb-w').disabled = q('#spb-h').disabled = !custom;
     const sizing = custom || q('#spb-fixed').value !== 'None';
     q('#spb-center').disabled = !sizing; q('#spb-x').disabled = q('#spb-y').disabled = !sizing || q('#spb-center').checked;
+    q('#spb-fit').disabled = !sizing; q('#spb-orient').disabled = !sizing || custom;
+    draw();
   };
   ov.querySelectorAll('[name=spb-ps]').forEach(r => r.onchange = psSync);
-  q('#spb-fixed').onchange = psSync; q('#spb-center').onchange = psSync;
+  q('#spb-fixed').onchange = psSync; q('#spb-center').onchange = psSync; q('#spb-orient').onchange = draw; q('#spb-fit').onchange = () => { setPrefs({ cropFit: q('#spb-fit').checked }); draw(); };
   q('#spb-w').value = inch(VW); q('#spb-h').value = inch(VH); q('#spb-x').value = 0; q('#spb-y').value = 0;
+  ['#spb-w', '#spb-h'].forEach(s2 => q(s2).addEventListener('input', () => draw()));
   psSync();
   const prSync = () => { const all = q('[name=spb-pr][value=all]').checked; q('#spb-from').disabled = q('#spb-to').disabled = all; };
   ov.querySelectorAll('[name=spb-pr]').forEach(r => r.onchange = prSync);
@@ -19678,6 +19689,8 @@ async function cropApply(ov) {
   else { const f = CP_SIZES.find(s => s[0] === q('#spb-fixed').value); if (f && f[1]) size = [f[1] * PT_IN, f[2] * PT_IN]; }
   if (size && (size[0] < 72 || size[1] < 72)) { alert('The page size must be at least 1 inch.'); return false; }
   const center = q('#spb-center').checked, off = [(parseFloat(q('#spb-x').value) || 0) * PT_IN, (parseFloat(q('#spb-y').value) || 0) * PT_IN];
+  const fit = !!size && q('#spb-fit').checked, orient = q('[name=spb-ps][value=custom]').checked ? 'none' : q('#spb-orient').value;
+  const scaled = {};   // page → [s, tx, ty] when the content was scaled
   const whiteBox = D.white() ? D.cur() : null;
   if (!D.changed.size && !size) { cropEnd(); return; }
   showLoading(true, 'Cropping pages...');
@@ -19694,8 +19707,49 @@ async function cropApply(ov) {
         const r = cpRectFromMargins(rot, media, m);
         pg[SET[k]](r[0], r[1], r[2] - r[0], r[3] - r[1]);
       }
-      if (size) {
+      if (size && fit) {
+        // the cropped area, scaled to fill the new page size (like printing it "Fit" on that paper)
+        const [cx0, cy0, cx1, cy1] = cpBox(pg.getCropBox()), pw = cx1 - cx0, ph = cy1 - cy0;
+        const cbv = cpMargins(rot, media, [cx0, cy0, cx1, cy1]), cw = W - cbv.l - cbv.r, chh = H - cbv.t - cbv.b;
+        let [SW, SH] = size;
+        if ((orient === 'landscape' && SW < SH) || (orient === 'portrait' && SW > SH) || (orient === 'auto' && (cw > chh) !== (SW > SH) && Math.abs(cw - chh) > 1)) [SW, SH] = [SH, SW];
+        const [Wp, Hp] = rot % 180 ? [SH, SW] : [SW, SH];
+        const k = Math.min(Wp / pw, Hp / ph);
+        let tx = (Wp - k * pw) / 2 - k * cx0, ty = (Hp - k * ph) / 2 - k * cy0;
+        if (!center && rot === 0) { tx = off[0] - k * cx0; ty = Hp - off[1] - k * ph - k * cy0; }
+        const f = v => (Math.round(v * 100000) / 100000).toString();
+        const pre = out.context.register(out.context.flateStream(`q ${f(k)} 0 0 ${f(k)} ${f(tx)} ${f(ty)} cm ${f(cx0)} ${f(cy0)} ${f(pw)} ${f(ph)} re W n\n`));
+        const post = out.context.register(out.context.flateStream('\nQ\n'));
+        pg.node.normalize(); pg.node.wrapContentStreams(pre, post);
+        pg.setMediaBox(0, 0, Wp, Hp); pg.setCropBox(0, 0, Wp, Hp);
+        ['TrimBox', 'ArtBox', 'BleedBox'].forEach(b => { try { pg.node.delete(PDFLib.PDFName.of(b)); } catch (e) {} });
+        // comments and links move and scale with the drawing
+        const T = (x, y) => [k * x + tx, k * y + ty];
+        const num = o => o && o.asNumber ? o.asNumber() : NaN;
+        const mapPairs = arr => { const v = arr.asArray().map(num); if (v.some(isNaN)) return null; const o = []; for (let i = 0; i + 1 < v.length; i += 2) o.push(...T(v[i], v[i + 1])); return o; };
+        const annots = pg.node.Annots && pg.node.Annots();
+        if (annots) for (let i = 0; i < annots.size(); i++) {
+          const d = annots.lookup(i, PDFLib.PDFDict); if (!d) continue;
+          const N = PDFLib.PDFName.of;
+          const r = d.lookup(N('Rect'), PDFLib.PDFArray);
+          if (r) { const v = mapPairs(r); if (v) d.set(N('Rect'), out.context.obj([Math.min(v[0], v[2]), Math.min(v[1], v[3]), Math.max(v[0], v[2]), Math.max(v[1], v[3])])); }
+          ['QuadPoints', 'Vertices', 'L', 'CL'].forEach(key => { const a = d.lookup(N(key), PDFLib.PDFArray); if (a) { const v = mapPairs(a); if (v) d.set(N(key), out.context.obj(v)); } });
+          const ink = d.lookup(N('InkList'), PDFLib.PDFArray);
+          if (ink) d.set(N('InkList'), out.context.obj(ink.asArray().map(x => { const a = out.context.lookup(x, PDFLib.PDFArray); return a ? (mapPairs(a) || []) : []; })));
+          const bs = d.lookup(N('BS'), PDFLib.PDFDict); if (bs) { const w = num(bs.get(N('W'))); if (!isNaN(w)) bs.set(N('W'), out.context.obj(w * k)); }
+        }
+        scaled[p] = [k, tx, ty];
+      } else if (size) {
         // the new page: centered on the cropped area, or placed at the offsets from its top-left
+        // what's outside the crop stays hidden on the bigger page (white around it, like Acrobat):
+        // the page's drawing is clipped to the crop before the page grows
+        { const [cx0, cy0, cx1, cy1] = cpBox(pg.getCropBox()), [mx0, my0, mx1, my1] = media;
+          if (cx0 > mx0 + 0.01 || cy0 > my0 + 0.01 || cx1 < mx1 - 0.01 || cy1 < my1 - 0.01) {
+            const f = v => (Math.round(v * 1000) / 1000).toString();
+            const pre = out.context.register(out.context.flateStream(`q ${f(cx0)} ${f(cy0)} ${f(cx1 - cx0)} ${f(cy1 - cy0)} re W n\n`));
+            const post = out.context.register(out.context.flateStream('\nQ\n'));
+            pg.node.normalize(); if (!pg.node.wrapContentStreams(pre, post)) console.warn("crop: could not clip the page");
+          } }
         const cb = cpMargins(rot, media, cpBox(pg.getCropBox()));
         const cu0 = cb.l, cv0 = cb.t, cw = W - cb.l - cb.r, ch = H - cb.t - cb.b;
         const u0 = center ? cu0 + (cw - size[0]) / 2 : cu0 - off[0], v0 = center ? cv0 + (ch - size[1]) / 2 : cv0 - off[1];
@@ -19705,6 +19759,7 @@ async function cropApply(ov) {
       }
     }
     const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'form-field').map(a => ({ ...a }));
+    keep.forEach(a => { const t = scaled[a.page]; if (!t || !Array.isArray(a.pts)) return; a.pts = a.pts.map(p => Array.isArray(p) ? [t[0] * p[0] + t[1], t[0] * p[1] + t[2], ...p.slice(2)] : p); if (a.fontSize) a.fontSize *= t[0]; if (a.width) a.width *= t[0]; });
     const bytes = await out.save();
     const page = crop.sel ? crop.sel.n : state.currentPage;
     crop.sel = null; document.querySelectorAll('.crop-layer').forEach(e => e.remove());
@@ -26152,6 +26207,56 @@ hitTest = function (n) {
   state.annotations = all.filter(a => !(a._erased && a.page === n));
   try { return _hitTestOCR.apply(this, arguments); } finally { state.annotations = all; }
 };
+
+// ================================================================
+//  CROP PAGES — right-click menu on the page while cropping, like Acrobat:
+//  Crop to Selection, Set Page Boxes…, Print Selected Area…, Remove White Margins, Clear, Exit
+// ================================================================
+async function cropQuick(fn) {   // runs the Set Page Boxes dialog out of sight, then applies it
+  const sel = crop.sel || { n: state.currentPage, pdf: null };
+  await cropDialog(sel);
+  const ov = $('crop-dlg'); if (!ov) return;
+  ov.style.display = 'none';
+  try { if (fn) await fn(ov, crop._dlg); await cropApply(ov); } finally { ov.remove(); }
+}
+function cropToSelection() { if (!crop.sel) { toast('Drag a rectangle on the page first.'); return; } cropQuick(); }
+function cropRemoveWhite() {
+  const n = crop.sel ? crop.sel.n : state.currentPage;
+  crop.sel = { n, pdf: null };
+  cropQuick(async (ov, D) => { D.M.CropBox = await cpPageWhite(D.n, D.media, D.rot); D.changed.add('CropBox'); });
+}
+async function cropPrintArea() {
+  const s = crop.sel; if (!s) { toast('Drag a rectangle around what you want to print first.'); return; }
+  showLoading(true, 'Preparing to print...');
+  try {
+    const doc = await PDFLib.PDFDocument.load(await buildOutputBytes({}), { ignoreEncryption: true, updateMetadata: false });
+    const pg = doc.getPage(s.n - 1), [x0, y0, x1, y1] = s.pdf;
+    pg.setCropBox(x0, y0, x1 - x0, y1 - y0);
+    prState.areaBytes = await doc.save(); prState.areaPage = s.n;
+  } catch (e) { showLoading(false); handleWriteError(e); return; }
+  showLoading(false);
+  showPrintDialog();
+}
+window.addEventListener('contextmenu', e => {
+  if (!crop.on) return;
+  const w = e.target.closest && e.target.closest('.page-wrapper'); if (!w) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const n = +w.dataset.page;
+  const has = !!(crop.sel && crop.sel.n === n);
+  openCtxMenu(e.clientX, e.clientY, [
+    { label: 'Crop to Selection', key: 'Enter', disabled: !has, action: cropToSelection },
+    { label: 'Set Page Boxes…', key: 'Double-click', action: () => cropDialog(has ? crop.sel : { n, pdf: null }) },
+    { label: 'Print Selected Area…', disabled: !has, action: cropPrintArea },
+    '-',
+    { label: 'Remove White Margins', action: () => { if (!has) crop.sel = { n, pdf: null }; cropRemoveWhite(); } },
+    { label: 'Clear Selection', disabled: !has, action: () => { crop.sel = null; cropDraw(); } },
+    '-',
+    { label: 'Exit Crop Pages', key: 'Esc', action: cropEnd },
+  ]);
+}, true);
+// after a crop the page shows right away at the same zoom; let the person know how to finish
+const _cropStartTip = cropStart;
+cropStart = function () { const r = _cropStartTip.apply(this, arguments); if (crop.on) toast('Drag a rectangle on the page, then double-click inside it (or right-click › Crop to Selection). Esc to stop.'); return r; };
 </script>
 </body>
 </html>
