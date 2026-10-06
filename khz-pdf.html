@@ -1811,6 +1811,11 @@
   .ovi-loc { min-width:180px; padding:3px 4px; }
   .ovi-grp { border:1px solid #d6d6d6; border-radius:3px; padding:6px 18px 12px; display:flex; flex-direction:column; gap:12px; }
   .ovi-grp label { display:flex; align-items:center; gap:8px; } .ovi-n { width:56px; padding:3px 4px; }
+
+  /* Edit PDF: selecting several objects */
+  .ms-marquee { position:absolute; border:1px dashed #1473e6; background:rgba(20,115,230,.08); pointer-events:none; z-index:30; display:none; }
+  .mp { display:flex; flex-direction:column; gap:12px; font-size:13px; } .mp-row { display:flex; align-items:center; gap:10px; } .mp-row > span { width:80px; }
+  .mp-row input[type=color] { width:44px; height:24px; padding:0; border:1px solid #bbb; } .mp-width { width:64px; }
 </style>
 </head>
 <body>
@@ -5673,7 +5678,7 @@ function wantedHidden() {
 async function syncContent() {
   if (!state.pageImages || !state.pdfDoc || typeof PDFLib === 'undefined') return;
   const want = wantedHidden();
-  const key = [...want.images].sort().join(',') + '|' + [...want.texts].sort().join(',');
+  const key = [...want.images].sort().join(',') + '|' + [...want.texts].sort().join(',') + '|' + [...(want.paths || [])].sort().join(',');
   if (key === state.contentKey) return;
   if (contentSyncBusy) { await contentSyncBusy; return syncContent(); }
   contentSyncBusy = (async () => {
@@ -5681,7 +5686,7 @@ async function syncContent() {
     state.contentKey = key;
     const prev = state.displayApplied || { images: new Set(), texts: new Set() };
     let bytes = state.fileBytes;
-    if (want.images.size || want.texts.size) {
+    if (want.images.size || want.texts.size || (want.paths && want.paths.size)) {
       const doc = await PDFLib.PDFDocument.load(state.fileBytes, { updateMetadata: false });
       writeContentRemovals(doc, want);
       bytes = await doc.save({ useObjectStreams: false });
@@ -5696,6 +5701,8 @@ async function syncContent() {
     prev.images.forEach(k => { if (!want.images.has(k)) changed.add(pageOfImg(k)); });
     want.texts.forEach(k => { if (!prev.texts.has(k)) changed.add(pageOfTxt(k)); });
     prev.texts.forEach(k => { if (!want.texts.has(k)) changed.add(pageOfTxt(k)); });
+    (want.paths || new Set()).forEach(k => { if (!(prev.paths || new Set()).has(k)) changed.add(+k.split(':')[0]); });
+    (prev.paths || new Set()).forEach(k => { if (!(want.paths || new Set()).has(k)) changed.add(+k.split(':')[0]); });
     const old = state.pdfDoc;
     const pages = {};
     for (const n of Object.keys(state.pages).map(Number)) pages[n] = await pdf.getPage(n);
@@ -5751,6 +5758,7 @@ function writeContentRemovals(doc, want) {
     (state.textBlockIndex || []).filter(t => t.page === n && want.texts.has(t.id)).forEach(t => t.ops.forEach(oi => {
       const op = state.pageTextOps[n][oi]; reps.push({ start: op.start, end: op.end, text: op.rep });
     }));
+    if (typeof pathRemovalReps === 'function') reps.push(...pathRemovalReps(n, want));
     if (!reps.length) return;
     applyContentReplacements(doc, lp, reps);
   });
@@ -5796,6 +5804,7 @@ async function writeContentEdits(doc) {
       if (a && a.untouched) continue;
       t.ops.forEach(oi => { const op = state.pageTextOps[n][oi]; reps.push({ start: op.start, end: op.end, text: op.rep }); });
     }
+    if (typeof pathEditReps === 'function') reps.push(...pathEditReps(n));
     if (reps.length) applyContentReplacements(doc, lp, reps);
   }
 }
@@ -19766,7 +19775,7 @@ async function cropApply(ov) {
         pg.setMediaBox(x0, y0, x1 - x0, y1 - y0); pg.setCropBox(x0, y0, x1 - x0, y1 - y0);
       }
     }
-    const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'form-field').map(a => ({ ...a }));
+    const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'page-path' && a.type !== 'form-field').map(a => ({ ...a }));
     keep.forEach(a => { const t = scaled[a.page]; if (!t || !Array.isArray(a.pts)) return; a.pts = a.pts.map(p => Array.isArray(p) ? [t[0] * p[0] + t[1], t[0] * p[1] + t[2], ...p.slice(2)] : p); if (a.fontSize) a.fontSize *= t[0]; if (a.width) a.width *= t[0]; });
     const bytes = await out.save();
     const page = crop.sel ? crop.sel.n : state.currentPage;
@@ -20212,7 +20221,7 @@ async function hfShrinkPages(hf) {
         if (ink && ink.asArray) d.set(NN('InkList'), ctx.obj(ink.asArray().map(path => { const xs = (out.context.lookup(path) || path).asArray().map(num), o = []; for (let j = 0; j + 1 < xs.length; j += 2) o.push(...T(xs[j], xs[j + 1])); return o; })));
       });
     });
-    const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'form-field').map(a => ({ ...a }));
+    const keep = state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'page-path' && a.type !== 'form-field').map(a => ({ ...a }));
     const zoom = state.scale, page = state.currentPage, hfKeep = state.headerFooter;
     await loadBytes(await out.save(), state.fileName, { keep: true, annotations: keep, page });
     state.headerFooter = hfKeep;
@@ -21943,7 +21952,7 @@ function rotHandlePos(a, vp) {
 const _drawSelectionRT = drawSelection;
 drawSelection = function (a, vp, g) {
   const r = _drawSelectionRT.apply(this, arguments);
-  if (!rotable(a) || (a.locked)) return r;
+  if (!rotable(a) || (a.locked) || a.type === 'page-path') return r;   // drawings: turned from just outside a corner, like Acrobat
   const h = rotHandlePos(a, vp); if (!h) return r;
   svgEl('line', { x1: h.x, y1: h.top, x2: h.x, y2: h.below ? h.y - 8 : h.y + 8, stroke: '#1473e6', 'stroke-width': 1.2 }, g);
   svgEl('circle', { cx: h.x, cy: h.y, r: 8, fill: '#1473e6', stroke: '#fff', 'stroke-width': 1.2 }, g);
@@ -21954,7 +21963,7 @@ let rotDrag = null;
 // the round handle, or just outside a corner of the selection (like Acrobat): both turn the object
 function rotZoneAt(a, ps, vx, vy) {
   const h = rotHandlePos(a, ps.vp); if (!h) return null;
-  if (Math.hypot(vx - h.x, vy - h.y) <= 11) return h;
+  if (a.type !== 'page-path' && Math.hypot(vx - h.x, vy - h.y) <= 11) return h;
   const b = (typeof handleBox === 'function' && handleBox(a, ps.vp)) || annotBBox(a, ps.vp); if (!b) return null;
   const outside = vx < b.x || vx > b.x + b.w || vy < b.y || vy > b.y + b.h;
   if (!outside) return null;
@@ -26756,6 +26765,808 @@ function cvRevText(c) {
 }
 const _showCertViewerRV = showCertViewer;
 showCertViewer = function (s) { state._cvSig = s; return _showCertViewerRV.apply(this, arguments); };
+
+// ================================================================
+//  EDIT PDF: drawings (lines, shapes, hatching, frames…) are objects too, like Acrobat:
+//  click a line or shape to select it, then move, resize or delete it. The change is written
+//  straight into the page drawing (lossless: the original path is kept and moved with a transform).
+// ================================================================
+PAGE_CONTENT.push('page-path');
+
+// ---------- find every drawn path in a page's content ----------
+function scanPaths(str) {
+  const out = [];
+  let i = 0; const n = str.length;
+  let ctm = IDM.slice(), lw = 1, stroke = '#000000', fill = '#000000', clip = null, clips = [], extra = {};
+  const gs = [];
+  const hx = v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0');
+  const rgb = (r, g, b) => '#' + hx(r) + hx(g) + hx(b);
+  const cmyk = (c, m, y, k) => rgb((1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k));
+  const ws = c => c === 32 || c === 10 || c === 13 || c === 9 || c === 12 || c === 0;
+  const delim = c => c === 40 || c === 41 || c === 60 || c === 62 || c === 91 || c === 93 || c === 123 || c === 125 || c === 47 || c === 37;
+  let nums = [], firstOperand = -1, inText = false;
+  let path = null;   // { start, cmds:[], sub:[[pts]], clipOp }
+  const P = (x, y) => mApply(ctm, x, y);
+  const begin = st => { if (!path) path = { start: st, cmds: [], sub: [], clipOp: false, cur: null, startPt: null }; };
+  const colorFrom = a => a.length === 1 ? rgb(a[0], a[0], a[0]) : a.length === 3 ? rgb(a[0], a[1], a[2]) : a.length === 4 ? cmyk(a[0], a[1], a[2], a[3]) : '#000000';
+  while (i < n) {
+    const c = str.charCodeAt(i);
+    if (ws(c)) { i++; continue; }
+    if (c === 37) { while (i < n && str[i] !== '\n' && str[i] !== '\r') i++; continue; }
+    if (c === 40) { if (firstOperand < 0) firstOperand = i; let d = 0; for (; i < n; i++) { const ch = str[i]; if (ch === '\\') { i++; continue; } if (ch === '(') d++; else if (ch === ')') { d--; if (!d) { i++; break; } } } continue; }
+    if (c === 60) {
+      if (firstOperand < 0) firstOperand = i;
+      if (str[i + 1] === '<') { let d = 0; for (; i < n; i++) { if (str[i] === '<' && str[i + 1] === '<') { d++; i++; } else if (str[i] === '>' && str[i + 1] === '>') { d--; i++; if (!d) { i++; break; } } } continue; }
+      const e = str.indexOf('>', i); i = e < 0 ? n : e + 1; continue;
+    }
+    if (c === 91 || c === 93 || c === 123 || c === 125) { if (firstOperand < 0) firstOperand = i; i++; continue; }
+    if (c === 47) { if (firstOperand < 0) firstOperand = i; i++; while (i < n && !ws(str.charCodeAt(i)) && !delim(str.charCodeAt(i))) i++; continue; }
+    if ((c >= 48 && c <= 57) || c === 43 || c === 45 || c === 46) {
+      const st = i; i++; while (i < n && /[0-9.]/.test(str[i])) i++;
+      if (firstOperand < 0) firstOperand = st; nums.push(parseFloat(str.slice(st, i))); continue;
+    }
+    const st = i;
+    while (i < n && !ws(str.charCodeAt(i)) && !delim(str.charCodeAt(i))) i++;
+    const op = str.slice(st, i);
+    if (!op) { i++; continue; }
+    if (op === 'BI') { const id = str.indexOf('ID', i), j = id < 0 ? n : id + 3, re = /[\s\0]EI(?=[\s\0]|$)/g; re.lastIndex = j; const m = re.exec(str); i = m ? m.index + 3 : n; nums = []; firstOperand = -1; continue; }
+    const opStart = firstOperand >= 0 ? firstOperand : st;
+    const k = q => nums[nums.length - q];
+    switch (op) {
+      case 'BT': inText = true; break;
+      case 'ET': inText = false; break;
+      case 'q': gs.push({ ctm: ctm.slice(), lw, stroke, fill, clip, clips, extra: { ...extra } }); break;
+      case 'Q': { const g = gs.pop(); if (g) ({ ctm, lw, stroke, fill, clip, clips, extra } = g); break; }
+      case 'd': case 'J': case 'j': case 'M': case 'gs': case 'ri': case 'i': extra[op] = str.slice(opStart, i); break;
+      case 'cm': if (nums.length >= 6) ctm = mMul([k(6), k(5), k(4), k(3), k(2), k(1)], ctm); break;
+      case 'w': lw = k(1) || 0; break;
+      case 'G': stroke = colorFrom([k(1)]); break;
+      case 'RG': stroke = colorFrom([k(3), k(2), k(1)]); break;
+      case 'K': stroke = colorFrom([k(4), k(3), k(2), k(1)]); break;
+      case 'g': fill = colorFrom([k(1)]); break;
+      case 'rg': fill = colorFrom([k(3), k(2), k(1)]); break;
+      case 'k': fill = colorFrom([k(4), k(3), k(2), k(1)]); break;
+      case 'SC': case 'SCN': if (nums.length) stroke = colorFrom(nums.slice(-4).length === 4 ? nums.slice(-4) : nums.length >= 3 ? nums.slice(-3) : nums.slice(-1)); break;
+      case 'sc': case 'scn': if (nums.length) fill = colorFrom(nums.slice(-4).length === 4 ? nums.slice(-4) : nums.length >= 3 ? nums.slice(-3) : nums.slice(-1)); break;
+      case 'CS': stroke = '#000000'; break;
+      case 'cs': fill = '#000000'; break;
+      case 'm': { begin(opStart); const p = P(k(2), k(1)); path.cmds.push(['M', ...p]); path.sub.push([p]); path.cur = p; path.startPt = p; break; }
+      case 'l': { begin(opStart); const p = P(k(2), k(1)); path.cmds.push(['L', ...p]); if (!path.sub.length) path.sub.push([path.cur || p]); path.sub[path.sub.length - 1].push(p); path.cur = p; break; }
+      case 'c': case 'v': case 'y': {
+        begin(opStart);
+        const p0 = path.cur || [0, 0];
+        let c1, c2, e;
+        if (op === 'c') { c1 = P(k(6), k(5)); c2 = P(k(4), k(3)); e = P(k(2), k(1)); }
+        else if (op === 'v') { c1 = p0; c2 = P(k(4), k(3)); e = P(k(2), k(1)); }
+        else { c1 = P(k(4), k(3)); e = P(k(2), k(1)); c2 = e; }
+        path.cmds.push(['C', ...c1, ...c2, ...e]);
+        if (!path.sub.length) path.sub.push([p0]);
+        const sub = path.sub[path.sub.length - 1];
+        for (let t = 1; t <= 8; t++) { const u = t / 8, a = (1 - u) ** 3, b = 3 * u * (1 - u) ** 2, cc = 3 * u * u * (1 - u), d = u ** 3; sub.push([a * p0[0] + b * c1[0] + cc * c2[0] + d * e[0], a * p0[1] + b * c1[1] + cc * c2[1] + d * e[1]]); }
+        path.cur = e; break;
+      }
+      case 'h': if (path) { path.cmds.push(['Z']); if (path.sub.length && path.startPt) path.sub[path.sub.length - 1].push(path.startPt); path.cur = path.startPt; } break;
+      case 're': {
+        begin(opStart);
+        const x = k(4), y = k(3), w = k(2), h = k(1), q = [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)];
+        path.cmds.push(['M', ...q[0]], ['L', ...q[1]], ['L', ...q[2]], ['L', ...q[3]], ['Z']);
+        path.sub.push([...q, q[0]]); path.cur = q[0]; path.startPt = q[0]; break;
+      }
+      case 'W': case 'W*': if (path) { path.clipOp = true; path.clipRule = op === 'W*' ? 'evenodd' : 'nonzero'; } break;
+      case 'S': case 's': case 'f': case 'F': case 'f*': case 'B': case 'B*': case 'b': case 'b*': case 'n': {
+        if (path && !inText) {
+          const pts = path.sub.flat();
+          if (path.clipOp) {   // a clipping path: limits what's drawn after it, isn't an object itself
+            if (pts.length) clips = clips.concat([{ cmds: path.cmds.slice(), rule: path.clipRule }]);
+            if (pts.length) { const b = bboxOf(pts); const cb = { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h }; clip = clip ? { x0: Math.max(clip.x0, cb.x0), y0: Math.max(clip.y0, cb.y0), x1: Math.min(clip.x1, cb.x1), y1: Math.min(clip.y1, cb.y1) } : cb; }
+          } else if (op !== 'n' && pts.length) {
+            const doStroke = /^[SsBb]/.test(op), doFill = /^[fFBb]/.test(op), closeIt = op === 's' || op === 'b' || op === 'b*';
+            if (closeIt) path.cmds.push(['Z']);
+            const b = bboxOf(pts);
+            let box = { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h };
+            const sw = lw * Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2])) || 0;
+            if (clip) box = { x0: Math.max(box.x0, clip.x0), y0: Math.max(box.y0, clip.y0), x1: Math.min(box.x1, clip.x1), y1: Math.min(box.y1, clip.y1) };
+            if (box.x1 >= box.x0 - 0.01 && box.y1 >= box.y0 - 0.01)
+              out.push({ start: path.start, end: i, text: str.slice(path.start, i), ctm: ctm.slice(), cmds: path.cmds, sub: path.sub, box, clip, clips, extra: { ...extra }, lwUser: lw, stroke: doStroke ? stroke : null, fill: doFill ? fill : null, rule: /\*/.test(op) ? 'evenodd' : 'nonzero', sw });
+          }
+        }
+        path = null; break;
+      }
+      case 'Do': case 'sh': break;
+    }
+    nums = []; firstOperand = -1;
+  }
+  return out;
+}
+
+// index at load (beside the pictures and text the app already finds)
+const _indexPageImagesVP = indexPageImages;
+indexPageImages = function (lib) {
+  const r = _indexPageImagesVP.apply(this, arguments);
+  state.pagePaths = {};
+  if (lib) lib.getPages().forEach((lp, k) => {
+    const n = k + 1; if (!state.pages[n]) return;
+    try { state.pagePaths[n] = scanPaths(pageContentString(lib, lp)).map((p, idx) => ({ ...p, key: `${n}:${idx}` })); } catch (e) { console.warn('paths', e); state.pagePaths[n] = []; }
+  });
+  return r;
+};
+const vpPath = key => { const n = +key.split(':')[0]; return (state.pagePaths && state.pagePaths[n] || []).find(p => p.key === key) || null; };
+
+// ---------- geometry: the path drawn by the app once it has been moved ----------
+function vpTransform(a) {   // original box → current box (page coordinates)
+  const o = bboxOf(a.origPts), c = bboxOf(a.pts);
+  const sx = c.w / (o.w || 1), sy = c.h / (o.h || 1);
+  return [o.w ? sx : 1, 0, 0, o.h ? sy : 1, c.x - o.x * (o.w ? sx : 1), c.y - o.y * (o.h ? sy : 1)];
+}
+function vpCmdsD(cmds, V) {
+  const f = v => v.toFixed(2);
+  return cmds.map(c => c[0] === 'Z' ? 'Z' : c[0] + ' ' + (c[0] === 'C' ? [V(c[1], c[2]), V(c[3], c[4]), V(c[5], c[6])] : [V(c[1], c[2])]).map(q => f(q[0]) + ' ' + f(q[1])).join(' ')).join(' ');
+}
+function pagePathGeometry(a, vp) {
+  const p = vpPath(a.pathKey); if (!p) return [];
+  const T = vpTransform(a), V = (x, y) => vp.convertToViewportPoint(...mApply(T, x, y));
+  const bb = bboxOf(a.pts.map(q => vp.convertToViewportPoint(q[0], q[1])));
+  const pad = Math.max(2, (p.sw || 0) * vp.scale / 2);
+  const bbox = { x: bb.x - pad, y: bb.y - pad, w: bb.w + 2 * pad, h: bb.h + 2 * pad };
+  if (a.untouched || a.erased) return [{ k: 'vpath', d: '', bbox }];
+  const f = v => v.toFixed(2);
+  const d = vpCmdsD(p.cmds, V);
+  return [{ k: 'vpath', d, fill: p.fill, stroke: p.stroke, width: Math.max(0.5, p.sw * vp.scale * Math.sqrt(Math.abs(T[0] * T[3]))), rule: p.rule, bbox, clips: (p.clips || []).map(c => ({ d: vpCmdsD(c.cmds, V), rule: c.rule })) }];
+}
+const _annotGeometryVP = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (a && a.type === 'page-path') return forPdf ? [] : pagePathGeometry(a, vp);
+  return _annotGeometryVP.apply(this, arguments);
+};
+const _primBBoxVP = primBBox;
+primBBox = function (p) { if (p && p.k === 'vpath') return p.bbox; return _primBBoxVP.apply(this, arguments); };
+let vpClipSeq = 0;
+const _drawPrimSVGVP = drawPrimSVG;
+drawPrimSVG = function (p, g) {
+  if (!p || p.k !== 'vpath') return _drawPrimSVGVP.apply(this, arguments);
+  if (!p.d) return;
+  let host = g;
+  (p.clips || []).forEach(c => {   // the clipping the drawing had on the page goes with it
+    const id = 'vpc' + (++vpClipSeq), cp = svgEl('clipPath', { id }, g);
+    svgEl('path', { d: c.d, 'clip-rule': c.rule }, cp);
+    host = svgEl('g', { 'clip-path': `url(#${id})` }, host);
+  });
+  svgEl('path', { d: p.d, fill: p.fill || 'none', 'fill-rule': p.rule, stroke: p.stroke || 'none', 'stroke-width': p.width }, host);
+};
+const _appDrawsVP = appDraws;
+appDraws = function (a) { if (a && a.type === 'page-path') return !a.untouched && !a.erased; return _appDrawsVP.apply(this, arguments); };
+const _touchNativeVP = touchNative;
+touchNative = function (a) {
+  if (a && a.type === 'page-path') { if (a.untouched) { a.untouched = false; syncContent(); } return true; }
+  return _touchNativeVP.apply(this, arguments);
+};
+
+// ---------- the on-screen copy leaves out moved / deleted paths; saving writes them back moved ----------
+const _wantedHiddenVP = wantedHidden;
+wantedHidden = function () {
+  const w = _wantedHiddenVP.apply(this, arguments);
+  w.paths = new Set(state.annotations.filter(a => a.type === 'page-path' && !a.untouched).map(a => a.pathKey));
+  return w;
+};
+function pathRemovalReps(n, want) {
+  if (!want.paths) return [];
+  return (state.pagePaths && state.pagePaths[n] || []).filter(p => want.paths.has(p.key)).map(p => ({ start: p.start, end: p.end, text: '' }));
+}
+function pathEditReps(n) {
+  const reps = [];
+  state.annotations.filter(a => a.type === 'page-path' && a.page === n && !a.untouched).forEach(a => {
+    const p = vpPath(a.pathKey); if (!p) return;
+    if (a.erased) { reps.push({ start: p.start, end: p.end, text: '' }); return; }
+    const T = vpTransform(a);
+    if (Math.abs(T[0] - 1) < 1e-6 && Math.abs(T[3] - 1) < 1e-6 && Math.abs(T[4]) < 1e-4 && Math.abs(T[5]) < 1e-4) return;
+    const X = mMul(mMul(p.ctm, T), mInv(p.ctm));   // the move, expressed where the path is drawn
+    reps.push({ start: p.start, end: p.end, text: `q ${X.map(fmtNum).join(' ')} cm ${p.text} Q` });
+  });
+  return reps;
+}
+
+// ---------- picking a path with the mouse ----------
+function vpSegDist(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+  let t = L ? ((px - a[0]) * dx + (py - a[1]) * dy) / L : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - a[0] - t * dx, py - a[1] - t * dy);
+}
+function vpInside(px, py, subs, rule) {
+  let wn = 0, cross = 0;
+  subs.forEach(s => { for (let i = 0, j = s.length - 1; i < s.length; j = i++) {
+    const [xi, yi] = s[i], [xj, yj] = s[j];
+    if ((yi > py) !== (yj > py)) { const x = (xj - xi) * (py - yi) / (yj - yi) + xi; if (px < x) { cross++; wn += yj > yi ? 1 : -1; } }
+  } });
+  return rule === 'evenodd' ? cross % 2 === 1 : wn !== 0;
+}
+function vpPathAt(n, x, y, tol) {   // page coordinates
+  const list = state.pagePaths && state.pagePaths[n]; if (!list) return null;
+  const erased = new Set(state.annotations.filter(a => a.type === 'page-path' && a.page === n && !a.untouched && !a.clone).map(a => a.pathKey));
+  for (let i = list.length - 1; i >= 0; i--) {
+    const p = list[i], b = p.box;
+    if (erased.has(p.key)) continue;
+    const t = tol + p.sw / 2;
+    if (x < b.x0 - t || x > b.x1 + t || y < b.y0 - t || y > b.y1 + t) continue;
+    if (p.fill && vpInside(x, y, p.sub, p.rule)) return p;
+    if (p.stroke) for (const s of p.sub) for (let k = 1; k < s.length; k++) if (vpSegDist(x, y, s[k - 1], s[k]) <= t) return p;
+  }
+  return null;
+}
+function vpAnnotFor(n, p) {
+  let a = state.annotations.find(x => x.type === 'page-path' && !x.clone && x.pathKey === p.key);
+  if (!a) {
+    const pts = [[p.box.x0, p.box.y1], [p.box.x1, p.box.y0]];
+    a = { id: uid('path'), page: n, type: 'page-path', pathKey: p.key, origPts: pts, pts: JSON.parse(JSON.stringify(pts)), untouched: true };
+    state.annotations.push(a);
+  }
+  return a;
+}
+const _hitTestVP = hitTest;
+hitTest = function (n, vx, vy) {
+  const editing = state.activeToolGroup === 'edit' || state.activeTool === 'edit-text';
+  // moved paths are found by their box (they're drawn by the app)
+  const all = state.annotations, hide = all.filter(a => a.type === 'page-path' && a.page === n && (a.erased || a.untouched));
+  let r;
+  if (hide.length) { state.annotations = all.filter(a => !hide.includes(a)); try { r = _hitTestVP.apply(this, arguments); } finally { state.annotations = all; } }
+  else r = _hitTestVP.apply(this, arguments);
+  if (!editing || state.prepareMode) return r;
+  if (r && r.annot && r.annot.type !== 'page-image') return r;
+  const ps = state.pages[n]; if (!ps) return r;
+  const [x, y] = ps.vp.convertToPdfPoint(vx, vy);
+  const p = vpPathAt(n, x, y, 4 / ps.vp.scale); if (!p) return r;
+  // a picture drawn on top of the path wins
+  if (r && r.annot && r.annot.type === 'page-image') { const im = (state.pageImages[n] || []).find(m => m.key === r.annot.imgKey); if (im && im.start > p.start) return r; }
+  const a = vpAnnotFor(n, p);
+  return { annot: a, box: annotBBox(a, ps.vp) };
+};
+// deleting a path: it's taken out of the page (kept in the list so Undo can bring it back)
+const _deleteAnnotVP = deleteAnnot;
+deleteAnnot = function (id, noHistory) {
+  const a = state.annotations.find(x => x.id === id);
+  if (a && a.type === 'page-path') {
+    a.untouched = false; a.erased = true;
+    if (state.selectedId === id) state.selectedId = null;
+    syncContent(); renderPageAnnots(a.page); updatePropsBar();
+    if (!noHistory) pushHistory();
+    return;
+  }
+  return _deleteAnnotVP.apply(this, arguments);
+};
+
+// ================================================================
+//  EDIT PDF objects like Acrobat (drawings, pictures, page text):
+//  • drag a box on an empty spot to select several objects; Shift/Ctrl+click adds or removes one
+//  • move them together (mouse or arrow keys), Delete, Group / Ungroup, Align, Cut/Copy/Paste/Duplicate
+//  • drawings: rotate (handle or 90° buttons), flip, and change stroke colour / fill colour / line width
+// ================================================================
+SHAPE_ROT.push('page-path');   // the round rotate handle works on drawings too
+state.multiSel = [];
+const MS_TYPES = ['page-path', 'page-image', 'text-block'];
+const msEditing = () => state.activeToolGroup === 'edit' && state.activeTool === 'edit-text' && !state.prepareMode;
+const msGet = () => state.multiSel.map(id => state.annotations.find(a => a.id === id)).filter(Boolean);
+
+// ---------- full transform of a drawing: box move/scale, flips, turn ----------
+function vpFullT(a) {
+  let T = vpTransform(a);
+  const c = bboxOf(a.pts), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+  if (a.flipH) T = mMul(T, [-1, 0, 0, 1, 2 * cx, 0]);
+  if (a.flipV) T = mMul(T, [1, 0, 0, -1, 0, 2 * cy]);
+  if (a.rot) {
+    const ps = state.pages[a.page];
+    const vp = ps.page.getViewport({ scale: 1, rotation: effRot(a.page) }), Tv = vp.transform;
+    const [vx, vy] = mApply(Tv, cx, cy);
+    T = mMul(T, mMul(mMul(Tv, rotMatrixView(a.rot, vx, vy)), mInv(Tv)));
+  }
+  return T;
+}
+// on screen the app turns the drawing itself (rotate handle code), so only box + flips here
+const _vpTransformMS = vpTransform;
+function vpScreenT(a) {
+  let T = _vpTransformMS(a);
+  const c = bboxOf(a.pts), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+  if (a.flipH) T = mMul(T, [-1, 0, 0, 1, 2 * cx, 0]);
+  if (a.flipV) T = mMul(T, [1, 0, 0, -1, 0, 2 * cy]);
+  return T;
+}
+const _pagePathGeometryMS = pagePathGeometry;
+pagePathGeometry = function (a, vp) {
+  const p = vpPath(a.pathKey); if (!p) return [];
+  const prims = _pagePathGeometryMS.apply(this, arguments);
+  if (!prims.length || !(a.flipH || a.flipV || a.style || a.rot)) return prims;
+  const T = vpFullT(a), V = (x, y) => vp.convertToViewportPoint(...mApply(T, x, y)), f = v => v.toFixed(2);
+  prims[0].d = vpCmdsD(p.cmds, V);
+  prims[0].clips = (p.clips || []).map(c => ({ d: vpCmdsD(c.cmds, V), rule: c.rule }));
+  { const pts = p.sub.flat().map(q => V(q[0], q[1])); let b = bboxOf(pts); const pad = Math.max(2, (p.sw || 0) * vp.scale / 2);
+    (p.clips || []).forEach(c => { const cp = c.cmds.filter(x => x[0] !== 'Z').flatMap(x => { const o = []; for (let i = 1; i + 1 < x.length; i += 2) o.push(V(x[i], x[i + 1])); return o; }); if (!cp.length) return; const cb = bboxOf(cp);
+      const x0 = Math.max(b.x, cb.x), y0 = Math.max(b.y, cb.y), x1 = Math.min(b.x + b.w, cb.x + cb.w), y1 = Math.min(b.y + b.h, cb.y + cb.h); if (x1 >= x0 && y1 >= y0) b = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; });
+    prims[0].bbox = { x: b.x - pad, y: b.y - pad, w: b.w + 2 * pad, h: b.h + 2 * pad }; }
+  if (a.untouched || a.erased) prims[0].d = '';
+  const st = a.style;
+  if (st) {
+    if (st.stroke !== undefined) prims[0].stroke = st.stroke || null;
+    if (st.fill !== undefined) prims[0].fill = st.fill || null;
+    if (st.width !== undefined) prims[0].width = Math.max(0.5, st.width * vp.scale);
+  }
+  return prims;
+};
+const hexRGB = h => { const v = parseInt(String(h).slice(1), 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255].map(x => fmtNum(+x.toFixed(4))).join(' '); };
+pathEditReps = function (n) {
+  const reps = [], inserts = {};
+  state.annotations.filter(a => a.type === 'page-path' && a.page === n && (!a.untouched || a.clone)).forEach(a => {
+    const p = vpPath(a.pathKey); if (!p) return;
+    if (a.erased) { if (!a.clone) reps.push({ start: p.start, end: p.end, text: '' }); return; }
+    const T = vpFullT(a);
+    const same = Math.abs(T[0] - 1) < 1e-6 && Math.abs(T[3] - 1) < 1e-6 && Math.abs(T[1]) < 1e-6 && Math.abs(T[2]) < 1e-6 && Math.abs(T[4]) < 1e-4 && Math.abs(T[5]) < 1e-4;
+    let pre = '';
+    const st = a.style;
+    if (st) {
+      if (st.stroke) pre += hexRGB(st.stroke) + ' RG ';
+      if (st.fill) pre += hexRGB(st.fill) + ' rg ';
+      if (st.width !== undefined) { const sc = Math.sqrt(Math.abs(p.ctm[0] * p.ctm[3] - p.ctm[1] * p.ctm[2])) * Math.sqrt(Math.abs(T[0] * T[3] - T[1] * T[2])) || 1; pre += fmtNum(st.width / sc) + ' w '; }
+    }
+    let body = p.text;
+    if (st && (st.stroke === null || st.fill === null)) {   // "no colour": paint only what's left
+      const m = body.match(/(\s)(S|s|f\*?|F|B\*?|b\*?)\s*$/);
+      if (m) { const op = m[2], st2 = st.stroke === null ? false : /^[SsBb]/.test(op), fi = st.fill === null ? false : /^[fFBb]/.test(op);
+        const nop = st2 && fi ? op : st2 ? 'S' : fi ? (op.includes('*') ? 'f*' : 'f') : 'n'; body = body.slice(0, m.index) + m[1] + nop; }
+    }
+    if (same && !pre && body === p.text && !a.clone) return;
+    if (p.clips && p.clips.length && (!same || a.clone)) {
+      // clipped drawing (hatching etc.): its clipping goes with it, so it's redrawn on top of the page
+      // with the clip moved the same way, and taken out of its old spot
+      const ops = cmds => cmds.map(c => c[0] === 'Z' ? 'h' : c[0] === 'M' ? `${fmtNum(c[1])} ${fmtNum(c[2])} m` : c[0] === 'L' ? `${fmtNum(c[1])} ${fmtNum(c[2])} l` : c.slice(1).map(fmtNum).join(' ') + ' c').join(' ');
+      const clipOps = p.clips.map(c => `${ops(c.cmds)} ${c.rule === 'evenodd' ? 'W*' : 'W'} n`).join(' ');
+      const gsOps = Object.values(p.extra || {}).join(' ') + ` ${fmtNum(p.lwUser || 1)} w` + (p.stroke ? ` ${hexRGB(p.stroke)} RG` : '') + (p.fill ? ` ${hexRGB(p.fill)} rg` : '');
+      reps.push({ top: true, text: `q ${T.map(fmtNum).join(' ')} cm ${clipOps} ${p.ctm.map(fmtNum).join(' ')} cm ${gsOps} ${pre}${body} Q` });
+      if (!a.clone) reps.push({ start: p.start, end: p.end, text: '' });
+      return;
+    }
+    const X = mMul(mMul(p.ctm, T), mInv(p.ctm));
+    const txt = `q ${pre}${same ? '' : X.map(fmtNum).join(' ') + ' cm '}${body} Q`;
+    if (a.clone) (inserts[p.end] = inserts[p.end] || []).push(txt);
+    else reps.push({ start: p.start, end: p.end, text: txt });
+  });
+  Object.entries(inserts).forEach(([at, list]) => {
+    reps.push({ start: +at, end: +at, text: '\n' + list.join('\n') + '\n' });
+  });
+  return reps;
+};
+// a path whose original was replaced and that also has copies: the copies go right after it
+const _applyContentReplacementsMS = applyContentReplacements;
+applyContentReplacements = function (doc, lp, reps) {
+  const top = reps.filter(r => r.top).map(r => r.text);
+  reps = reps.filter(r => !r.top);
+  // merge an insertion at the end of a replaced range into that replacement (same spot, keeps order)
+  const ins = reps.filter(r => r.start === r.end), rest = reps.filter(r => r.start !== r.end);
+  ins.forEach(i => { const host = rest.find(r => r.end === i.start); if (host) host.text += i.text; else rest.push(i); });
+  const r = rest.length ? _applyContentReplacementsMS.call(this, doc, lp, rest) : undefined;
+  if (top.length) {   // drawn last, on top of the page, starting from the page's own coordinates
+    const c = lp.node.Contents(), arr = c ? (c instanceof PDFLib.PDFArray ? c.asArray() : [c]) : [];
+    const S = t => doc.context.register(doc.context.flateStream(latin1ToBytes(t)));
+    lp.node.set(PDFLib.PDFName.of('Contents'), doc.context.obj([S('q\n'), ...arr, S('\nQ\n' + top.join('\n') + '\n')]));
+  }
+  return r;
+};
+// copies are always drawn by the app and never hidden from the page (the original stays)
+const _wantedHiddenMS = wantedHidden;
+wantedHidden = function () { const w = _wantedHiddenMS.apply(this, arguments); state.annotations.forEach(a => { if (a.type === 'page-path' && a.clone && w.paths) { const orig = state.annotations.find(o => o.type === 'page-path' && !o.clone && o.pathKey === a.pathKey && !o.untouched); if (!orig) w.paths.delete(a.pathKey); } }); return w; };
+const _vpPathAtMS = vpPathAt;
+
+// ---------- selecting several ----------
+function msSet(ids) {
+  state.multiSel = [...new Set(ids)];
+  if (state.multiSel.length > 1) { if (state.selectedId) { state.selectedId = null; } }
+  else if (state.multiSel.length === 1) { const id = state.multiSel[0]; state.multiSel = []; selectAnnot(id); return; }
+  updatePropsBar && updatePropsBar(); renderAllAnnots(); msPanelSync();
+}
+function msClear() { if (state.multiSel.length) { state.multiSel = []; renderAllAnnots(); msPanelSync(); } }
+const _selectAnnotMS = selectAnnot;
+selectAnnot = function (id) { if (state.multiSel.length && !state._msKeep) { state.multiSel = []; setTimeout(renderAllAnnots, 0); } const r = _selectAnnotMS.apply(this, arguments); msPanelSync(); return r; };
+// members of a group select together
+const grpMembers = a => a && a.grp ? state.annotations.filter(x => x.grp === a.grp && !x.erased) : [a];
+
+function msSegHitsRect(a, b, r) {
+  const inside = p => p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1;
+  if (inside(a) || inside(b)) return true;
+  const edges = [[[r.x0, r.y0], [r.x1, r.y0]], [[r.x1, r.y0], [r.x1, r.y1]], [[r.x1, r.y1], [r.x0, r.y1]], [[r.x0, r.y1], [r.x0, r.y0]]];
+  const cross = (p, q, s, t) => { const d = (q[0] - p[0]) * (t[1] - s[1]) - (q[1] - p[1]) * (t[0] - s[0]); if (!d) return false; const u = ((s[0] - p[0]) * (t[1] - s[1]) - (s[1] - p[1]) * (t[0] - s[0])) / d, v = ((s[0] - p[0]) * (q[1] - p[1]) - (s[1] - p[1]) * (q[0] - p[0])) / d; return u >= 0 && u <= 1 && v >= 0 && v <= 1; };
+  return edges.some(([s, t]) => cross(a, b, s, t));
+}
+// everything a marquee (page coordinates) touches, like Acrobat
+function msMarqueePick(n, r) {
+  const ids = [];
+  const touched = new Set(state.annotations.filter(a => a.type === 'page-path' && a.page === n && (!a.untouched || a.clone)).map(a => a.id));
+  (state.pagePaths && state.pagePaths[n] || []).forEach(p => {
+    const b = p.box; if (b.x1 < r.x0 || b.x0 > r.x1 || b.y1 < r.y0 || b.y0 > r.y1) return;
+    const own = state.annotations.find(a => a.type === 'page-path' && !a.clone && a.pathKey === p.key);
+    if (own && !own.untouched) return;   // moved: judged by its box below
+    // like Acrobat's selection box: the whole object has to be inside it
+    const hit = b.x0 >= r.x0 && b.x1 <= r.x1 && b.y0 >= r.y0 && b.y1 <= r.y1;
+    if (hit) ids.push(vpAnnotFor(n, p).id);
+  });
+  state.annotations.filter(a => a.page === n && MS_TYPES.includes(a.type) && !a.erased && (a.type !== 'page-path' || touched.has(a.id))).forEach(a => {
+    if (!a.pts || !a.pts.length || (a.type === 'text-block' && !String(a.text || '').trim())) return;
+    const b = bboxOf(a.pts);
+    if (!(b.x >= r.x0 && b.x + b.w <= r.x1 && b.y >= r.y0 && b.y + b.h <= r.y1)) return;   // all inside
+    ids.push(a.id);
+  });
+  const out = new Set(); ids.forEach(id => grpMembers(state.annotations.find(a => a.id === id)).forEach(m => out.add(m.id)));
+  return [...out];
+}
+
+// ---------- mouse ----------
+let msDrag = null;
+function msMarqueeEl(ps) { let el = ps.wrapper.querySelector('.ms-marquee'); if (!el) { el = document.createElement('div'); el.className = 'ms-marquee'; ps.wrapper.appendChild(el); } return el; }
+$('canvas-area').addEventListener('mousedown', e => {
+  if (e.button !== 0 || !msEditing() || !state.pdfDoc) return;
+  if (e.target.closest && (e.target.closest('.inline-editor') || e.target.closest('#nt-frame'))) return;
+  const w = e.target.closest && e.target.closest('.page-wrapper'); if (!w) return;
+  const n = +w.dataset.page, ps = state.pages[n]; if (!ps) return;
+  const [vx, vy] = viewPoint(e, ps);
+  if (!state.multiSel.length && handleAt(n, vx, vy)) return;   // resizing the one selected object
+  const hit = hitTest(n, vx, vy), add = e.shiftKey || e.ctrlKey || e.metaKey;
+  const a = hit && hit.annot;
+  if (a && MS_TYPES.includes(a.type) && add) {   // add / remove
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (typeof activeEditor !== 'undefined' && activeEditor) activeEditor.finish(true);
+    let ids = state.multiSel.length ? state.multiSel.slice() : (state.selectedId ? [state.selectedId] : []);
+    const mem = grpMembers(a).map(m => m.id);
+    if (ids.includes(a.id)) ids = ids.filter(id => !mem.includes(id)); else ids.push(...mem);
+    msSet(ids); return;
+  }
+  if (a && (state.multiSel.includes(a.id) || (a.grp && grpMembers(a).length > 1))) {   // drag the whole selection / group
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (typeof activeEditor !== 'undefined' && activeEditor) activeEditor.finish(true);
+    if (!state.multiSel.includes(a.id)) msSet(grpMembers(a).map(m => m.id));
+    msDrag = { mode: 'move', n, start: [vx, vy], items: msGet().map(m => ({ a: m, orig: JSON.parse(JSON.stringify(m.pts)) })), moved: false };
+    return;
+  }
+  if (a) { msClear(); return; }   // one object: the usual handling
+  // empty spot: start a selection box
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (typeof activeEditor !== 'undefined' && activeEditor) activeEditor.finish(true);
+  if (!add) { msClear(); _selectAnnotMS(null); renderAllAnnots(); }
+  msDrag = { mode: 'marquee', n, start: [vx, vy], cur: [vx, vy], keep: add ? (state.multiSel.length ? state.multiSel.slice() : state.selectedId ? [state.selectedId] : []) : [] };
+}, true);
+window.addEventListener('mousemove', e => {
+  const d = msDrag; if (!d) return;
+  const ps = state.pages[d.n]; if (!ps) return;
+  const [vx, vy] = viewPoint(e, ps);
+  if (d.mode === 'marquee') {
+    d.cur = [vx, vy];
+    const el = msMarqueeEl(ps), x = Math.min(vx, d.start[0]), y = Math.min(vy, d.start[1]);
+    Object.assign(el.style, { left: x + 'px', top: y + 'px', width: Math.abs(vx - d.start[0]) + 'px', height: Math.abs(vy - d.start[1]) + 'px', display: 'block' });
+    return;
+  }
+  const dx = vx - d.start[0], dy = vy - d.start[1];
+  if (!d.moved) {
+    if (Math.hypot(dx, dy) < 3) return;
+    d.moved = true;
+    let sync = false;
+    d.items.forEach(it => { if (it.a.untouched) { if (it.a.type === 'page-path') { it.a.untouched = false; sync = true; } else touchNative(it.a); } });
+    if (sync) syncContent();
+  }
+  d.items.forEach(it => { it.a.pts = toPdfPts(ps, it.orig.map(p => ps.vp.convertToViewportPoint(p[0], p[1])).map(([x, y]) => [x + dx, y + dy])); });
+  renderPageAnnots(d.n);
+}, true);
+window.addEventListener('mouseup', e => {
+  const d = msDrag; if (!d) return; msDrag = null;
+  const ps = state.pages[d.n];
+  if (d.mode === 'marquee') {
+    const el = ps && ps.wrapper.querySelector('.ms-marquee'); if (el) el.remove();
+    if (!ps || Math.hypot(d.cur[0] - d.start[0], d.cur[1] - d.start[1]) < 4) return;
+    const a = ps.vp.convertToPdfPoint(d.start[0], d.start[1]), b = ps.vp.convertToPdfPoint(d.cur[0], d.cur[1]);
+    const r = { x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) };
+    const ids = msMarqueePick(d.n, r);
+    msSet([...d.keep, ...ids]);
+    return;
+  }
+  if (d.moved) { pushHistory(); markDirty(); }
+}, true);
+
+// ---------- what the selection looks like ----------
+const _renderPageAnnotsMS = renderPageAnnots;
+renderPageAnnots = function (n) {
+  const r = _renderPageAnnotsMS.apply(this, arguments);
+  const ps = state.pages[n]; if (!ps || !state.multiSel.length) return r;
+  const list = msGet().filter(a => a.page === n); if (!list.length) return r;
+  const g = svgEl('g', { class: 'ms-sel' }, ps.svg);
+  const boxes = list.map(a => annotBBox(a, ps.vp)).filter(Boolean);
+  boxes.forEach(b => svgEl('rect', { x: b.x, y: b.y, width: Math.max(1, b.w), height: Math.max(1, b.h), fill: 'none', stroke: '#1473e6', 'stroke-width': 1, 'stroke-dasharray': '3 2' }, g));
+  const all = bboxOf(boxes.flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]]));
+  svgEl('rect', { x: all.x - 2, y: all.y - 2, width: all.w + 4, height: all.h + 4, fill: 'none', stroke: '#1473e6', 'stroke-width': 1 }, g);
+  return r;
+};
+
+// ---------- actions on the selection (one or many) ----------
+function msTargets() {
+  if (state.multiSel.length) return msGet();
+  const a = state.annotations.find(x => x.id === state.selectedId);
+  return a ? grpMembers(a) : [];
+}
+function msDeleteAll(list) {
+  list.forEach(a => deleteAnnot(a.id, true));
+  state.multiSel = []; pushHistory(); markDirty(); renderAllAnnots(); msPanelSync();
+}
+function msNudge(list, dx, dy) {
+  let sync = false;
+  list.forEach(a => { if (a.untouched) { if (a.type === 'page-path') { a.untouched = false; sync = true; } else touchNative(a); } a.pts = a.pts.map(p => [p[0] + dx, p[1] + dy]); });
+  if (sync) syncContent();
+  renderAllAnnots(); clearTimeout(msNudge.t); msNudge.t = setTimeout(() => { pushHistory(); markDirty(); }, 400);
+}
+function msPathOp(list, fn) {
+  const paths = list.filter(a => a.type === 'page-path'); if (!paths.length) return false;
+  let sync = false;
+  paths.forEach(a => { if (a.untouched) { a.untouched = false; sync = true; } fn(a); });
+  if (sync) syncContent();
+  renderAllAnnots(); pushHistory(); markDirty(); return true;
+}
+// rotate / flip: each drawing about its own middle, like Acrobat
+// several objects turn / flip as one piece: each turns about its middle and its middle moves around the selection's middle
+function msAround(list, moveCenter) {
+  if (list.length < 2) return;
+  const n = list[0].page, ps = state.pages[n]; if (!ps) return;
+  const Tv = ps.page.getViewport({ scale: 1, rotation: effRot(n) }).transform, Ti = mInv(Tv);
+  const boxes = list.map(a => bboxOf(a.pts)), all = bboxOf(boxes.flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]]));
+  const C = mApply(Tv, all.x + all.w / 2, all.y + all.h / 2);
+  list.forEach((a, i) => {
+    const b = boxes[i], c = mApply(Tv, b.x + b.w / 2, b.y + b.h / 2), nc = mApply(Ti, ...moveCenter(c, C));
+    const dx = nc[0] - (b.x + b.w / 2), dy = nc[1] - (b.y + b.h / 2);
+    if (a.untouched && a.type !== 'page-path') touchNative(a);
+    a.pts = a.pts.map(p => [p[0] + dx, p[1] + dy]);
+  });
+}
+function msRotate(list, deg) {
+  const paths = list.filter(a => a.type === 'page-path'); if (!paths.length) return false;
+  const r = deg * Math.PI / 180, c = Math.cos(r), s2 = Math.sin(r);
+  msAround(list, (p, C) => [C[0] + (p[0] - C[0]) * c - (p[1] - C[1]) * s2, C[1] + (p[0] - C[0]) * s2 + (p[1] - C[1]) * c]);
+  return msPathOp(paths, a => { a.rot = (((a.rot || 0) + deg) % 360 + 360) % 360; });
+}
+function msFlip(list, h) {
+  const paths = list.filter(a => a.type === 'page-path'); if (!paths.length) return false;
+  msAround(list, (p, C) => h ? [2 * C[0] - p[0], p[1]] : [p[0], 2 * C[1] - p[1]]);
+  return msPathOp(paths, a => { if (a.rot) a.rot = (360 - a.rot) % 360; if (h) a.flipH = !a.flipH; else a.flipV = !a.flipV; });
+}
+// group / ungroup
+function msGroup() { const list = msTargets(); if (list.length < 2) return; const g = uid('grp'); list.forEach(a => { a.grp = g; }); pushHistory(); toast(`Grouped ${list.length} objects.`); msPanelSync(); }
+function msUngroup() { const list = msTargets(); if (!list.some(a => a.grp)) return; list.forEach(a => { delete a.grp; }); pushHistory(); toast('Ungrouped.'); msPanelSync(); }
+// align several (page coordinates)
+function msAlign(how) {
+  const list = msTargets(); if (list.length < 2) return;
+  const bx = list.map(a => bboxOf(a.pts)), L = Math.min(...bx.map(b => b.x)), R = Math.max(...bx.map(b => b.x + b.w)), B = Math.min(...bx.map(b => b.y)), T = Math.max(...bx.map(b => b.y + b.h));
+  let sync = false;
+  list.forEach((a, i) => {
+    const b = bx[i]; let dx = 0, dy = 0;
+    if (how === 'left') dx = L - b.x; if (how === 'right') dx = R - (b.x + b.w); if (how === 'hcenter') dx = (L + R) / 2 - (b.x + b.w / 2);
+    if (how === 'top') dy = T - (b.y + b.h); if (how === 'bottom') dy = B - b.y; if (how === 'vcenter') dy = (B + T) / 2 - (b.y + b.h / 2);
+    if (!dx && !dy) return;
+    if (a.untouched) { if (a.type === 'page-path') { a.untouched = false; sync = true; } else touchNative(a); }
+    a.pts = a.pts.map(p => [p[0] + dx, p[1] + dy]);
+  });
+  if (sync) syncContent();
+  renderAllAnnots(); pushHistory(); markDirty();
+}
+// copy / paste / duplicate drawings
+let msClip = [];
+function msCopy(list) { const paths = list.filter(a => a.type === 'page-path' && !a.erased); if (!paths.length) return false; msClip = paths.map(a => JSON.parse(JSON.stringify(a))); toast(`Copied ${paths.length} object${paths.length > 1 ? 's' : ''}.`); return true; }
+function msPaste(offset = 12) {
+  if (!msClip.length) return false;
+  const ids = [];
+  const n = state.currentPage;
+  msClip.forEach(c => {
+    const src = +c.pathKey.split(':')[0]; if (src !== n) return;   // drawings paste onto their own page
+    const a = { ...JSON.parse(JSON.stringify(c)), id: uid('path'), clone: true, untouched: false, erased: false, grp: undefined };
+    a.pts = a.pts.map(p => [p[0] + offset, p[1] - offset]);
+    state.annotations.push(a); ids.push(a.id);
+  });
+  if (!ids.length) { toast('Drawings can be pasted on the page they came from.'); return true; }
+  msClip = msClip.map(c => ({ ...c, pts: c.pts.map(p => [p[0] + offset, p[1] - offset]) }));
+  pushHistory(); markDirty();
+  if (ids.length === 1) { state.multiSel = []; selectAnnot(ids[0]); } else msSet(ids);
+  renderAllAnnots(); return true;
+}
+// stroke / fill / line width
+function msPathProps(list) {
+  const paths = list.filter(a => a.type === 'page-path'); if (!paths.length) return;
+  const p0 = vpPath(paths[0].pathKey), st0 = paths[0].style || {};
+  const cur = k => st0[k] !== undefined ? st0[k] : k === 'width' ? +(p0.sw || 1).toFixed(2) : p0[k];
+  const col = (k, label) => `<label class="mp-row"><span>${label}</span><input type="checkbox" class="mp-${k}-on" ${cur(k) ? 'checked' : ''}> <input type="color" class="mp-${k}" value="${cur(k) || '#000000'}"></label>`;
+  esDialog('mp-ov', paths.length > 1 ? `Drawing Properties (${paths.length} objects)` : 'Drawing Properties', `<div class="mp">
+      ${col('stroke', 'Line color')}${col('fill', 'Fill color')}
+      <label class="mp-row"><span>Line width</span><input type="number" class="mp-width" min="0" max="50" step="0.25" value="${cur('width')}"> pt</label></div>`, [
+    { label: 'OK', primary: true, run: d => {
+      const sOn = d.querySelector('.mp-stroke-on').checked, fOn = d.querySelector('.mp-fill-on').checked;
+      const s = d.querySelector('.mp-stroke').value, f = d.querySelector('.mp-fill').value, w = Math.max(0, parseFloat(d.querySelector('.mp-width').value) || 0);
+      msPathOp(paths, a => { a.style = { stroke: sOn ? s : null, fill: fOn ? f : null, width: w }; });
+    } }, { label: 'Cancel' }], 360);
+}
+
+// ---------- keys ----------
+document.addEventListener('keydown', e => {
+  if (!msEditing()) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], .inline-editor')) return;
+  if (typeof activeEditor !== 'undefined' && activeEditor) return;
+  const list = msTargets(); const mod = e.ctrlKey || e.metaKey;
+  const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'v' && msClip.length) { stop(); msPaste(); return; }
+  if (!list.length) return;
+  const many = state.multiSel.length > 1 || list.length > 1;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && many) { stop(); msDeleteAll(list); return; }
+  if (e.key === 'Escape' && state.multiSel.length) { stop(); msClear(); return; }
+  if (e.key.startsWith('Arrow') && many) {
+    stop(); const k = e.shiftKey ? 10 : 1;
+    msNudge(list, e.key === 'ArrowLeft' ? -k : e.key === 'ArrowRight' ? k : 0, e.key === 'ArrowUp' ? k : e.key === 'ArrowDown' ? -k : 0); return;
+  }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'c' && list.some(a => a.type === 'page-path')) { stop(); msCopy(list); return; }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'x' && list.some(a => a.type === 'page-path')) { stop(); if (msCopy(list)) msDeleteAll(list.filter(a => a.type === 'page-path')); return; }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'd' && list.some(a => a.type === 'page-path')) { stop(); const keep = msClip; msCopy(list); msPaste(12); msClip = keep; return; }
+  if (mod && e.key.toLowerCase() === 'g') { stop(); if (e.shiftKey) msUngroup(); else msGroup(); return; }
+}, true);
+
+// ---------- right-click on a drawing or on several ----------
+const _objectContextMenuMS = objectContextMenu;
+objectContextMenu = function (e, a, n, vx, vy) {
+  const list = state.multiSel.length && state.multiSel.includes(a.id) ? msGet() : grpMembers(a);
+  if (!(a.type === 'page-path' || list.length > 1) || !msEditing()) return _objectContextMenuMS.apply(this, arguments);
+  if (!state.multiSel.length && list.length > 1) { state._msKeep = true; msSet(list.map(x => x.id)); state._msKeep = false; }
+  const paths = list.some(x => x.type === 'page-path'), K = s => (typeof IS_MAC !== 'undefined' && IS_MAC) ? s.replace('Ctrl+', '⌘').replace('Shift+', '⇧') : s;
+  openCtxMenu(e.clientX, e.clientY, [
+    paths && { label: 'Cut', key: K('Ctrl+X'), action: () => { if (msCopy(list)) msDeleteAll(list.filter(x => x.type === 'page-path')); } },
+    paths && { label: 'Copy', key: K('Ctrl+C'), action: () => msCopy(list) },
+    { label: 'Paste', key: K('Ctrl+V'), disabled: !msClip.length, action: () => msPaste() },
+    paths && { label: 'Duplicate', key: K('Ctrl+D'), action: () => { const keep = msClip; msCopy(list); msPaste(12); msClip = keep; } },
+    { label: 'Delete', key: 'Del', action: () => msDeleteAll(list) },
+    '-',
+    paths && { label: 'Rotate Clockwise', action: () => msRotate(list, 90) },
+    paths && { label: 'Rotate Counterclockwise', action: () => msRotate(list, -90) },
+    paths && { label: 'Flip Horizontal', action: () => msFlip(list, true) },
+    paths && { label: 'Flip Vertical', action: () => msFlip(list, false) },
+    '-',
+    list.length > 1 && !list.every(x => x.grp && x.grp === list[0].grp) && { label: 'Group', key: K('Ctrl+G'), action: msGroup },
+    list.some(x => x.grp) && { label: 'Ungroup', key: K('Shift+Ctrl+G'), action: msUngroup },
+    list.length > 1 && { label: 'Align Left', action: () => msAlign('left') },
+    list.length > 1 && { label: 'Align Horizontal Center', action: () => msAlign('hcenter') },
+    list.length > 1 && { label: 'Align Right', action: () => msAlign('right') },
+    list.length > 1 && { label: 'Align Top', action: () => msAlign('top') },
+    list.length > 1 && { label: 'Align Vertical Center', action: () => msAlign('vcenter') },
+    list.length > 1 && { label: 'Align Bottom', action: () => msAlign('bottom') },
+    '-',
+    paths && { label: 'Properties…', action: () => msPathProps(list) },
+  ]);
+};
+// right-click on an object that's part of a several-object selection keeps the selection
+const _selectAnnotKeep = selectAnnot;
+window.addEventListener('contextmenu', e => {
+  if (!msEditing() || !state.multiSel.length) return;
+  const w = e.target.closest && e.target.closest('.page-wrapper'); if (!w) return;
+  const n = +w.dataset.page, ps = state.pages[n], [vx, vy] = viewPoint(e, ps), hit = hitTest(n, vx, vy);
+  if (hit && state.multiSel.includes(hit.annot.id)) { e.preventDefault(); e.stopImmediatePropagation(); objectContextMenu(e, hit.annot, n, vx, vy); }
+}, true);
+
+// ---------- Format panel › Objects buttons ----------
+function msPanelSync() {
+  const list = msTargets(), paths = list.some(a => a.type === 'page-path');
+  const btn = t => document.querySelector(`#rp-format .fp-btn[title="${t}"]`);
+  const g = btn('Group'); if (g) { g.classList.toggle('dis', !(list.length > 1 || list.some(a => a.grp))); g.title = 'Group'; }
+}
+(function () {
+  const wrap = (title, fn) => {
+    const b = document.querySelector(`#rp-format .fp-btn[title="${title}"]`); if (!b) return;
+    const old = b.onclick;
+    b.classList.remove('dis');
+    b.onclick = function (ev) { const list = msTargets(); if (list.some(a => a.type === 'page-path') && fn(list)) return; if (old) return old.call(this, ev); };
+  };
+  wrap('Flip horizontal', l => msFlip(l, true));
+  wrap('Flip vertical', l => msFlip(l, false));
+  wrap('Rotate clockwise', l => msRotate(l, 90));
+  wrap('Rotate counterclockwise', l => msRotate(l, -90));
+  const g = document.querySelector('#rp-format .fp-btn[title="Group"]');
+  if (g) g.onclick = ev => { const list = msTargets(); if (list.length > 1 && !list.every(a => a.grp && a.grp === list[0].grp)) msGroup(); else if (list.some(a => a.grp)) msUngroup(); else toast('Select two or more objects to group them.'); };
+})();
+// leaving Edit PDF clears the selection box
+const _deactivateContextToolMS = deactivateContextTool;
+deactivateContextTool = function () { state.multiSel = []; return _deactivateContextToolMS.apply(this, arguments); };
+
+// ---------- handles on a selected drawing (round, like Acrobat): drag them to make it longer / shorter ----------
+BOX_TYPES.push('page-path');
+const _dragSelectedPP = dragSelected;
+dragSelected = function (d, ps, vx, vy, e) {
+  const r = _dragSelectedPP.apply(this, arguments);
+  const a = d && d.annot;
+  if (a && a.type === 'page-path' && d.mode === 'handle' && d.handle && d.handle.dir && d.moved) {
+    // a straight line has no width (or height): resizing the other way keeps it that way
+    const o = bboxOf(d.orig), c = bboxOf(a.pts), dir = d.handle.dir;
+    let { x, y, w, h } = c;
+    if (o.w < 0.5 && (!/[ew]/.test(dir) || c.w <= 6.01 * (ps.vp.scale ? 1 / ps.vp.scale : 1) + 0.01)) { x = o.x; w = o.w; }
+    if (o.h < 0.5 && (!/[ns]/.test(dir) || c.h <= 6.01 * (ps.vp.scale ? 1 / ps.vp.scale : 1) + 0.01)) { y = o.y; h = o.h; }
+    if (x !== c.x || w !== c.w || y !== c.y || h !== c.h) { a.pts = [[x, y + h], [x + w, y]]; renderPageAnnots(d.n); }
+  }
+  return r;
+};
+
+// ---------- a turned drawing: its outline and handles turn with it, and resizing works along its own sides ----------
+let ppNoRot = false;
+const ppCenter = (a, vp) => { const b = bboxOf(a.pts.map(p => vp.convertToViewportPoint(p[0], p[1]))); return [b.x + b.w / 2, b.y + b.h / 2]; };
+const _annotHandlesPP = annotHandles;
+annotHandles = function (a, vp) {
+  const hs = _annotHandlesPP.apply(this, arguments);
+  if (ppNoRot || !a || a.type !== 'page-path' || !a.rot) return hs;
+  const [cx, cy] = ppCenter(a, vp), M = rotMatrixView(a.rot, cx, cy);
+  return hs.map(h => { const [x, y] = mApply(M, h.x, h.y); return { ...h, x, y }; });
+};
+const _drawSelectionPP = drawSelection;
+drawSelection = function (a, vp, g) {
+  if (!a || a.type !== 'page-path' || !a.rot) return _drawSelectionPP.apply(this, arguments);
+  const [cx, cy] = ppCenter(a, vp);
+  const g2 = svgEl('g', { transform: `rotate(${a.rot} ${cx} ${cy})` }, g);
+  ppNoRot = true;
+  try { return _drawSelectionPP.call(this, a, vp, g2); } finally { ppNoRot = false; }
+};
+// the selection box of a turned drawing is its own (turned) box, not the box around it
+const _annotBBoxPP = annotBBox;
+const _dragSelectedRotPP = dragSelected;
+dragSelected = function (d, ps, vx, vy, e) {
+  const a = d && d.annot;
+  if (!a || a.type !== 'page-path' || !a.rot || d.mode !== 'handle' || !d.handle || !d.handle.dir) return _dragSelectedRotPP.apply(this, arguments);
+  const vp = ps.vp;
+  if (!d.rc) { const b = bboxOf(d.orig.map(p => vp.convertToViewportPoint(p[0], p[1]))); d.rc = [b.x + b.w / 2, b.y + b.h / 2]; d.rb = b; }
+  // the pointer in the drawing's own (unturned) frame
+  const Mi = rotMatrixView(-a.rot, d.rc[0], d.rc[1]);
+  const [lx, ly] = mApply(Mi, vx, vy), [sx0, sy0] = mApply(Mi, d.start[0], d.start[1]);
+  const r = _dragSelectedRotPP.call(this, d, ps, d.start[0] + (lx - sx0), d.start[1] + (ly - sy0), e);
+  if (!d.moved) return r;
+  // keep the opposite side where it was (it would drift because the box turns about its new middle)
+  const dir = d.handle.dir, ob = d.rb;
+  const ax = dir.includes('w') ? ob.x + ob.w : dir.includes('e') ? ob.x : ob.x + ob.w / 2;
+  const ay = dir.includes('n') ? ob.y + ob.h : dir.includes('s') ? ob.y : ob.y + ob.h / 2;
+  const before = mApply(rotMatrixView(a.rot, d.rc[0], d.rc[1]), ax, ay);
+  const nb = bboxOf(a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+  const nax = dir.includes('w') ? nb.x + nb.w : dir.includes('e') ? nb.x : nb.x + nb.w / 2;
+  const nay = dir.includes('n') ? nb.y + nb.h : dir.includes('s') ? nb.y : nb.y + nb.h / 2;
+  const after = mApply(rotMatrixView(a.rot, nb.x + nb.w / 2, nb.y + nb.h / 2), nax, nay);
+  const sx = before[0] - after[0], sy = before[1] - after[1];
+  if (Math.abs(sx) > 0.01 || Math.abs(sy) > 0.01) {
+    a.pts = toPdfPts(ps, a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])).map(([x, y]) => [x + sx, y + sy]));
+    renderPageAnnots(d.n);
+  }
+  return r;
+};
+// turning zones (just outside the corners) follow the turned box, and never sit on a handle
+const _rotZoneAtPP = rotZoneAt;
+rotZoneAt = function (a, ps, vx, vy) {
+  if (a && a.type === 'page-path') {
+    if (handleAt(a.page, vx, vy)) return null;
+    if (a.rot) { const [cx, cy] = ppCenter(a, ps.vp); [vx, vy] = mApply(rotMatrixView(-a.rot, cx, cy), vx, vy); }
+  }
+  return _rotZoneAtPP.call(this, a, ps, vx, vy);
+};
+
+// dashed / dotted lines stay dashed when the app draws them (moved, turned, recoloured), with their line ends and corners
+function ppDashStyle(p, a, vp) {
+  const ex = p.extra || {}, out = {};
+  const T = typeof vpFullT === 'function' && a ? vpFullT(a) : [1, 0, 0, 1, 0, 0];
+  const k = Math.sqrt(Math.abs(p.ctm[0] * p.ctm[3] - p.ctm[1] * p.ctm[2])) * Math.sqrt(Math.abs(T[0] * T[3] - T[1] * T[2])) * vp.scale;
+  if (ex.d) { const m = ex.d.match(/\[([^\]]*)\]\s*([-\d.]+)?/); if (m) { const arr = m[1].trim().split(/\s+/).filter(Boolean).map(Number).filter(v => !isNaN(v)); if (arr.length && arr.some(v => v > 0)) { out.dash = arr.map(v => Math.max(0.01, v * k)); out.dashOff = (+m[2] || 0) * k; } } }
+  if (ex.J) { const v = +ex.J.trim().split(/\s+/)[0]; out.cap = v === 1 ? 'round' : v === 2 ? 'square' : 'butt'; }
+  if (ex.j) { const v = +ex.j.trim().split(/\s+/)[0]; out.join = v === 1 ? 'round' : v === 2 ? 'bevel' : 'miter'; }
+  return out;
+}
+const _pagePathGeometryDash = pagePathGeometry;
+pagePathGeometry = function (a, vp) {
+  const prims = _pagePathGeometryDash.apply(this, arguments);
+  const p = vpPath(a.pathKey); if (p && prims[0] && prims[0].d) Object.assign(prims[0], ppDashStyle(p, a, vp));
+  return prims;
+};
+const _drawPrimSVGDash = drawPrimSVG;
+drawPrimSVG = function (p, g) {
+  const n0 = g.childNodes.length;
+  const r = _drawPrimSVGDash.apply(this, arguments);
+  if (p && p.k === 'vpath' && p.d && (p.dash || p.cap || p.join)) {
+    const el = g.querySelector('path:last-of-type') && [...g.querySelectorAll('path')].pop();
+    if (el) { if (p.dash) { el.setAttribute('stroke-dasharray', p.dash.join(' ')); el.setAttribute('stroke-dashoffset', p.dashOff || 0); } el.setAttribute('stroke-linecap', p.cap || 'butt'); el.setAttribute('stroke-linejoin', p.join || 'miter'); }
+  }
+  return r;
+};
 </script>
 </body>
 </html>
