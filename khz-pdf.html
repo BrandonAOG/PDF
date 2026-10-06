@@ -13983,7 +13983,7 @@ setActiveTool = function (tool) {
 //  TEXT CALLOUT like Acrobat: drag out the arrow live when creating it; when selected, drag the
 //  arrow point, the bend (knee) and the box (move or resize) — all live
 // ================================================================
-const CALLOUT_W = 170;
+const CALLOUT_W = 100;
 function coBox(a, vp) {   // the text box (view coords)
   const g = _annotGeometryDT(a2box(a), vp);
   const p = g && g.find(q => q.k === 'text' || q.k === 'rich');
@@ -14093,7 +14093,7 @@ dragSelected = function (d, ps, vx, vy, e) {
 // ---------- creating: press at the arrow point, drag to where the box goes (live), release, type ----------
 let coNew = null, coTyping = false;
 function coPreviewAnnot(n, tipV, curV) {
-  const ps = state.pages[n], s = state.scale, w = CALLOUT_W * s, h = 30 * s;
+  const ps = state.pages[n], s = state.scale, w = CALLOUT_W * s, h = 24 * s;
   const right = curV[0] >= tipV[0];
   const x = right ? curV[0] : curV[0] - w, y = curV[1] - h / 2;
   return { id: 'preview', page: n, type: 'callout', pts: toPdfPts(ps, [[x, y], [x + w, y + h]]), tip: toPdfPts(ps, [tipV])[0], text: '', color: '#000000', borderColor: state.inkColor || '#ff0000' };
@@ -14122,6 +14122,11 @@ window.addEventListener('mouseup', e => {
   const bx = Math.min(V[0][0], V[1][0]), by = Math.min(V[0][1], V[1][1]), bw = Math.abs(V[1][0] - V[0][0]);
   renderPageAnnots(d.n, pre);
   coTyping = true;
+  // the box grows with the text while typing
+  setTimeout(() => {
+    const ed = ps.wrapper.querySelector('.inline-editor'); if (!ed) return;
+    ed.addEventListener('input', () => { if (coTyping) renderPageAnnots(d.n, { ...pre, text: ed.innerText.replace(/\n$/, ''), color: 'transparent' }); });
+  }, 0);
   inlineEdit(ps, { x: bx + 4 * s, y: by + 4 * s, w: bw - 8 * s, size: 12 * s, text: '', multiline: true, wrap: true }).then(txt => {
     coTyping = false;
     txt = txt || '';
@@ -25317,6 +25322,24 @@ dragSelected = function (d, ps, vx, vy, e) {
     if (!kneeHandle && Math.hypot(vx - d.start[0], vy - d.start[1]) >= DRAG_THRESHOLD) { coFreeKnee(a, ps.vp); d.origKnee = null; }
   }
   return _dragSelectedCO2.apply(this, arguments);
+};
+
+// typing in an existing callout: its box grows with the text as you type (not only when done)
+document.addEventListener('input', e => {
+  const ed = e.target && e.target.closest && e.target.closest('.inline-editor');
+  if (!ed || !activeEditor || !activeEditor.annotId) return;
+  const a = state.annotations.find(x => x.id === activeEditor.annotId);
+  if (!a || a.type !== 'callout') return;
+  a._liveText = ed.innerText.replace(/\n$/, '');
+  renderPageAnnots(a.page);
+}, true);
+const _annotGeometryLive = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (a && a.type === 'callout' && a._liveText !== undefined) {
+    if (!forPdf && state.editingId === a.id) return _annotGeometryLive.call(this, { ...a, text: a._liveText }, vp, forPdf);
+    delete a._liveText;
+  }
+  return _annotGeometryLive.apply(this, arguments);
 };
 </script>
 </body>
