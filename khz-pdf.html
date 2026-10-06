@@ -1769,6 +1769,10 @@
   #right-icon-sidebar .ri-fill { flex:1; }
   #right-icon-sidebar .ri-search { margin-bottom:4px; }
   #right-icon-sidebar .ri-expand { color:#c8c8c8; margin-bottom:4px; }
+  .ap-nob { font-size:13px; color:#222; white-space:nowrap; } .ap-dd-opt svg[height="14"] { width:70px; }
+  #ac-cdd .cdd-none { position:relative; display:flex; align-items:center; justify-content:center; height:22px; margin:0 0 6px; border:1px solid transparent; cursor:default; }
+  #ac-cdd .cdd-none:hover, #ac-cdd .cdd-none.on { background:#cce4f7; border-color:#7eb4ea; }
+  #ac-cdd .cdd-nsl { position:absolute; right:6px; top:4px; }
 </style>
 </head>
 <body>
@@ -3576,7 +3580,7 @@ function annotGeometry(a, vp, forPdf) {
       a.segs.forEach(len => { out.push({ k: 'line', pts: V.slice(i, i + len), stroke: color, width: lw }); i += len; });
       return out;
     }
-    case 'polyline': return [{ k: a.closed ? 'poly' : 'line', pts: a.cloud ? cloudPolyPts(V, s, !a.closed) : V, stroke: color, width: lw, fill: a.closed ? (a.fill || null) : null, dash: a.dash ? a.dash.map(v => v * s) : null }, ...(a.closed || V.length < 2 ? [] : lineEndPrims(a, V[0], V[1], V[V.length - 1], V[V.length - 2], color, lw, s))];
+    case 'polyline': return [{ k: a.closed ? 'poly' : 'line', pts: a.cloud ? cloudPolyPts(V, s * (a.cloud === 2 ? 1.8 : 1), !a.closed) : V, stroke: color, width: lw, fill: a.closed ? (a.fill || null) : null, dash: a.dash ? a.dash.map(v => v * s) : null }, ...(a.closed || V.length < 2 ? [] : lineEndPrims(a, V[0], V[1], V[V.length - 1], V[V.length - 2], color, lw, s))];
     case 'native-image': return a.dataUrl ? [{ k: 'image', x: box.x, y: box.y, w: box.w, h: box.h, href: a.dataUrl }] : [];
     case 'arrow': {
       return [{ k: 'line', pts: [V[0], V[1]], stroke: color, width: lw, dash: a.dash ? a.dash.map(v => v * s) : null }, ...lineEndPrims(a, V[0], V[1], V[1], V[0], color, lw, s)];
@@ -4281,7 +4285,7 @@ async function importNativeAnnots() {
     if (L && L.size && L.size() === 4) info.L = L.asArray().map(x => x.asNumber());   // true direction (pdf.js sorts these)
     { const LL = d.get(N('LL')); if (LL && LL.asNumber) info.ll = LL.asNumber(); const LLE = d.get(N('LLE')); if (LLE && LLE.asNumber) info.lle = LLE.asNumber(); const LLO = d.get(N('LLO')); if (LLO && LLO.asNumber) info.llo = LLO.asNumber(); const CP = d.get(N('CP')); if (CP) info.cp = String(CP); }
     if (String(d.get(N('Subtype'))) === '/FreeText') { try { info.apText = apTextLines(d, lk); } catch (e) {} }
-    { const be = lk(d.get(N('BE'))); if (be && be.get && String(be.get(N('S'))) === '/C') info.cloudy = true; }
+    { const be = lk(d.get(N('BE'))); if (be && be.get && String(be.get(N('S'))) === '/C') { info.cloudy = true; const I = be.get(N('I')); info.cloudI = I && I.asNumber ? I.asNumber() : 1; } }
     const ds = d.get(N('DS'));
     info.font = ds ? (ds.decodeText ? ds.decodeText() : String(ds)) : '';
     const ic = lk(d.get(N('IC')));
@@ -4330,7 +4334,7 @@ async function importNativeAnnots() {
         case 'PolyLine': case 'Polygon': {
           const v = d.vertices; if (!v || v.length < 2) break;
           const pts = typeof v[0] === 'number' ? Array.from({ length: v.length / 2 }, (_, i) => [v[2 * i], v[2 * i + 1]]) : v.map(p => [p.x, p.y]);
-          a = { ...base, type: 'polyline', pts, closed: d.subtype === 'Polygon', cloud: d.subtype === 'Polygon' && raw.cloudy ? true : undefined, fill: raw.fill, le: d.subtype === 'PolyLine' && raw.le && raw.le.some(x => x !== 'None') ? raw.le : undefined };
+          a = { ...base, type: 'polyline', pts, closed: d.subtype === 'Polygon', cloud: d.subtype === 'Polygon' && raw.cloudy ? (raw.cloudI >= 2 ? 2 : 1) : undefined, fill: raw.fill, le: d.subtype === 'PolyLine' && raw.le && raw.le.some(x => x !== 'None') ? raw.le : undefined };
           if (/Dimension$/.test(raw.it || '') && raw.ratio) Object.assign(a, mImported(raw, base, d.subtype === 'Polygon' ? 'area' : 'perim'));
           break;
         }
@@ -4340,8 +4344,13 @@ async function importNativeAnnots() {
           a = { ...base, type: 'freehand', pts: lists.flat(), segs: lists.map(l => l.length) };
           break;
         }
-        case 'Square': a = { ...base, type: 'rectangle', pts: rectPtsPdf, fill: raw.fill }; break;
-        case 'Circle': a = { ...base, type: 'ellipse', pts: rectPtsPdf, fill: raw.fill }; break;
+        case 'Square': case 'Circle': {
+          let pp = rectPtsPdf;
+          if (raw.cloudy && raw.rd) pp = [[r[0] + raw.rd[0], r[3] - raw.rd[3]], [r[2] - raw.rd[2], r[1] + raw.rd[1]]];
+          a = { ...base, type: d.subtype === 'Square' ? 'rectangle' : 'ellipse', pts: pp, fill: raw.fill, cloud: raw.cloudy ? (raw.cloudI >= 2 ? 2 : 1) : undefined };
+          if (raw.width === 0) a.noBorder = true;
+          break;
+        }
         case 'FreeText': {
           const da = d.defaultAppearanceData || {};
           a = { ...base, type: 'textbox', pts: rectPtsPdf, fontSize: da.fontSize || 12, color: rgbHex(da.fontColor) || '#000000',
@@ -4538,13 +4547,16 @@ async function writeNativeAnnot(doc, lp, a, vp1, rot, tmp, mainCtx) {
     Type: 'Annot', Rect: rect, F: 4 | (a.locked ? 128 : 0), NM: H(a.id), M: PDFLib.PDFString.fromDate(new Date()),
     T: H(a.author || commentAuthor()), Contents: H(a.type === 'textbox' || a.type === 'callout' || a.type === 'text-comment' || a.type === 'sticky' ? (a.text || '') : (a.note || a.text || '')), C: [r, g, b], AP: { N: ap.ref },
     ...(a.opacity !== undefined && a.opacity < 1 ? { CA: a.opacity } : {}), ...(a.subject ? { Subj: H(a.subject) } : {}),
-    BS: a.dash ? { W: a.width || 1, S: 'D', D: a.dash } : { W: a.width || 1, S: 'S' },
+    BS: a.noBorder ? { W: 0, S: 'S' } : a.dash ? { W: a.width || 1, S: 'D', D: a.dash } : { W: a.width || 1, S: 'S' },
   };
   const P = pts => pts.map(toPdf).flat().map(v => +v.toFixed(3));
   const V = a.pts;
   switch (a.type) {
-    case 'rectangle': dict.Subtype = 'Square'; if (a.fill) dict.IC = hexToRgb01(a.fill); break;
-    case 'ellipse': dict.Subtype = 'Circle'; if (a.fill) dict.IC = hexToRgb01(a.fill); break;
+    case 'rectangle': case 'ellipse': dict.Subtype = a.type === 'rectangle' ? 'Square' : 'Circle'; if (a.fill) dict.IC = hexToRgb01(a.fill);
+      if (a.cloud) { dict.BE = { S: PDFLib.PDFName.of('C'), I: a.cloud === 2 ? 2 : 1 };
+        const bx = [V[0][0], V[1][0]], by = [V[0][1], V[1][1]];
+        dict.RD = [Math.max(0, Math.min(...bx) - rect[0]), Math.max(0, Math.min(...by) - rect[1]), Math.max(0, rect[2] - Math.max(...bx)), Math.max(0, rect[3] - Math.max(...by))].map(v => +v.toFixed(3)); }
+      break;
     case 'polygon': case 'cloud': dict.Subtype = 'Polygon'; dict.Vertices = prims[0].pts.map(toPdf).flat(); break;
     case 'measure': {
       // Acrobat measurement markup: LineDimension / PolyLineDimension / PolygonDimension with a /Measure dictionary
@@ -4563,7 +4575,7 @@ async function writeNativeAnnot(doc, lp, a, vp1, rot, tmp, mainCtx) {
       dict.Subtype = 'Line'; dict.L = [V[0][0], V[0][1], V[1][0], V[1][1]];
       { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); if (a.fill) dict.IC = hexToRgb01(a.fill); }
       break;
-    case 'polyline': dict.Subtype = a.closed ? 'Polygon' : 'PolyLine'; dict.Vertices = V.flat(); if (a.closed && a.cloud) dict.BE = { S: PDFLib.PDFName.of('C'), I: 1 }; if (a.fill) dict.IC = hexToRgb01(a.fill); if (!a.closed) { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); } break;
+    case 'polyline': dict.Subtype = a.closed ? 'Polygon' : 'PolyLine'; dict.Vertices = V.flat(); if (a.closed && a.cloud) dict.BE = { S: PDFLib.PDFName.of('C'), I: a.cloud === 2 ? 2 : 1 }; if (a.fill) dict.IC = hexToRgb01(a.fill); if (!a.closed) { const le = lineEndsOf(a); if (le.some(x => x !== 'None')) dict.LE = le.map(x => PDFLib.PDFName.of(x)); } break;
     case 'freehand': {
       dict.Subtype = 'Ink';
       const segs = a.segs || [V.length]; let i = 0;
@@ -9686,6 +9698,11 @@ renderCommentList();
 const DASHES = { solid: null, d1: [1, 1], d2: [1, 2], d3: [2, 2], d4: [3, 3], d5: [4, 2, 1, 2], d6: [4, 2, 1, 2, 1, 2] };
 const LINE_ENDS = [['None', 'None'], ['OpenArrow', 'Open'], ['ClosedArrow', 'Closed'], ['ROpenArrow', 'Open (Reverse)'], ['RClosedArrow', 'Closed (Reverse)'], ['Butt', 'Butt'], ['Diamond', 'Diamond'], ['Circle', 'Round'], ['Square', 'Square'], ['Slash', 'Slash']];
 const LINE_TYPES = ['line', 'arrow'];
+function styleSvg(k, d) {
+  if (k === 'none') return '<span class="ap-nob">No Border</span>';
+  if (k === 'cloud1' || k === 'cloud2') { const r = k === 'cloud1' ? 3.2 : 5, n = Math.floor(80 / (2 * r)); let p = `M2 ${10}`; for (let i = 0; i < n; i++) p += ` a${r} ${r} 0 1 1 ${2 * r} 0`; return `<svg width="84" height="14"><path d="${p}" fill="none" stroke="#000" stroke-width="1"/></svg>`; }
+  return dashSvg(d);
+}
 function dashSvg(d) { return `<svg width="84" height="8"><line x1="2" y1="4" x2="82" y2="4" stroke="#000" stroke-width="1" ${d ? `stroke-dasharray="${d.join(' ')}"` : ''}/></svg>`; }
 function dashKey(d) { if (!d) return 'solid'; const s = JSON.stringify(d); return Object.keys(DASHES).find(k => JSON.stringify(DASHES[k]) === s) || 'custom'; }
 function showAnnotProps(a) {
@@ -9696,7 +9713,9 @@ function showAnnotProps(a) {
   const isLine = LINE_TYPES.includes(a.type) || (a.type === 'polyline' && !a.closed);
   const isStroke = STROKE_TYPES.includes(a.type), hasFill = isLine || (typeof FILL_TYPES !== 'undefined' && FILL_TYPES.includes(a.type));
   const le = isLine ? lineEndsOf(a) : null;
-  const dk = dashKey(a.dash), dashes = { ...DASHES, ...(dk === 'custom' ? { custom: a.dash } : {}) };
+  const canCloud = typeof cloudable === 'function' && cloudable(a);
+  const dk = canCloud && a.noBorder ? 'none' : canCloud && cloudLvl(a) ? 'cloud' + cloudLvl(a) : dashKey(a.dash);
+  const dashes = { ...(canCloud ? { none: null } : {}), ...DASHES, ...(dk === 'custom' ? { custom: a.dash } : {}), ...(canCloud ? { cloud1: null, cloud2: null } : {}) };
   const endSel = (id, v) => `<select id="${id}" class="ap-sel">${LINE_ENDS.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const op = Math.round((a.opacity === undefined ? 1 : a.opacity) * 100);
   const ov = document.createElement('div');
@@ -9708,8 +9727,8 @@ function showAnnotProps(a) {
     <div class="ap-pane" data-p="app">
       <div class="ap-grid">
         ${isLine ? `<label>Start:</label>${endSel('ap-start', le[0])}<label>End:</label>${endSel('ap-end', le[1])}` : ''}
-        ${isStroke ? `<label>Style:</label><div class="ap-dd" id="ap-style" data-v="${dk}" tabindex="0"><span class="ap-dd-v">${dashSvg(dashes[dk])}</span><span class="ap-dd-car">⌵</span>
-            <div class="ap-dd-list hidden">${Object.keys(dashes).map(k => `<div class="ap-dd-opt ${k === dk ? 'on' : ''}" data-v="${k}">${dashSvg(dashes[k])}</div>`).join('')}</div></div>
+        ${isStroke ? `<label>Style:</label><div class="ap-dd" id="ap-style" data-v="${dk}" tabindex="0"><span class="ap-dd-v">${styleSvg(dk, dashes[dk])}</span><span class="ap-dd-car">⌵</span>
+            <div class="ap-dd-list hidden">${Object.keys(dashes).map(k => `<div class="ap-dd-opt ${k === dk ? 'on' : ''}" data-v="${k}">${styleSvg(k, dashes[k])}</div>`).join('')}</div></div>
         <label>Thickness:</label><span class="ap-spin"><input id="ap-width" type="text" value="${a.width || 1} pt"><span class="ap-arrows"><button data-d="1">▴</button><button data-d="-1">▾</button></span></span>` : ''}
         <label>Color:</label><span class="ap-sw"><input type="color" id="ap-color" value="${/^#[0-9a-f]{6}$/i.test(a.color || '') ? a.color : '#ff0000'}"></span>
         ${hasFill ? `<label>Fill Color:</label><span class="ap-sw ${a.fill ? '' : 'none'}"><input type="color" id="ap-fill" value="${a.fill || '#ffffff'}"><button class="ap-nofill" title="No color">∅</button></span>` : '<span></span><span></span>'}
@@ -9731,7 +9750,15 @@ function showAnnotProps(a) {
   const q = s => ov.querySelector(s);
   const live = () => {
     if (!touchNative(a)) return;
-    if (q('#ap-style')) { const v = q('#ap-style').dataset.v; a.dash = dashes[v] ? dashes[v].slice() : null; }
+    if (q('#ap-style')) {
+      const v = q('#ap-style').dataset.v;
+      a.dash = dashes[v] ? dashes[v].slice() : null;
+      if (canCloud) {
+        a.noBorder = v === 'none' ? true : undefined;
+        if (v === 'cloud1' || v === 'cloud2') a.cloud = v === 'cloud2' ? 2 : 1;
+        else if (a.type === 'cloud') a.cloud = 0; else delete a.cloud;
+      }
+    }
     if (q('#ap-start')) { const ends = [q('#ap-start').value, q('#ap-end').value]; a.le = ends.some(x => x !== 'None') ? ends : (a.type === 'arrow' ? ['None', 'None'] : undefined); }
     if (q('#ap-width')) { const w = parseFloat(q('#ap-width').value); if (w > 0 && w <= 72) a.width = w; }
     a.color = q('#ap-color').value;
@@ -9996,7 +10023,7 @@ function acColorDropdown(anchor, current, onPick, opts = {}) {
   const dd = document.createElement('div');
   dd.id = 'ac-cdd';
   const cur = String(current || '').toLowerCase();
-  dd.innerHTML = `${opts.noColor ? `<div class="cdd-none ${!current ? 'on' : ''}" data-c="">No Color</div>` : ''}
+  dd.innerHTML = `${opts.noColor ? `<div class="cdd-none ${!current ? 'on' : ''}" data-c=""><span>No Color</span><svg class="cdd-nsl" width="13" height="13" viewBox="0 0 13 13"><rect x=".5" y=".5" width="12" height="12" fill="#fff" stroke="#555"/><path d="M1 12L12 1" stroke="#555"/></svg></div>` : ''}
     <div class="cdd-grid">${AC_PALETTE.map(c => `<span class="cdd-sw ${c === cur ? 'on' : ''}" data-c="${c}" style="background:${c}"></span>`).join('')}</div>
     <div class="cdd-more">More colors <span class="cdd-cur" style="background:${current || 'transparent'}"></span></div>`;
   document.body.appendChild(dd);
@@ -10138,8 +10165,8 @@ showAnnotProps = function (a) {
       e.preventDefault();
       const cur = isFill && box.classList.contains('none') ? null : inp.value;
       acColorDropdown(box, cur, c => {
-        if (isFill && !c) box.classList.add('none');
-        else { box.classList.remove('none'); inp.value = c; }
+        if (isFill && !c) { box.classList.add('none'); inp.dispatchEvent(new Event('change', { bubbles: true })); return; }   // 'input' would undo No Color
+        box.classList.remove('none'); inp.value = c;
         inp.dispatchEvent(new Event('input', { bubbles: true }));
         inp.dispatchEvent(new Event('change', { bubbles: true }));
       }, { noColor: isFill });
@@ -25220,6 +25247,34 @@ if (_showDocViewRP) showDocView = function () { const r = _showDocViewRP.apply(t
 });
 tcRenderRail();
 rpSync();
+// ================================================================
+//  BORDER STYLES like Acrobat's Properties › Style:
+//  No Border · Solid · 6 dashed · Cloudy 1 · Cloudy 2 (rectangles, ovals, polygons and clouds)
+// ================================================================
+const CLOUD_TYPES = ['rectangle', 'ellipse', 'polygon', 'cloud'];
+const cloudable = a => a && (CLOUD_TYPES.includes(a.type) || (a.type === 'polyline' && a.closed));
+const cloudLvl = a => (a.type === 'cloud' && a.cloud === undefined) ? 1 : (a.cloud === 2 ? 2 : a.cloud ? 1 : 0);
+const _annotGeometryBS = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  const prims = _annotGeometryBS.apply(this, arguments);
+  if (!prims || !prims.length || !cloudable(a) || a.type === 'polyline') {
+    if (prims && prims.length && a && a.noBorder && cloudable(a)) prims[0] = { ...prims[0], stroke: null };
+    return prims;
+  }
+  const p = prims[0]; if (!p || !p.pts) return prims;
+  const lvl = cloudLvl(a), s = vp.scale;
+  if (lvl) {
+    const b = bboxOf(a.type === 'cloud' ? (a.pts || []).map(q => vp.convertToViewportPoint(q[0], q[1])) : p.pts);
+    let outline;
+    const step = 16 * s * (lvl === 2 ? 1.8 : 1);
+    if (a.type === 'ellipse') { const per = Math.PI * (3 * (b.w + b.h) / 2 - Math.sqrt((3 * b.w / 2 + b.h / 2) * (b.w / 2 + 3 * b.h / 2))); outline = ellipsePts(b, Math.max(8, Math.round(per / step))); }
+    else if (a.type === 'polygon') outline = polygonPts(b);
+    else outline = rectPts(b);
+    prims[0] = { ...p, k: 'poly', pts: cloudPolyPts(outline, s * (lvl === 2 ? 1.8 : 1)), dash: null };
+  } else if (a.type === 'cloud') prims[0] = { ...p, pts: rectPts(bboxOf((a.pts || []).map(q => vp.convertToViewportPoint(q[0], q[1])))), dash: a.dash ? a.dash.map(v => v * s) : null };
+  if (a.noBorder) prims[0] = { ...prims[0], stroke: null };
+  return prims;
+};
 </script>
 </body>
 </html>
