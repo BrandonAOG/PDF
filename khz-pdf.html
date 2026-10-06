@@ -13219,7 +13219,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = '2026.10.06';
+const APP_BUILD = '2026.10.06.2';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
 function accountEmail() { return getPref('email', '') || getBrand().email || ''; }
@@ -26236,6 +26236,156 @@ hitTest = function (n) {
   const all = state.annotations; if (!all.some(a => a._erased && a.page === n)) return _hitTestOCR.apply(this, arguments);
   state.annotations = all.filter(a => !(a._erased && a.page === n));
   try { return _hitTestOCR.apply(this, arguments); } finally { state.annotations = all; }
+};
+
+// the paper colour behind scanned words: the colour most of the box is (tinted table rows, header bands…),
+// not the brightest pixels around it (which picked up the white page next to a coloured cell)
+ocrSampleBg = function (a) {
+  const ps = state.pages[a.page]; if (!ps || !ps.canvas || !ps.canvas.width || !a.origPts) return '#ffffff';
+  try {
+    const c = ps.canvas, k = c.width / ps.vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+    const x0 = Math.max(0, Math.floor((b.x - 1) * k)), y0 = Math.max(0, Math.floor((b.y - 1) * k));
+    const x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w + 1) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + b.h + 1) * k));
+    if (x1 <= x0 || y1 <= y0) return '#ffffff';
+    const d = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data, bins = new Map();
+    for (let i = 0; i < d.length; i += 4) {
+      const key = (d[i] >> 3) << 10 | (d[i + 1] >> 3) << 5 | (d[i + 2] >> 3);
+      let e = bins.get(key); if (!e) bins.set(key, e = [0, 0, 0, 0]);
+      e[0]++; e[1] += d[i]; e[2] += d[i + 1]; e[3] += d[i + 2];
+    }
+    let best = null; for (const e of bins.values()) if (!best || e[0] > best[0]) best = e;
+    if (!best) return '#ffffff';
+    return '#' + [best[1], best[2], best[3]].map(v => Math.round(v / best[0]).toString(16).padStart(2, '0')).join('');
+  } catch (e) { return '#ffffff'; }
+};
+
+// how heavy the scanned letters are: typical stroke width (horizontal ink runs) against the letter height
+function ocrStrokeRatio(a, hi) {
+  const ps = state.pages[a.page]; if (!ps || !a.origPts) return 0;
+  const c = hi ? hi.cv : ps.canvas, vp = hi ? hi.vp : ps.vp; if (!c || !c.width) return 0;
+  try {
+    const k = c.width / vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+    const x0 = Math.max(0, Math.floor(b.x * k)), y0 = Math.max(0, Math.floor(b.y * k));
+    const x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + b.h) * k));
+    const W = x1 - x0 + 1, H = y1 - y0 + 1; if (W < 4 || H < 4) return 0;
+    const bg = (a.bg || ocrSampleBg(a)).match(/[0-9a-f]{2}/gi).map(h => parseInt(h, 16));
+    const d = ctx.getImageData(x0, y0, W, H).data, ink = new Uint8Array(W * H);
+    let mx = 0; const dist = new Float32Array(W * H);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { const v = Math.hypot(d[i] - bg[0], d[i + 1] - bg[1], d[i + 2] - bg[2]); dist[j] = v; if (v > mx) mx = v; }
+    if (mx < 40) return 0;
+    for (let j = 0; j < dist.length; j++) ink[j] = dist[j] > mx * 0.5 ? 1 : 0;
+    const runs = []; let top = H, bot = -1;
+    for (let y = 0; y < H; y++) { let r = 0, any = false, cnt = 0; for (let x = 0; x < W; x++) cnt += ink[y * W + x]; if (cnt > W * 0.85) continue; /* an underline isn't a letter */ for (let x = 0; x < W; x++) { if (ink[y * W + x]) { r++; any = true; } else if (r) { runs.push(r); r = 0; } } if (r) runs.push(r); if (any) { if (y < top) top = y; bot = y; } }
+    if (!runs.length || bot <= top) return 0;
+    runs.sort((p, q) => p - q);
+    const med = runs[runs.length >> 1], h = bot - top + 1;
+    return med / h;
+  } catch (e) { return 0; }
+}
+
+// a sharp copy of the page (independent of zoom) to judge letter weight on
+async function ocrHiPage(n) {
+  const ps = state.pages[n]; if (!ps || !ps.page) return null;
+  if (ps._hi && ps._hi.page === ps.page) return ps._hi;
+  const base = ps.page.getViewport({ scale: 1, rotation: effRot(n) });
+  const s = Math.min(3, 4000 / Math.max(base.width, base.height));
+  const vp = ps.page.getViewport({ scale: s, rotation: effRot(n) });
+  const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+  const g = cv.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  await ps.page.render({ canvasContext: g, viewport: vp }).promise;
+  return (ps._hi = { cv, vp, page: ps.page });
+}
+// heavy scanned letters come back bold
+const _editAnnotTextBold = editAnnotText;
+editAnnotText = async function (a) {
+  if (a && a.type === 'text-block' && a.invisible && !a._ocrBold) {
+    a._ocrBold = true;
+    try { const hi = await ocrHiPage(a.page); const r = hi ? ocrStrokeRatio(a, hi) : 0; if (r >= 0.135 && r < 0.6) a.bold = true; } catch (e) {}
+  }
+  return _editAnnotTextBold.apply(this, arguments);
+};
+
+// the cover over edited scanned words stops at ruled lines next to them (underlines, table borders),
+// so editing a heading doesn't wipe out the line under it
+function ocrRuleClip(a) {
+  const ps = state.pages[a.page]; if (!ps || !ps.canvas || !ps.canvas.width || !a.origPts) return null;
+  if (typeof effRot === 'function' && effRot(a.page)) return null;
+  try {
+    const c = ps.canvas, vp = ps.vp, k = c.width / vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => vp.convertToViewportPoint(p[0], p[1])));
+    const pad = 0.8 * vp.scale + 2, ext = Math.max(pad, b.h * 0.6);
+    const x0 = Math.max(0, Math.floor((b.x - pad) * k)), x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w + pad) * k));
+    const y0 = Math.max(0, Math.floor((b.y - ext) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + b.h + ext) * k));
+    const W = x1 - x0 + 1, H = y1 - y0 + 1; if (W < 4 || H < 4) return null;
+    const bg = (a.bg || ocrSampleBg(a)).match(/[0-9a-f]{2}/gi).map(h => parseInt(h, 16));
+    const d = ctx.getImageData(x0, y0, W, H).data, dist = new Float32Array(W * H);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) dist[j] = Math.hypot(d[i] - bg[0], d[i + 1] - bg[1], d[i + 2] - bg[2]);
+    const LT = 14;   // anything visibly off the paper colour, faint grey rules included
+    // columns of the word box (without the side padding) for the row test
+    const bx0 = Math.max(0, Math.round((b.x * k) - x0)), bx1 = Math.min(W - 1, Math.round(((b.x + b.w) * k) - x0));
+    const by0 = Math.round(b.y * k) - y0, by1 = Math.round((b.y + b.h) * k) - y0;
+    const rowFrac = y => { let n = 0; for (let x = bx0; x <= bx1; x++) if (dist[y * W + x] > LT) n++; return n / Math.max(1, bx1 - bx0 + 1); };
+    const isRuleRow = new Array(H).fill(false); for (let y = 0; y < H; y++) isRuleRow[y] = rowFrac(y) > 0.85;
+    // the letters: rows inside the word box with ink that aren't a rule
+    let tTop = -1, tBot = -1;
+    for (let y = Math.max(0, by0 - 1); y <= Math.min(H - 1, by1 + 1); y++) {
+      if (isRuleRow[y]) continue;
+      let any = false; for (let x = bx0; x <= bx1 && !any; x++) if (dist[y * W + x] > 60) any = true;
+      if (any) { if (tTop < 0) tTop = y; tBot = y; }
+    }
+    if (tTop < 0) { tTop = Math.max(0, by0); tBot = Math.min(H - 1, by1); }
+    const mid = (tTop + tBot) / 2;
+    let rTop = null, rBot = null;
+    for (let y = Math.floor(mid); y >= 0; y--) if (isRuleRow[y] && y < tTop) { rTop = y; break; }
+    for (let y = Math.ceil(mid); y < H; y++) if (isRuleRow[y] && y > tBot) { rBot = y; break; }
+    // walk to the inner edge of each rule (a rule can be a few pixels thick and antialiased)
+    if (rTop != null) while (rTop + 1 < tTop && rowFrac(rTop + 1) > 0.5) rTop++;
+    if (rBot != null) while (rBot - 1 > tBot && rowFrac(rBot - 1) > 0.5) rBot--;
+    // vertical rules: columns inked over the whole band and well above and below it
+    const cy0 = Math.max(0, tTop - Math.round(b.h * 0.4 * k)), cy1 = Math.min(H - 1, tBot + Math.round(b.h * 0.4 * k));
+    const colFrac = x => { let n = 0; for (let y = cy0; y <= cy1; y++) if (!isRuleRow[y] && dist[y * W + x] > LT) n++; let m = 0; for (let y = cy0; y <= cy1; y++) if (!isRuleRow[y]) m++; return n / Math.max(1, m); };
+    const cmid = (bx0 + bx1) / 2; let cL = null, cR = null;
+    for (let x = Math.floor(cmid); x >= 0; x--) if (colFrac(x) > 0.92) { cL = x; break; }
+    for (let x = Math.ceil(cmid); x < W; x++) if (colFrac(x) > 0.92) { cR = x; break; }
+    if (cL != null && cL > bx0 + (bx1 - bx0) * 0.15) cL = null;   // inside the words: a letter, not a border
+    if (cR != null && cR < bx1 - (bx1 - bx0) * 0.15) cR = null;
+    if (rTop == null && rBot == null && cL == null && cR == null) return null;
+    const toV = (px, py) => [(x0 + px) / k, (y0 + py) / k];
+    return {
+      top: rTop == null ? null : toV(0, rTop + 1)[1], bot: rBot == null ? null : toV(0, rBot)[1],
+      left: cL == null ? null : toV(cL + 1, 0)[0], right: cR == null ? null : toV(cR, 0)[0], scale: vp.scale,
+      // kept in page units so it survives zooming
+      pdf: (() => { const p = (vx, vy) => vp.convertToPdfPoint(vx, vy); const r = {};
+        if (rTop != null) r.yA = p(0, toV(0, rTop + 1)[1])[1]; if (rBot != null) r.yB = p(0, toV(0, rBot)[1])[1];
+        if (cL != null) r.xA = p(toV(cL + 1, 0)[0], 0)[0]; if (cR != null) r.xB = p(toV(cR, 0)[0], 0)[0]; return r; })()
+    };
+  } catch (e) { return null; }
+}
+function ocrEnsureClip(a) {
+  if (!a || a.type !== 'text-block' || !a.invisible || a._clipDone) return;
+  a._clipDone = true; const r = ocrRuleClip(a); if (r) a.coverClip = r.pdf;
+}
+const _editAnnotTextClip = editAnnotText;
+editAnnotText = async function (a) { try { ocrEnsureClip(a); } catch (e) {} return _editAnnotTextClip.apply(this, arguments); };
+const _deleteAnnotClip = deleteAnnot;
+deleteAnnot = function (id) { try { ocrEnsureClip(state.annotations.find(x => x.id === id)); } catch (e) {} return _deleteAnnotClip.apply(this, arguments); };
+const _annotGeometryClip = annotGeometry;
+annotGeometry = function (a, vp) {
+  const prims = _annotGeometryClip.apply(this, arguments);
+  if (!a || !a.coverClip || a.type !== 'text-block' || !a.invisible || a.untouched) return prims;
+  const C = a.coverClip;
+  return prims.map(p => {
+    if (!p.mask || p.k !== 'poly' || !p.pts) return p;
+    const b = bboxOf(p.pts); let X0 = b.x, Y0 = b.y, X1 = b.x + b.w, Y1 = b.y + b.h;
+    // page units → this view (works for either y direction)
+    const vy = y => vp.convertToViewportPoint(0, y)[1], vx = x => vp.convertToViewportPoint(x, 0)[0];
+    if (C.yA != null) Y0 = Math.max(Y0, vy(C.yA)); if (C.yB != null) Y1 = Math.min(Y1, vy(C.yB));
+    if (C.xA != null) X0 = Math.max(X0, vx(C.xA)); if (C.xB != null) X1 = Math.min(X1, vx(C.xB));
+    if (X1 <= X0 || Y1 <= Y0) return p;
+    return { ...p, pts: rectPts({ x: X0, y: Y0, w: X1 - X0, h: Y1 - Y0 }) };
+  });
 };
 
 // ================================================================
