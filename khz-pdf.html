@@ -9422,13 +9422,13 @@ function showHomeView() {
 function showToolsCenter(home) {
   let tc = $('tools-center');
   if (!tc) { tc = document.createElement('div'); tc.id = 'tools-center'; $('app-body').style.position = 'relative'; $('app-body').appendChild(tc); }
-  const tools = [...document.querySelectorAll('#tg-all .tool-item')].map(it => ({ html: it.querySelector('.tool-icon').outerHTML, name: it.querySelector('.tool-name').textContent, on: it.getAttribute('onclick') }));
+  const tools = [...document.querySelectorAll('#tg-all .tool-item')].map(it => ({ html: it.querySelector('.tool-icon').outerHTML, name: it.querySelector('.tool-name').textContent, on: it.getAttribute('onclick'), tool: it.dataset.tool }));
   tc.innerHTML = home
     ? `<h2><span class="khz-mark big"></span>Welcome to KHZ PDF</h2><div class="home-cards" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${state.pdfDoc ? `<div class="home-card" onclick="showDocView()"><span class="hc-ic" style="color:#f26f6f"><span class="ic">${icon('createpdf')}</span></span><div><b>${escapeHtml(state.fileName || 'Untitled')}</b><br><span>Open file · ${state.totalPages} page${state.totalPages === 1 ? '' : 's'}</span></div></div>` : ''}
         <div class="home-card" onclick="openFileDialog()"><span class="hc-ic" style="color:#f26f6f"><span class="ic">${icon('createpdf')}</span></span><div><b>Open a file</b><br><span>From your computer</span></div></div>
         <div class="home-card" onclick="showCombineFiles()"><span class="hc-ic" style="color:#8c7ef7"><span class="ic">${icon('combine')}</span></span><div><b>Combine files</b><br><span>Merge several files into one PDF</span></div></div>
         <div class="home-card" onclick="showDocView();createBlankPdf()"><span class="hc-ic" style="color:#5aa9f2"><span class="ic">${icon('fm_blank')}</span></span><div><b>Create a blank PDF</b><br><span>Start with an empty page</span></div></div></div>`
-    : `<h2>Tools</h2><div class="tc-grid">${tools.map(t => `<div class="tc-card" onclick="showDocView();${t.on.replace(/"/g, '&quot;')}">${t.html.replace('tool-icon', 'tc-ic')}<div>${t.name}</div><span class="open">Open</span></div>`).join('')}</div>`;
+    : `<h2>Tools</h2><div class="tc-grid">${tools.map(t => `<div class="tc-card" onclick="showDocView();${(t.on || (t.tool && t.tool !== '__more' ? `tcRunTool('${t.tool}')` : '')).replace(/"/g, '&quot;')}">${t.html.replace('tool-icon', 'tc-ic')}<div>${t.name}</div><span class="open">Open</span></div>`).join('')}</div>`;
   tc.classList.add('show');
   document.body.classList.add('center-view');
   $('tab-home').classList.toggle('on', !!home); $('tab-tools').classList.toggle('on', !home);
@@ -27633,6 +27633,70 @@ drawPrimSVG = function (p, g) {
     tcRenderRail(); if (typeof rpRenderList === 'function') rpRenderList();
   } catch (e) {}
 })();
+
+// ================================================================
+//  PREPARE FORM start page like Acrobat: it fills only the document area — the toolbar, the
+//  "Prepare Form" bar with Close, and the tools strip stay on screen
+// ================================================================
+function pfsPlace() {
+  const tc = $('tools-center'), ca = $('canvas-area'), ab = $('app-body');
+  if (!tc || !tc.classList.contains('pfs-on') || !document.body.classList.contains('pfs-doc') || !ca || !ab) return;
+  const r = ca.getBoundingClientRect(), b = ab.getBoundingClientRect();
+  Object.assign(tc.style, { inset: 'auto', left: (r.left - b.left) + 'px', top: (r.top - b.top) + 'px', width: r.width + 'px', height: r.height + 'px' });
+}
+const _showPrepareFormPFS = showPrepareForm;
+showPrepareForm = function () {
+  const r = _showPrepareFormPFS.apply(this, arguments);
+  if (!state.pdfDoc) return r;   // nothing open (from Home): the whole window, as before
+  document.body.classList.remove('center-view');
+  document.body.classList.add('pfs-doc');
+  const ct = $('context-toolbar');
+  if (ct) {
+    ct.classList.remove('hidden');
+    $('ctx-tool-name').textContent = 'Prepare Form';
+    $('ctx-content').innerHTML = '';
+    const strip = $('ctx-strip'); if (strip) strip.style.background = '#e06bd8';
+  }
+  state.activeToolGroup = 'prepare-start';
+  document.querySelectorAll('#right-icon-sidebar .ri-btn').forEach(b => b.classList.toggle('active', b.dataset.g === 'prepare'));
+  if (typeof rpSync === 'function') { state.rpListClosed = true; rpSync(); }
+  requestAnimationFrame(pfsPlace); setTimeout(pfsPlace, 60);
+  return r;
+};
+const _ffLeaveStartPFS = ffLeaveStart;
+ffLeaveStart = function () {
+  const r = _ffLeaveStartPFS.apply(this, arguments);
+  document.body.classList.remove('pfs-doc');
+  const tc = $('tools-center'); if (tc) ['inset', 'left', 'top', 'width', 'height'].forEach(k => tc.style[k] = '');
+  if (state.activeToolGroup === 'prepare-start') state.activeToolGroup = null;
+  return r;
+};
+// Close on the start page: back to the document
+const _deactivateContextToolPFS = deactivateContextTool;
+deactivateContextTool = function () {
+  if (document.body.classList.contains('pfs-doc')) {
+    ffLeaveStart();
+    $('context-toolbar').classList.add('hidden');
+    document.querySelectorAll('#right-icon-sidebar .ri-btn').forEach(b => b.classList.remove('active'));
+    state.activeToolGroup = null;
+    if (typeof showDocView === 'function') showDocView();
+    if (typeof rpSync === 'function') { state.rpListClosed = false; rpSync(); }
+    return;
+  }
+  return _deactivateContextToolPFS.apply(this, arguments);
+};
+window.addEventListener('resize', pfsPlace);
+// the page picture on the start page (screen rendering, works for turned pages too)
+ffThumb = async function () {
+  try {
+    const cv = $('pfs-cv'); if (!cv) return;
+    const pg = await state.pdfDoc.getPage(1), vp0 = pg.getViewport({ scale: 1, rotation: effRot(1) }), s = Math.min(140 / vp0.width, 180 / vp0.height);
+    const vp = pg.getViewport({ scale: s * 2, rotation: effRot(1) });
+    cv.width = Math.round(vp.width); cv.height = Math.round(vp.height); cv.style.width = vp.width / 2 + 'px'; cv.style.height = vp.height / 2 + 'px';
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: g, viewport: vp }).promise;
+  } catch (e) { console.warn('form thumbnail', e); }
+};
 </script>
 </body>
 </html>
