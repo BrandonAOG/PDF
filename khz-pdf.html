@@ -8530,6 +8530,15 @@ function applyFormStorage() {
   if (state.formHiddenFlag) Object.values(state.formFields).flat().forEach(f => store.setValue(f.id, { noView: true }));
 }
 
+// radio buttons named by position ("0", "1"… with the real choices in /Opt): turn on the button whose
+// on-state is that name directly, so the choice is kept when saving
+function ffRadioOnName(w) { const N = PDFLib.PDFName, ap = w.dict.lookup(N.of('AP')), n = ap && ap.lookup(N.of('N')); let on = null; if (n && n.keys) n.keys().forEach(k => { const s = k.asString().slice(1); if (s !== 'Off') on = s; }); return on; }
+function ffRadioIsOn(field, v) { const N = PDFLib.PDFName, cur = field.acroField.dict.get(N.of('V')); return !!cur && cur.asString && cur.asString().slice(1) === String(v); }
+function ffSetRadioState(field, v) {
+  const N = PDFLib.PDFName, ws = field.acroField.getWidgets(); let hit = false;
+  ws.forEach(w => { const on = ffRadioOnName(w); if (on === String(v)) { w.dict.set(N.of('AS'), N.of(on)); hit = true; } else w.dict.set(N.of('AS'), N.of('Off')); });
+  if (hit) field.acroField.dict.set(N.of('V'), N.of(String(v)));
+}
 // Saving: write values into the real form fields
 function applyFormValuesToDoc(doc) {
   if (!state.formChanged || !state.formChanged.size) return;
@@ -8548,7 +8557,8 @@ function applyFormValuesToDoc(doc) {
         v ? field.check() : field.uncheck();
         form.markFieldAsClean(field.ref);       // keep Acrobat's own check-mark appearance
       } else if (field instanceof L.PDFRadioGroup) {
-        if (v) field.select(v); else field.clear();
+        if (v) { try { field.select(v); } catch (e) { ffSetRadioState(field, v); } } else field.clear();
+        if (v && !ffRadioIsOn(field, v)) ffSetRadioState(field, v);
         form.markFieldAsClean(field.ref);
       } else if (field instanceof L.PDFDropdown || field instanceof L.PDFOptionList) {
         v ? field.select(v) : field.clear();
@@ -8623,6 +8633,7 @@ async function closePrepareForm() {
     renderAllAnnots(); updateFormLayerMode();
     return;
   }
+  state.formHiddenFlag = false;   // the reloaded document's fields show their own look again (border, check style…)
   await rebuildDocument(curItems(), state.fileName, state.currentPage);   // writes the fields into the PDF and reloads → they become live
   state.formFieldStart = null;
   toast('Form fields saved into the document. Click a field to fill it in.');
@@ -23032,8 +23043,18 @@ function ffPopup(a) {
     renderPageAnnots(a.page); ffRenderPane();
   };
   p._commit = commit;
+  // live: the field's label on the page follows what you type; Esc puts it back
+  const orig = { name: a.name, ev: a.exportValue, grp: radio ? ffAll().filter(x => x.kind === 'radio' && x.name === a.name && x.page === a.page) : [a] };
+  const live = () => {
+    const v = nm.value.trim().replace(/\./g, '_');
+    if (v) { orig.grp.forEach(x => { x.name = v; }); a.name = v; }
+    if (ev) { const e2 = ev.value.trim(); if (e2) a.exportValue = e2; }
+    renderPageAnnots(a.page); clearTimeout(ffPaneT); ffPaneT = setTimeout(ffRenderPane, 60);
+  };
+  [nm, ev].filter(Boolean).forEach(i => i.addEventListener('input', live));
+  const revert = () => { orig.grp.forEach(x => { x.name = orig.name; }); a.name = orig.name; a.exportValue = orig.ev; renderPageAnnots(a.page); };
   req.onchange = () => { a.required = req.checked; a.untouched = false; };
-  [nm, ev].filter(Boolean).forEach(i => i.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { commit(); p._commit = null; p.remove(); pushHistory(); } if (e.key === 'Escape') { p._commit = null; p.remove(); } }));
+  [nm, ev].filter(Boolean).forEach(i => i.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { commit(); p._commit = null; p.remove(); pushHistory(); } if (e.key === 'Escape') { p._commit = null; p.remove(); revert(); } }));
   p.querySelector('.ffq-all').onclick = e => { e.preventDefault(); commit(); p._commit = null; p.remove(); ffProps(a); };
   const add = p.querySelector('.ffq-add');
   if (add) add.onclick = e => { e.preventDefault(); commit(); p._commit = null; p.remove(); state.ffRadioGroup = a.name; state.ffAddingRadio = true; setActiveTool('ff-radio'); toast('Click where the next button of this group goes.'); };
@@ -23167,6 +23188,7 @@ detectFormFields = async function (n) {
   });
   return r;
 };
+let ffPaneLiveT = 0;
 
 // ================================================================
 //  FIELD PROPERTIES like Acrobat: General · Appearance · Position · Options · Actions · Format · Validate · Calculate
@@ -23221,7 +23243,7 @@ function ffProps(a) {
     const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
     addEventListener('mousemove', mv); addEventListener('mouseup', up);
   });
-  const changed = () => { a.untouched = false; renderPageAnnots(a.page); state.ffPropsDirty = true; };
+  const changed = () => { a.untouched = false; renderPageAnnots(a.page); state.ffPropsDirty = true; clearTimeout(ffPaneLiveT); ffPaneLiveT = setTimeout(() => { try { ffRenderPane(); } catch (e) {} }, 60); };
   const close = () => { ov.remove(); if (state.ffPropsDirty) { pushHistory(); state.ffPropsDirty = false; } ffRenderPane(); };
   ov.querySelector('.ffd-x').onclick = close; ov.querySelector('.ffd-close').onclick = close;
   ov.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') close(); });
@@ -23377,7 +23399,10 @@ function ffDateExample(fmt) {
 
 // ---------- wiring each tab ----------
 function ffWire(a, tab, pane, changed, redraw) {
-  const q = s => pane.querySelector(s), on = (s, ev, fn) => { const el = q(s); if (el) el.addEventListener(ev, fn); };
+  const q = s => pane.querySelector(s), on = (s, ev, fn) => { const el = q(s); if (!el) return; el.addEventListener(ev, fn);
+    // typed values show on the page as you type (not only when you leave the box)
+    if (ev === 'change' && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|email|url|tel|number|)$/.test(el.type)))) el.addEventListener('input', e => { if (String(e.target.value).trim()) fn(e); });
+  };
   if (tab === 'General') {
     on('.g-name', 'change', e => { const v = e.target.value.trim().replace(/\./g, '_'); if (!v) { e.target.value = a.name; return; } if (a.kind === 'radio') ffAll().filter(x => x.kind === 'radio' && x.name === a.name && x !== a).forEach(x => { x.name = v; x.untouched = false; }); a.name = v; changed(); });
     on('.g-tip', 'change', e => { a.tooltip = e.target.value; changed(); });
@@ -28017,6 +28042,39 @@ hitTest = function (n) {
     const added = state.annotations.filter(a => !keep.includes(a)); state.annotations = all; if (added.length) all.push(...added);
   }
   return r;
+};
+
+// ================================================================
+//  PREPARE FORM: check boxes and radio buttons show their Button / Check Box Style
+//  (check, circle, cross, diamond, square, star) on the page, and change as soon as you pick another one
+// ================================================================
+function ffStyleGlyph(style, box, color) {
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2, r = Math.min(box.w, box.h) * 0.36;
+  const P = pts => ({ k: 'poly', pts, fill: color });
+  switch (style) {
+    case 'circle': return [P(ellipsePts({ x: cx - r * 0.75, y: cy - r * 0.75, w: r * 1.5, h: r * 1.5 }, 24))];
+    case 'square': return [P(rectPts({ x: cx - r * 0.7, y: cy - r * 0.7, w: r * 1.4, h: r * 1.4 }))];
+    case 'diamond': return [P([[cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]])];
+    case 'star': { const p = []; for (let i = 0; i < 10; i++) { const ang = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r; p.push([cx + rr * Math.cos(ang), cy + rr * Math.sin(ang)]); } return [P(p)]; }
+    case 'cross': return [{ k: 'line', pts: [[cx - r * 0.8, cy - r * 0.8], [cx + r * 0.8, cy + r * 0.8]], stroke: color, width: Math.max(1.2, r * 0.32) }, { k: 'line', pts: [[cx + r * 0.8, cy - r * 0.8], [cx - r * 0.8, cy + r * 0.8]], stroke: color, width: Math.max(1.2, r * 0.32) }];
+    default: return [{ k: 'line', pts: [[cx - r * 0.85, cy + r * 0.05], [cx - r * 0.25, cy + r * 0.7], [cx + r * 0.9, cy - r * 0.75]], stroke: color, width: Math.max(1.2, r * 0.3) }];   // check
+  }
+}
+const _formFieldGeometryStyle = formFieldGeometry;
+formFieldGeometry = function (a, vp, V, box) {
+  const prims = _formFieldGeometryStyle.apply(this, arguments);
+  if (!a || (a.kind !== 'checkbox' && a.kind !== 'radio')) return prims;
+  const style = a.chkStyle || (a.kind === 'radio' ? 'circle' : 'check');
+  const out = prims.filter(p => p.k !== 'text' || p.bg === '#ffe14d');   // keep the tab-order number
+  const tag = prims.find(p => p.k === 'text' && p.bg !== '#ffe14d');
+  out.push(...ffStyleGlyph(style, box, '#1a2ee6'));
+  // the name sits just to the right of the small box instead of being cut down to one letter inside it
+  if (a.name) {
+    const ls = tag ? tag.size : Math.max(6, Math.min(10, 7.5 * vp.scale)), label = a.kind === 'radio' && a.exportValue ? `${a.name} (${a.exportValue})` : a.name;
+    const tw = textWidth(label, ls) + 4, th = ls * 1.25;
+    out.push({ k: 'text', x: box.x + box.w + 2, y: box.y + (box.h - th) / 2, w: tw, h: th, lines: [label], size: ls, pad: 1, color: '#ffffff', bg: '#1a2ee6', bgOpacity: 1, family: 'sans' });
+  }
+  return out;
 };
 </script>
 </body>
