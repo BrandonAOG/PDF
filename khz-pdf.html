@@ -1773,6 +1773,11 @@
   #ac-cdd .cdd-none { position:relative; display:flex; align-items:center; justify-content:center; height:22px; margin:0 0 6px; border:1px solid transparent; cursor:default; }
   #ac-cdd .cdd-none:hover, #ac-cdd .cdd-none.on { background:#cce4f7; border-color:#7eb4ea; }
   #ac-cdd .cdd-nsl { position:absolute; right:6px; top:4px; }
+  #ctx-menu .rc-row { display:flex; align-items:center; gap:4px; padding:6px 12px 8px; border-bottom:1px solid rgba(255,255,255,.12); margin-bottom:4px; }
+  #ctx-menu .rc-ib { width:32px; height:30px; display:inline-flex; align-items:center; justify-content:center; background:none; border:0; color:#d6d6d6; border-radius:4px; cursor:pointer; }
+  #ctx-menu .rc-ib:hover { background:rgba(255,255,255,.1); } #ctx-menu .rc-ib.on { color:#4da3ff; }
+  #ctx-menu .rc-sep { width:1px; height:24px; background:rgba(255,255,255,.18); margin:0 8px; }
+  .bm-edit { width:calc(100% - 8px); font:inherit; padding:2px 4px; border:1px solid #4da3ff; background:#fff; color:#111; }
 </style>
 </head>
 <body>
@@ -3609,7 +3614,7 @@ function annotGeometry(a, vp, forPdf) {
       const bold = a.type === 'stamp' || !!a.bold;
       const apL = a.type === 'textbox' && a.apTop !== undefined;   // imported box: text where the file had it
       const pad = apL ? 0 : a.pad !== undefined ? a.pad : (a.type === 'stamp' ? 6 : 4);
-      const maxW = a.type === 'textbox' ? Math.max(20, box.w / s - pad * 2 - (apL ? a.apX * 2 : 0)) : (a.type === 'stamp' ? 0 : 220);
+      const maxW = a.type === 'textbox' ? Math.max(1, box.w / s - pad * 2 - (apL ? a.apX * 2 : 0)) : (a.type === 'stamp' ? 0 : 220);
       const lines = wrapText(a.text, fs, maxW * (a.wrapSlack || 1), bold, a.family);
       const natW = Math.max(...lines.map(l => textWidth(l, fs, bold, a.family)), 10) + pad * 2;
       const natH = lines.length * fs * 1.2 + pad * 2;
@@ -15925,10 +15930,10 @@ function aaAutoOpen(ps) {
   }
   const pop = $('cm-aa-pop'); if (!pop) return;
   pop.dataset.auto = '1';
-  if (!btn) {
-    const er = activeEditor.el.getBoundingClientRect(), h = pop.offsetHeight || 90;
-    pop.style.top = (er.top - h - 8 > 60 ? er.top - h - 8 : er.bottom + 8) + 'px';
-    pop.style.left = Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, er.left)) + 'px';
+  if (!btn) {   // no Comment toolbar showing: the panel sits in the top-right corner of the document view, like Acrobat
+    const ar = $('canvas-area').getBoundingClientRect();
+    pop.style.top = (ar.top + 8) + 'px';
+    pop.style.left = Math.max(8, ar.right - pop.offsetWidth - 24) + 'px';
   }
 }
 function aaAutoClose() {
@@ -25341,6 +25346,217 @@ annotGeometry = function (a, vp, forPdf) {
   }
   return _annotGeometryLive.apply(this, arguments);
 };
+
+// a text box / callout can be squeezed down to one letter wide; words then break letter by letter
+function boxMinW(a) {
+  const fs = a.fontSize || 12, bold = !!a.bold || !!(a.runs || []).some(r => r.s && r.s.bold);
+  const pad = a.pad !== undefined ? a.pad : 4;
+  return textWidth('W', fs, bold, a.family) * 1.15 + pad * 2 + 2;   // one letter wide at the least; longer words break across lines
+}
+const _dragSelectedMinW = dragSelected;
+dragSelected = function (d, ps, vx, vy, e) {
+  const r = _dragSelectedMinW.apply(this, arguments);
+  const a = d && d.annot;
+  if (!a || !(a.type === 'callout' || a.type === 'textbox') || !d.handle || d.handle.kind !== 'b' || !a.pts || a.pts.length < 2) return r;
+  const vp = ps.vp, P = a.pts.map(p => vp.convertToViewportPoint(p[0], p[1]));
+  const x0 = Math.min(P[0][0], P[1][0]), x1 = Math.max(P[0][0], P[1][0]), y0 = Math.min(P[0][1], P[1][1]), y1 = Math.max(P[0][1], P[1][1]);
+  const minW = boxMinW(a) * vp.scale;
+  if (x1 - x0 >= minW) return r;
+  const fromLeft = /w/.test(d.handle.dir || '');
+  const nx0 = fromLeft ? x1 - minW : x0, nx1 = fromLeft ? x1 : x0 + minW;
+  a.pts = [vp.convertToPdfPoint(nx0, y0), vp.convertToPdfPoint(nx1, y1)];
+  renderPageAnnots(d.n);
+  return r;
+};
+
+// ================================================================
+//  RIGHT-CLICK ON AN EMPTY SPOT like Acrobat (nothing removed, only added):
+//  a row of icons (Crop · Rotate · Print | Select · Hand · Zoom) and Add Bookmark, Edit a PDF, Add Image…,
+//  Request E-signatures…, Sign Yourself, Share, Export, Find Text in Document, Search More Tools, Previous View
+// ================================================================
+const RC_ICO = {
+  crop: '<path d="M6 3v13a2 2 0 0 0 2 2h13 M3 6h13a2 2 0 0 1 2 2v13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  rotate: '<path d="M19 12a7 7 0 1 1-2.05-4.95 M19 4v4.5h-4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+  print: '<path d="M7 3h10v5H7z M4.5 9h15A1.5 1.5 0 0 1 21 10.5V17h-3.5v-3h-11v3H3v-6.5A1.5 1.5 0 0 1 4.5 9z M7.5 15h9v6h-9z" fill="currentColor"/>',
+  select: '<path d="M6 3l12 9-5.5 1 3 6-2.2 1-3-6L6 18z" fill="currentColor"/>',
+  hand: '<path d="M8.3 12.5V6.3a1.45 1.45 0 0 1 2.9 0v5 M11.2 11.3V4.6a1.45 1.45 0 0 1 2.9 0v6.7 M14.1 11.3V6a1.45 1.45 0 0 1 2.9 0v8c0 4.3-2.6 7-6.2 7-2.6 0-4.1-1.2-5.4-3.4L3.4 14.1a1.4 1.4 0 0 1 2.3-1.6l2.6 2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+  zoom: '<path d="M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 1 0 0-13z M15.3 15.3L20 20 M10.5 7.5v6 M7.5 10.5h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+};
+const _pageContextMenuRC = pageContextMenu;
+pageContextMenu = function (e, n) {
+  const realOpen = openCtxMenu;
+  let rowFor = null;
+  openCtxMenu = function (x, y, items) {
+    const empty = !state.prepareMode && items.some(it => it && it.label === 'Add Sticky Note Here');
+    const group = state.activeToolGroup;
+    if (empty && group) {   // a tool is open: Acrobat's shorter menu for that case
+      const find = l => items.find(it => it && it.label === l) || {};
+      const t = state.activeTool, ck = on => on ? '✓' : '';
+      const paste = find('Paste'), sticky = find('Add Sticky Note Here'), selAll = find('Select All Text'), addText = find('Add Text Here');
+      const vert = items.find(it => it && /^Make text direction/.test(it.label || ''));
+      const selAllEdit = items.find(it => it && it.label === 'Select All');
+      const short = group === 'edit' && t === 'add-text' ? [   // Edit PDF with Add Text picked
+        { icon: '', label: 'Select All', key: 'Ctrl+A', action: (selAllEdit || selAll).action || (() => selectAllText()) },
+        ...(vert ? [{ icon: '', label: vert.label, action: vert.action }] : []),
+      ] : group === 'edit' ? [
+        { icon: '', label: 'Paste', key: 'Ctrl+V', disabled: paste.disabled, action: paste.action },
+        '-',
+        { icon: '', label: 'Select All', key: 'Ctrl+A', action: (selAllEdit || selAll).action || (() => selectAllText()) },
+        '-',
+        { icon: '', label: 'Add Text Box', action: () => setActiveTool('add-text') },
+        { icon: '', label: 'Add Image…', action: () => addImage() },
+      ] : [
+        { icon: '', label: 'Add Sticky Note', action: sticky.action },
+        { icon: '', label: 'Add Bookmark', key: 'Ctrl+B', action: () => addBookmarkHere(n) },
+        '-',
+        { icon: '', label: 'Request E-signatures', action: () => showRequestSign() },
+        { icon: '', label: 'Sign Yourself', action: () => showSignModal() },
+        '-',
+        { icon: ck(t === 'select'), label: 'Select Tool', action: () => setActiveTool('select') },
+        { icon: ck(t === 'hand'), label: 'Hand Tool', action: () => setActiveTool('hand') },
+        { icon: ck(t === 'zoom-tool'), label: 'Marquee Zoom', action: () => setActiveTool('zoom-tool') },
+        '-',
+        { icon: '', label: 'Previous View', action: () => viewBack() },
+        '-',
+        { icon: '', label: 'Rotate Clockwise', action: () => rotatePage('cw', n) },
+        '-',
+        { icon: '', label: 'Print…', key: 'Ctrl+P', action: () => printPDF() },
+        { icon: '', label: 'Find', action: () => toggleFind() },
+        '-',
+        { icon: '', label: 'Document Properties…', action: () => showProperties() },
+        '-',
+        { icon: '', label: 'Edit PDF', action: () => startEditMode() },
+        { icon: '', label: 'Add Text', action: addText.action || (() => setActiveTool('add-text')) },
+        { icon: '', label: 'Add image…', action: () => addImage() },
+      ];
+      items.length = 0; short.forEach(x => items.push(x));
+      return realOpen.apply(this, arguments);
+    }
+    if (empty) {
+      const at = items.findIndex(it => it && it.label === 'Add Text Here');
+      const doc = !!state.pdfDoc;
+      items.splice(at + 1, 0,
+        { icon: '🔖', label: 'Add Bookmark', key: 'Ctrl+B', action: () => addBookmarkHere(n) },
+        '-',
+        { icon: '✎', label: 'Edit a PDF', action: () => startEditMode() },
+        { icon: '🖼', label: 'Add Image…', action: () => addImage() },
+        '-',
+        { icon: '✍', label: 'Request E-signatures…', action: () => showRequestSign() },
+        { icon: '✒', label: 'Sign Yourself', action: () => showSignModal() },
+        '-',
+        { icon: '⇪', label: 'Share', action: () => showShareModal() },
+        { icon: '⇩', label: 'Export', action: () => activateToolGroup('export') },
+      );
+      items.push('-',
+        { icon: '🔍', label: 'Find Text in Document', key: 'Ctrl+F', action: () => toggleFind() },
+        { icon: '⌕', label: 'Search More Tools', action: () => showToolsCenter() },
+        { icon: '←', label: 'Previous View', key: 'Alt+←', disabled: !doc, action: () => viewBack() },
+      );
+      rowFor = n;
+    }
+    const r = realOpen.apply(this, arguments);
+    if (empty) rcIconRow(rowFor);
+    return r;
+  };
+  try { return _pageContextMenuRC.apply(this, arguments); } finally { openCtxMenu = realOpen; }
+};
+function rcIconRow(n) {
+  const m = $('ctx-menu'); if (!m) return;
+  const b = (k, tip, fn, on) => `<button class="rc-ib ${on ? 'on' : ''}" data-k="${k}" title="${tip}"><svg viewBox="0 0 24 24" width="20" height="20">${RC_ICO[k]}</svg></button>`;
+  const t = state.activeTool;
+  const row = document.createElement('div'); row.className = 'rc-row';
+  row.innerHTML = b('crop', 'Crop pages') + b('rotate', 'Rotate page clockwise') + b('print', 'Print') + '<span class="rc-sep"></span>'
+    + b('select', 'Select tool', null, t === 'select') + b('hand', 'Hand tool', null, t === 'hand') + b('zoom', 'Zoom in or out', null, t === 'zoom-tool');
+  const act = { crop: () => cropStart(), rotate: () => rotatePage('cw', n), print: () => printPDF(), select: () => setActiveTool('select'), hand: () => setActiveTool('hand'), zoom: () => setActiveTool('zoom-tool') };
+  row.querySelectorAll('.rc-ib').forEach(x => x.addEventListener('click', ev => { ev.stopPropagation(); closeCtxMenu(); act[x.dataset.k](); }));
+  m.insertBefore(row, m.firstChild);
+  // keep it on screen after growing
+  const r = m.getBoundingClientRect();
+  if (r.bottom > window.innerHeight - 4) m.style.top = Math.max(4, window.innerHeight - r.height - 4) + 'px';
+}
+
+// ---------- bookmarks you add (shown in the Bookmarks panel, saved into the PDF) ----------
+state.userBookmarks = [];
+function addBookmarkHere(n) {
+  if (!state.pdfDoc) return;
+  const page = n || state.currentPage || 1;
+  let title = '';
+  try { title = (currentSelText() || '').trim().replace(/\s+/g, ' ').slice(0, 120); } catch (e) {}
+  const bm = { id: uid('bm'), title: title || 'Untitled', page };
+  state.userBookmarks.push(bm);
+  markDirty();
+  if (state.leftPanelMode !== 'bookmarks' || !$('left-panel').classList.contains('open')) toggleLeftPanel('bookmarks'); else loadLeftPanel('bookmarks');
+  setTimeout(() => bmRename(bm.id), 250);
+}
+function bmRename(id) {
+  const row = document.querySelector(`.bookmark-item[data-bm="${id}"]`), bm = state.userBookmarks.find(b => b.id === id);
+  if (!row || !bm) return;
+  const inp = document.createElement('input'); inp.className = 'bm-edit'; inp.value = bm.title;
+  row.textContent = ''; row.appendChild(inp); inp.focus(); inp.select();
+  const done = keep => { if (keep && inp.value.trim()) { bm.title = inp.value.trim(); markDirty(); } loadLeftPanel('bookmarks'); };
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
+  inp.addEventListener('blur', () => done(true));
+}
+const _loadLeftPanelBM = loadLeftPanel;
+loadLeftPanel = async function (mode) {
+  const r = await _loadLeftPanelBM.apply(this, arguments);
+  if (mode !== 'bookmarks' || !state.pdfDoc || !(state.userBookmarks || []).length) return r;
+  // the file's own bookmarks are listed asynchronously: add ours after them
+  try { await state.pdfDoc.getOutline(); } catch (e) {}
+  await new Promise(res => setTimeout(res, 30));
+  if (state.leftPanelMode !== 'bookmarks') return r;
+  const body = $('left-panel-body');
+  if (!body.querySelector('.bookmark-item')) body.innerHTML = '';
+  body.querySelectorAll('.bookmark-item[data-bm]').forEach(x => x.remove());
+  state.userBookmarks.forEach(bm => {
+    const d = document.createElement('div');
+    d.className = 'bookmark-item'; d.dataset.bm = bm.id; d.style.paddingLeft = '12px';
+    d.textContent = '🔖 ' + bm.title; d.title = 'Page ' + bm.page + ' — double-click to rename, right-click for more';
+    d.onclick = () => goToPage(bm.page);
+    d.ondblclick = () => bmRename(bm.id);
+    d.oncontextmenu = e => { e.preventDefault(); e.stopPropagation(); openCtxMenu(e.clientX, e.clientY, [
+      { icon: '✎', label: 'Rename', action: () => bmRename(bm.id) },
+      { icon: '🗑', label: 'Delete', action: () => { state.userBookmarks = state.userBookmarks.filter(b => b.id !== bm.id); markDirty(); loadLeftPanel('bookmarks'); } },
+    ]); };
+    body.appendChild(d);
+  });
+  return r;
+};
+// written into the file's bookmarks on save
+const _writeFormFieldChangesBM = writeFormFieldChanges;
+writeFormFieldChanges = function (doc) {
+  const r = _writeFormFieldChangesBM.apply(this, arguments);
+  try {
+    const list = state.userBookmarks || []; if (!list.length) return r;
+    const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context, cat = doc.catalog, pages = doc.getPages();
+    let root = cat.lookup(N('Outlines'), L.PDFDict), rootRef = cat.get(N('Outlines'));
+    if (!root) { root = ctx.obj({ Type: 'Outlines', Count: 0 }); rootRef = ctx.register(root); cat.set(N('Outlines'), rootRef); }
+    let last = root.get(N('Last')), lastDict = last ? ctx.lookup(last) : null;
+    let count = root.get(N('Count')) && root.get(N('Count')).asNumber ? root.get(N('Count')).asNumber() : 0;
+    list.forEach(bm => {
+      const pg = pages[Math.max(0, Math.min(pages.length - 1, bm.page - 1))];
+      const item = ctx.obj({ Title: L.PDFHexString.fromText(bm.title), Parent: rootRef, Dest: [pg.ref, N('Fit')] });
+      const ref = ctx.register(item);
+      if (lastDict) { lastDict.set(N('Next'), ref); item.set(N('Prev'), last); } else root.set(N('First'), ref);
+      root.set(N('Last'), ref); last = ref; lastDict = item; count = count >= 0 ? count + 1 : count - 1;
+    });
+    root.set(N('Count'), L.PDFNumber.of(count));
+  } catch (e) { console.warn('bookmarks not saved', e); }
+  return r;
+};
+const _loadBytesBM = loadBytes;
+loadBytes = async function (bytes, name, opts) { if (!(opts && opts.keep)) state.userBookmarks = []; return _loadBytesBM.apply(this, arguments); };
+const _tabSnapshotBM = tabSnapshot;
+tabSnapshot = async function () { const s = await _tabSnapshotBM.apply(this, arguments); if (s) s.userBookmarks = (state.userBookmarks || []).slice(); return s; };
+const _tabRestoreBM = tabRestore;
+tabRestore = async function (t) { const ub = t && t.snap && t.snap.userBookmarks; const r = await _tabRestoreBM.apply(this, arguments); state.userBookmarks = ub ? ub.slice() : []; return r; };
+// Ctrl+B adds a bookmark (when not typing)
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'b' || !state.pdfDoc) return;
+  if (typeof activeEditor !== 'undefined' && activeEditor) return;
+  const t = e.target; if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return;
+  e.preventDefault(); addBookmarkHere(state.currentPage);
+});
 </script>
 </body>
 </html>
