@@ -1816,6 +1816,10 @@
   .ms-marquee { position:absolute; border:1px dashed #1473e6; background:rgba(20,115,230,.08); pointer-events:none; z-index:30; display:none; }
   .mp { display:flex; flex-direction:column; gap:12px; font-size:13px; } .mp-row { display:flex; align-items:center; gap:10px; } .mp-row > span { width:80px; }
   .mp-row input[type=color] { width:44px; height:24px; padding:0; border:1px solid #bbb; } .mp-width { width:64px; }
+  /* every color box looks like the Properties swatch: square, grey frame, color inset */
+  :where(input[type=color]:not(#ink-color)) { -webkit-appearance:none; appearance:none; width:22px; height:22px; padding:0; border:1px solid #7a7a7a; border-radius:0; background:#fff; cursor:pointer; vertical-align:middle; }
+  :where(input[type=color]:not(#ink-color))::-webkit-color-swatch-wrapper { padding:2px; } :where(input[type=color]:not(#ink-color))::-webkit-color-swatch { border:none; border-radius:0; }
+  .mp-row input[type=color], .es-grid input[type=color], .pf-m2d input[type=color], .pf2 .pf-pane input[type=color], #annot-props input[type=color], #wm-color, #bg-color, #redact-color, .br-color, .lk-col { width:22px !important; height:22px !important; padding:0 !important; border:1px solid #7a7a7a !important; border-radius:0 !important; background:#fff !important; }
 </style>
 </head>
 <body>
@@ -27911,6 +27915,40 @@ hitTest = function (n) {
   }
   return r;
 };
+
+// ================================================================
+//  ONE COLOR PICKER EVERYWHERE: every color box in the app (Preferences, watermark, background,
+//  links, redaction, ink, properties…) opens the same drop-down palette + "More colors" dialog
+//  as the text color and comment Properties, instead of the browser's own color picker.
+// ================================================================
+(function () {
+  const isHex = v => /^#[0-9a-f]{6}$/i.test(v || '');
+  const fire = (inp, t) => inp.dispatchEvent(new Event(t, { bubbles: true }));
+  function pick(inp) {
+    const cur = isHex(inp.value) ? inp.value.toLowerCase() : '#000000';
+    fire(inp, 'focus');   // lets editors remember the "before" for undo
+    const done = c => { if (!c) return; inp.value = c; fire(inp, 'input'); fire(inp, 'change'); khzSwatch(inp); };
+    if (inp.closest('.cp-gear')) { winColorDialog(cur, done); return; }   // comment popover: its "Other color" is the More colors dialog
+    acColorDropdown(inp, cur, done);
+    const dd = $('ac-cdd'); if (dd && typeof topZ === 'function') dd.style.zIndex = Math.max(100004, topZ() + 5);
+  }
+  window.khzSwatch = inp => { try { inp.style.setProperty('--sw', inp.value); } catch (e) {} };
+  document.addEventListener('click', e => {
+    const inp = e.target && e.target.closest ? e.target.closest('input[type="color"]') : null;
+    if (!inp || inp.disabled) return;
+    e.preventDefault(); e.stopPropagation();
+    pick(inp);
+  }, true);
+  // keyboard: Enter / Space on a focused color box opens the same palette
+  document.addEventListener('keydown', e => {
+    const inp = e.target;
+    if (!inp || inp.tagName !== 'INPUT' || inp.type !== 'color' || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault(); pick(inp);
+  }, true);
+  // the win dialog above dialogs
+  const _wcd = winColorDialog;
+  winColorDialog = function () { const r = _wcd.apply(this, arguments); const ov = $('win-cdlg-ov'); if (ov && typeof topZ === 'function') ov.style.zIndex = Math.max(+getComputedStyle(ov).zIndex || 0, topZ() + 6); return r; };
+})();
 </script>
 </body>
 </html>
