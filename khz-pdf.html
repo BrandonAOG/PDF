@@ -5046,7 +5046,9 @@ async function getTextBlocks(n) {
         if (fa && fb && fa !== fb) continue;
         if (prev.fontName !== it.fontName && (Math.abs(prev.fh - it.fh) > 0.02 * Math.max(prev.fh, it.fh) || gap < -0.05 * it.fh)) continue;
       }
-      if (L.sig === it.sig && Math.abs(L.base - it.base) < tol && gap > -0.6 * it.fh && (gap < 1.0 * it.fh || (sameOp && gap < 80 * it.fh))) { if (!best || Math.abs(gap) < Math.abs(it.x - best.right)) best = L; }
+      // recognized (scanned) text: the scan's word spacing is often wider than a normal space
+      const ocrW = ops && it.op >= 0 && prev.op >= 0 && ops[it.op] && ops[prev.op] && ops[it.op].tr === 3 && ops[prev.op].tr === 3;
+      if (L.sig === it.sig && Math.abs(L.base - it.base) < tol && gap > -0.6 * it.fh && (gap < (ocrW ? 1.6 : 1.0) * it.fh || (sameOp && gap < 80 * it.fh))) { if (!best || Math.abs(gap) < Math.abs(it.x - best.right)) best = L; }
     }
     if (best) {
       const gap = it.x - best.right;
@@ -10607,6 +10609,14 @@ document.addEventListener('keydown', e => {
 //  SCAN & OCR — real text recognition (Tesseract), Acrobat-style output
 // ================================================================
 const TESS_VER = '5.1.1';
+// share of the letter size taken by the tallest and the hanging letters of a word
+const ocrDesc = t => /[gjpqy]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;
+function ocrWordSize(t, hPx) {
+  if (!t || !(hPx > 0)) return 0;
+  const top = /[A-Z0-9bdfhklt!?#$%&@\/|()\[\]{}'"]/.test(t) ? 0.716 : /[a-z]/.test(t) ? 0.519 : 0;
+  if (!top) return 0;   // dashes, dots: no idea how big the letters are
+  return hPx / (top + ocrDesc(t));
+}
 let tessPromise = null, ocrCancel = false, ocrWorker = null;
 function loadTesseract() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -10698,11 +10708,18 @@ async function runOCR() {
         const b = w.bbox, lb = (w.line && w.line.bbox) || b;
         // text height: the line's height, unless that line box was stretched by a stray mark (®, ™, a smudge) —
         // then the typical word height in the line wins, so the hidden text stays the size of the print
-        const lineWords = (w.line && w.line.words) || [], hs = lineWords.map(x => x.bbox.y1 - x.bbox.y0).filter(v => v > 0).sort((p, q) => p - q);
-        const medH = hs.length ? hs[hs.length >> 1] : (b.y1 - b.y0);
-        const hPx = Math.max((b.y1 - b.y0) * 0.75, Math.min((lb.y1 - lb.y0) * 0.85, medH * 1.25));
-        const size = hPx / k * 0.92;
-        const basePx = w.baseline && w.baseline.y0 !== undefined && Math.abs(w.baseline.y0 - b.y1) < hPx ? (w.baseline.y0 + w.baseline.y1) / 2 : b.y1 - hPx * 0.18;
+        // the letter size from how tall the printed letters are: capitals and tall letters (b d f h k l t)
+        // reach about 72% of the size, small letters 52%, and g j p q y hang about 21% below the line —
+        // so ALL-CAPS words come out the same size as mixed ones (the typical word in the line wins)
+        const lineWords = (w.line && w.line.words) || [];
+        const sizeOf = x => ocrWordSize(String(x.text || '').trim(), x.bbox.y1 - x.bbox.y0);
+        const ss = lineWords.map(sizeOf).filter(v => v > 0).sort((p, q) => p - q);
+        const own = sizeOf(w);
+        const sizePx = ss.length ? ss[ss.length >> 1] : (own || (b.y1 - b.y0));
+        const hPx = sizePx;
+        const size = sizePx / k;
+        const desc = ocrDesc(txt) * sizePx;
+        const basePx = w.baseline && w.baseline.y0 !== undefined && Math.abs(w.baseline.y0 - b.y1) < hPx ? (w.baseline.y0 + w.baseline.y1) / 2 : b.y1 - desc;
         const [x, y] = vp.convertToPdfPoint(b.x0, basePx);
         const t = winAnsi(font, txt);
         if (!t.trim()) continue;
@@ -26012,6 +26029,129 @@ window.addEventListener('focus', khzSyncBadge);
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (told) return; told = true; toast('An update to KHZ PDF is ready — it’s used the next time you open the app.'); });
   }
 })();
+
+// ================================================================
+//  Recognized (scanned) text keeps the colour it had on the scan:
+//  the first time you click into it, the ink colour is read from the picture
+//  (grey stays grey, orange headings stay orange) instead of the default black.
+// ================================================================
+function ocrSampleInk(a) {
+  const ps = state.pages[a.page]; if (!ps || !ps.canvas || !ps.canvas.width || !a.origPts) return null;
+  try {
+    const c = ps.canvas, k = c.width / ps.vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+    const x0 = Math.max(0, Math.floor(b.x * k)), y0 = Math.max(0, Math.floor(b.y * k));
+    const x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + b.h) * k));
+    if (x1 <= x0 || y1 <= y0) return null;
+    const bg = (a.bg || ocrSampleBg(a)).match(/[0-9a-f]{2}/gi).map(h => parseInt(h, 16));
+    const d = ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data, px = [];
+    for (let i = 0; i < d.length; i += 4) {
+      const p = [d[i], d[i + 1], d[i + 2]];
+      px.push([Math.hypot(p[0] - bg[0], p[1] - bg[1], p[2] - bg[2]), p]);
+    }
+    if (!px.length) return null;
+    px.sort((p, q) => q[0] - p[0]);
+    if (px[0][0] < 40) return null;   // nothing that looks like ink
+    // the strongest pixels are the middle of the letters; the edges are blended with the paper
+    const strong = px.filter(p => p[0] >= px[0][0] * 0.8).slice(0, Math.max(3, Math.ceil(px.length * 0.12)));
+    const m = [0, 1, 2].map(j => Math.round(strong.reduce((s, p) => s + p[1][j], 0) / strong.length));
+    // very dark ink is just black
+    if (Math.max(...m) < 45) return '#000000';
+    return '#' + m.map(v => v.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return null; }
+}
+// the size of the printed letters, measured on the scan: from the top of the capitals (or the
+// small letters when there are none) down to the line the letters sit on
+function ocrMeasureSize(a) {
+  const ps = state.pages[a.page]; if (!ps || !ps.canvas || !ps.canvas.width || !a.origPts || String(a.text).includes('\n')) return null;
+  if (typeof effRot === 'function' && effRot(a.page)) return null;
+  const txt = String(a.text || '');
+  const ratio = /[A-Z0-9bdfhklt!?#$%&@\/|()\[\]{}]/.test(txt) ? 0.716 : /[a-z]/.test(txt) ? 0.519 : 0;
+  if (!ratio) return null;
+  try {
+    const c = ps.canvas, k = c.width / ps.vp.width, ctx = c.getContext('2d', { willReadFrequently: true });
+    const b = bboxOf(a.origPts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])));
+    const x0 = Math.max(0, Math.floor(b.x * k)), x1 = Math.min(c.width - 1, Math.ceil((b.x + b.w) * k));
+    const y0 = Math.max(0, Math.floor((b.y - b.h) * k)), y1 = Math.min(c.height - 1, Math.ceil((b.y + 2 * b.h) * k));
+    const W = x1 - x0 + 1, H = y1 - y0 + 1; if (W < 3 || H < 3) return null;
+    const bg = (a.bg || ocrSampleBg(a)).match(/[0-9a-f]{2}/gi).map(h => parseInt(h, 16));
+    const d = ctx.getImageData(x0, y0, W, H).data;
+    const dist = new Float32Array(W * H); let mx = 0;
+    const cy0 = Math.floor(b.y * k) - y0, cy1 = Math.ceil((b.y + b.h) * k) - y0;
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+      const v = Math.hypot(d[i] - bg[0], d[i + 1] - bg[1], d[i + 2] - bg[2]); dist[j] = v;
+      const y = (j / W) | 0; if (y >= cy0 && y <= cy1 && v > mx) mx = v;
+    }
+    if (mx < 40) return null;
+    const th = Math.max(35, mx * 0.45), rows = new Array(H).fill(0);
+    for (let y = 0; y < H; y++) { let n = 0; for (let x = 0; x < W; x++) if (dist[y * W + x] > th) n++; rows[y] = n > W * 0.9 ? 0 : n; }   // a ruled line isn't text
+    let mid = Math.round((cy0 + cy1) / 2), best = -1;
+    for (let dy = 0; dy <= (cy1 - cy0) / 2 + 1 && best < 0; dy++) { if (rows[mid - dy] > 0) best = mid - dy; else if (rows[mid + dy] > 0) best = mid + dy; }
+    if (best < 0) return null;
+    let top = best, bot = best;
+    while (top > 0 && rows[top - 1] > 0) top--;
+    while (bot < H - 1 && rows[bot + 1] > 0) bot++;
+    let M = 0; for (let y = top; y <= bot; y++) M = Math.max(M, rows[y]);
+    let base = bot; while (base > top && rows[base] < M * 0.3) base--;
+    const capPx = base - top + 1; if (capPx < 3) return null;
+    const s = ps.vp.scale;
+    const size = capPx / k / s / ratio;
+    return { size, top: (y0 + top) / k, base: (y0 + base + 1) / k, bot: (y0 + bot + 1) / k };
+  } catch (e) { return null; }
+}
+function ocrApplySize(a) {
+  const m = ocrMeasureSize(a); if (!m) return;
+  const fs = a.fontSize || 10;
+  if (!(m.size > fs * 0.5 && m.size < fs * 2.5)) return;   // something odd: leave it
+  const ps = state.pages[a.page], s = ps.vp.scale, F = m.size;
+  a.lineH = (a.lineH || fs * 1.2) * F / fs;
+  a.fontSize = F;
+  // sit the new text on the same line as the scanned letters
+  const xL = Math.min(a.pts[0][0], a.pts[1][0]), xR = Math.max(a.pts[0][0], a.pts[1][0]);
+  const topV = m.base - F * s, botV = topV + F * s * 1.3;
+  const yT = ps.vp.convertToPdfPoint(0, topV)[1], yB = ps.vp.convertToPdfPoint(0, botV)[1];
+  a.pts = [[xL, Math.max(yT, yB)], [xR, Math.min(yT, yB)]];
+  a.baseOff = 1;
+  // and make sure the cover reaches every scanned mark of the word
+  const oT = ps.vp.convertToPdfPoint(0, m.top - 0.5)[1], oB = ps.vp.convertToPdfPoint(0, m.bot + 0.5)[1];
+  const ys = a.origPts.map(p => p[1]), hi = Math.max(...ys, oT, oB), lo = Math.min(...ys, oT, oB);
+  const ox = a.origPts.map(p => p[0]);
+  a.origPts = [[Math.min(...ox), hi], [Math.max(...ox), lo]];
+}
+const _editAnnotTextInk = editAnnotText;
+editAnnotText = async function (a) {
+  if (a && a.type === 'text-block' && a.invisible && !a._ocrInk) {
+    a._ocrInk = true;
+    if (!a.bg) a.bg = ocrSampleBg(a);
+    const ink = ocrSampleInk(a); if (ink) a.color = ink;
+    if (a.untouched) ocrApplySize(a);
+  }
+  return _editAnnotTextInk.apply(this, arguments);
+};
+
+// deleting recognized text takes the scanned words away too (they're painted over with the paper
+// colour), instead of only removing the hidden text and leaving the scan showing
+const _deleteAnnotOCR = deleteAnnot;
+deleteAnnot = function (id, noHistory) {
+  const a = state.annotations.find(x => x.id === id);
+  if (a && a.type === 'text-block' && a.invisible && a.origPts) {
+    if (!a.bg) a.bg = ocrSampleBg(a);
+    a.untouched = false; a.text = ''; a._erased = true; a.pts = JSON.parse(JSON.stringify(a.origPts));
+    if (state.selectedId === id) state.selectedId = null;
+    if (Array.isArray(state.selectedIds)) state.selectedIds = state.selectedIds.filter(x => x !== id);
+    syncContent(); renderPageAnnots(a.page); updatePropsBar();
+    if (!noHistory) pushHistory();
+    return;
+  }
+  return _deleteAnnotOCR.apply(this, arguments);
+};
+// an erased spot isn't something you can click on any more
+const _hitTestOCR = hitTest;
+hitTest = function (n) {
+  const all = state.annotations; if (!all.some(a => a._erased && a.page === n)) return _hitTestOCR.apply(this, arguments);
+  state.annotations = all.filter(a => !(a._erased && a.page === n));
+  try { return _hitTestOCR.apply(this, arguments); } finally { state.annotations = all; }
+};
 </script>
 </body>
 </html>
