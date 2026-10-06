@@ -1794,6 +1794,15 @@
   #nt-frame .nt-mv { position:absolute; pointer-events:auto; cursor:move; }
   #nt-frame .nt-mv-t { left:0; right:0; top:-5px; height:8px; } #nt-frame .nt-mv-b { left:0; right:0; bottom:-5px; height:8px; }
   #nt-frame .nt-mv-l { top:0; bottom:0; left:-5px; width:8px; } #nt-frame .nt-mv-r { top:0; bottom:0; right:-5px; width:8px; }
+
+  /* act like a desktop app: no swipe-Back, no selectable UI text, no dragged icons */
+  html, body { overscroll-behavior:none; }
+  * { overscroll-behavior-x:none; }
+  body { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable="true"] *, [contenteditable=""] *, .inline-editor, .inline-editor *, .khz-selectable, .khz-selectable * { -webkit-user-select:text; user-select:text; }
+  #canvas-area.tool-text-select .textLayer, #canvas-area.tool-text-select .textLayer span { -webkit-user-select:text; user-select:text; }
+  img, svg, a, button { -webkit-user-drag:none; }
+  [draggable="true"] { -webkit-user-drag:element; }
 </style>
 </head>
 <body>
@@ -13167,7 +13176,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = '2026.10.04';
+const APP_BUILD = '2026.10.06';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
 function accountEmail() { return getPref('email', '') || getBrand().email || ''; }
@@ -25932,6 +25941,77 @@ $('canvas-area').addEventListener('mousemove', e => {
     if (outside || onTextEdge(a, ps, vx, vy)) $('canvas-area').style.cursor = 'move';
   });
 });
+
+// ================================================================
+//  ACT LIKE A NORMAL DESKTOP APP
+//  1 trackpad swipe doesn't go "Back"   2 pinch / ⌘-scroll never zooms the whole window
+//  3 menus and buttons aren't selectable text   4 icons can't be dragged off as pictures
+//  5 Dock / taskbar badge counts unsaved files   6 (sw.js) every tool works offline
+//  7 a note after KHZ PDF updates
+// ================================================================
+
+// 1 — swipe Back: CSS stops the overscroll gesture; this keeps Back (mouse button, Alt+←) from leaving the app
+(() => {
+  try {
+    history.pushState({ khz: 1 }, '', location.href);
+    window.addEventListener('popstate', () => { try { history.pushState({ khz: 1 }, '', location.href); } catch (e) {} });
+  } catch (e) {}
+})();
+
+// 2 — pinch and Ctrl/⌘-scroll: the pages zoom (canvas area handles that); everywhere else nothing happens
+window.addEventListener('wheel', e => {
+  if (e.ctrlKey) e.preventDefault();
+  // the canvas area zooms the pages itself (its own listener runs after this one)
+}, { passive: false, capture: true });
+// Safari's own pinch gesture
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+
+// 4 — only things meant to be dragged (pages, files, list rows) can be dragged
+const DRAG_OK = 'input, textarea, [contenteditable="true"], [contenteditable=""], .textLayer, .inline-editor';
+document.addEventListener('dragstart', e => {
+  const t = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement);
+  if (!t) return;
+  if (t.closest('[draggable="true"]') || t.closest(DRAG_OK)) return;
+  e.preventDefault();
+}, true);
+const noDragImgs = root => (root.querySelectorAll ? root.querySelectorAll('img:not([draggable])') : []).forEach(i => { i.draggable = false; });
+noDragImgs(document);
+new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) { if (n.tagName === 'IMG' && !n.hasAttribute('draggable')) n.draggable = false; else noDragImgs(n); } })))
+  .observe(document.body, { childList: true, subtree: true });
+
+// 5 — badge on the app icon with the number of files that have unsaved changes
+function khzUnsavedCount() {
+  const tabs = state.docTabs || [];
+  if (!tabs.length) return state.dirty && state.pdfDoc ? 1 : 0;
+  const act = state.activeTabId;
+  return tabs.filter(t => t.id === act ? state.dirty : t.dirty).length;
+}
+let _khzBadge = -1;
+function khzSyncBadge() {
+  const n = khzUnsavedCount(); if (n === _khzBadge) return; _khzBadge = n;
+  try {
+    if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(() => {});
+    else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  } catch (e) {}
+}
+const _updateTitleBadge = updateTitle;
+updateTitle = function () { const r = _updateTitleBadge.apply(this, arguments); khzSyncBadge(); return r; };
+// tabs close, files save and discard in many places — a quick check catches them all
+setInterval(khzSyncBadge, 1500);
+window.addEventListener('focus', khzSyncBadge);
+
+// 7 — "KHZ PDF was updated"
+(() => {
+  const KEY = 'khz-last-build';
+  let last = null; try { last = localStorage.getItem(KEY); } catch (e) {}
+  try { localStorage.setItem(KEY, APP_BUILD); } catch (e) {}
+  if (last && last !== APP_BUILD) setTimeout(() => toast('KHZ PDF was updated to version ' + APP_BUILD + '.'), 1200);
+  // a new copy took over while the app is open: it is used the next time KHZ PDF opens
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    let told = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (told) return; told = true; toast('An update to KHZ PDF is ready — it’s used the next time you open the app.'); });
+  }
+})();
 </script>
 </body>
 </html>
