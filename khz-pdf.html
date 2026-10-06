@@ -1778,6 +1778,22 @@
   #ctx-menu .rc-ib:hover { background:rgba(255,255,255,.1); } #ctx-menu .rc-ib.on { color:#4da3ff; }
   #ctx-menu .rc-sep { width:1px; height:24px; background:rgba(255,255,255,.18); margin:0 8px; }
   .bm-edit { width:calc(100% - 8px); font:inherit; padding:2px 4px; border:1px solid #4da3ff; background:#fff; color:#111; }
+  #nt-frame { position:absolute; pointer-events:none; z-index:19; }
+  #nt-frame .nt-box { position:absolute; inset:0; border:1px solid #0a84ff; }
+  #nt-frame .nt-h { position:absolute; width:9px; height:9px; margin:-5px 0 0 -5px; border-radius:50%; background:#fff; border:1.4px solid #0a84ff; box-sizing:border-box; }
+  #nt-frame .nt-stem { position:absolute; width:0; border-left:1.2px solid #0a84ff; }
+  #nt-frame .nt-rot { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#1473e6; border:1.2px solid #fff; box-sizing:content-box; display:flex; align-items:center; justify-content:center; }
+  #nt-frame .nt-h, #nt-frame .nt-rot { pointer-events:auto; }
+  #nt-frame .nt-rot { cursor:pointer; }
+  #nt-frame .nt-rz { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; pointer-events:auto; }
+  #nt-frame .nt-rz, #nt-frame .nt-rot { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M14 3.5l3.4 3-3.9 1.6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, crosshair; }
+  /* the rotate cursor wins over the text cursor while typing */
+  body.rot-hover, body.rot-hover * { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M17 6.5A7 7 0 1 0 19 12' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Cpath d='M14 3.5l3.4 3-3.9 1.6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") 12 12, crosshair !important; }
+  /* Edit PDF: the page's hidden text layer must not force the I-beam — the pointer follows what's under it (move on edges, resize on handles) */
+  body.edit-mode .textLayer :is(span, br), body.edit-mode .inline-editor { cursor:inherit !important; }
+  #nt-frame .nt-mv { position:absolute; pointer-events:auto; cursor:move; }
+  #nt-frame .nt-mv-t { left:0; right:0; top:-5px; height:8px; } #nt-frame .nt-mv-b { left:0; right:0; bottom:-5px; height:8px; }
+  #nt-frame .nt-mv-l { top:0; bottom:0; left:-5px; width:8px; } #nt-frame .nt-mv-r { top:0; bottom:0; right:-5px; width:8px; }
 </style>
 </head>
 <body>
@@ -3780,7 +3796,7 @@ function renderPageAnnots(n, preview) {
   list.forEach(a => {
     const g = svgEl('g', { 'data-annot-id': a.id }, svg);
     if (appDraws(a)) annotGeometry(a, ps.vp).forEach(p => drawPrimSVG(a.id === state.editingId && p.k === 'text' ? { ...p, lines: [] } : a.id === state.editingId && p.k === 'rich' ? { ...p, frags: [] } : p, g));
-    if (a.id === state.selectedId && a.id !== state.editingId) drawSelection(a, ps.vp, g);
+    if (a.id === state.selectedId && (a.id !== state.editingId || state.activeToolGroup === 'edit')) drawSelection(a, ps.vp, g);   // Edit PDF: handles stay while typing, like Acrobat
   });
 }
 function renderAllAnnots() { Object.keys(state.pages).forEach(n => renderPageAnnots(+n)); }
@@ -5201,7 +5217,9 @@ function drawSelection(a, vp, g) {
   const b = hs.length ? hs[0].box : annotBBox(a, vp);
   if (!b) return;
   svgEl('rect', { x: b.x - 1, y: b.y - 1, width: b.w + 2, height: b.h + 2, fill: 'none', stroke: '#0a84ff', 'stroke-width': 1.2, 'stroke-dasharray': hs.length ? null : '4 3' }, g);
-  hs.forEach(h => svgEl('rect', { x: h.x - 4, y: h.y - 4, width: 8, height: 8, fill: '#fff', stroke: '#0a84ff', 'stroke-width': 1.4 }, g));
+  // Edit PDF uses round handles, like Acrobat
+  if (state.activeToolGroup === 'edit') hs.forEach(h => svgEl('circle', { cx: h.x, cy: h.y, r: 4.5, fill: '#fff', stroke: '#0a84ff', 'stroke-width': 1.4 }, g));
+  else hs.forEach(h => svgEl('rect', { x: h.x - 4, y: h.y - 4, width: 8, height: 8, fill: '#fff', stroke: '#0a84ff', 'stroke-width': 1.4 }, g));
 }
 
 function handleAt(n, vx, vy) {
@@ -6270,7 +6288,7 @@ async function editAnnotText(a, opt = {}) {
   state.selectedId = a.id;
   renderPageAnnots(a.page);
   const s = ps.vp.scale;
-  const wrap = a.type === 'textbox' || (a.type === 'callout' && a.pts && a.pts.length > 1) || (a.type === 'text-block' && !!a.wrap);
+  const wrap = (a.type === 'textbox' && !(typeof addTextAutoW === 'function' && addTextAutoW(a))) || (a.type === 'callout' && a.pts && a.pts.length > 1) || (a.type === 'text-block' && !!a.wrap);
   const inner = textInner(p);
   const edit = inlineEdit(ps, {
     annotId: a.id, x: inner.x, y: p.y + (p.pad || 0), w: (wrap || inner.al) ? inner.w : 0, size: p.size, lh: p.lh, base: p.base,
@@ -6285,7 +6303,8 @@ async function editAnnotText(a, opt = {}) {
   let c = null;
   if (txt !== null && lastEditorRuns) { c = JSON.parse(JSON.stringify(a)); setRichText(c, lastEditorRuns.text, lastEditorRuns.styles); }
   if (!c || SNAP(c) === SNAP(a)) {
-    if (wasUntouched) {   // nothing changed: keep the original text exactly
+    if (wasUntouched && a._noRevert) delete a._noRevert;   // turned or resized while typing: it stays the app's own copy
+    else if (wasUntouched) {   // nothing changed: keep the original text exactly
       a.untouched = true;
       linkedBefore.forEach(id => { const o = state.annotations.find(x => x.id === id); if (o) o.untouched = true; });
       syncContent();
@@ -21805,15 +21824,30 @@ drawSelection = function (a, vp, g) {
   return r;
 };
 let rotDrag = null;
+// the round handle, or just outside a corner of the selection (like Acrobat): both turn the object
+function rotZoneAt(a, ps, vx, vy) {
+  const h = rotHandlePos(a, ps.vp); if (!h) return null;
+  if (Math.hypot(vx - h.x, vy - h.y) <= 11) return h;
+  const b = (typeof handleBox === 'function' && handleBox(a, ps.vp)) || annotBBox(a, ps.vp); if (!b) return null;
+  const outside = vx < b.x || vx > b.x + b.w || vy < b.y || vy > b.y + b.h;
+  if (!outside) return null;
+  for (const [cx, cy] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) {
+    const d = Math.hypot(vx - cx, vy - cy);
+    if (d > 7 && d < 22) return h;
+  }
+  return null;
+}
 window.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const a = state.annotations.find(x => x.id === state.selectedId); if (!rotable(a) || a.locked) return;
   const ps = state.pages[a.page]; if (!ps) return;
-  const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top, h = rotHandlePos(a, ps.vp);
-  if (!h || Math.hypot(vx - h.x, vy - h.y) > 11) return;
+  const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top, h = rotZoneAt(a, ps, vx, vy);
+  if (!h) return;
   e.preventDefault(); e.stopPropagation();
+  if (typeof activeEditor !== 'undefined' && activeEditor) { a._noRevert = true; if (activeEditor.annotId !== a.id) { activeEditor.finish(true); state.selectedId = a.id; } }   // typing in it carries on while it turns
   if (!touchNative(a)) return;
-  rotDrag = { a, ps, cx: h.cx, cy: h.cy, a0: Math.atan2(vy - h.cy, vx - h.cx), rot0: a.rot || 0 };
+  const pv = typeof rotPivot === 'function' ? rotPivot(a, ps) : null, pcx = pv ? pv[0] : h.cx, pcy = pv ? pv[1] : h.cy;   // the exact point it turns about
+  rotDrag = { a, ps, cx: pcx, cy: pcy, a0: Math.atan2(vy - pcy, vx - pcx), rot0: a.rot || 0 };
   document.body.classList.add('rotating');
 }, true);
 window.addEventListener('mousemove', e => {
@@ -21826,6 +21860,7 @@ window.addEventListener('mousemove', e => {
   else for (const s of [0, 90, 180, 270, 360]) if (Math.abs(deg - s) < 2) deg = s;   // a light snap to square angles
   d.a.rot = deg % 360 || 0;
   renderPageAnnots(d.a.page);
+  if (typeof rotSyncEditor === 'function') rotSyncEditor(d.a);
   rotTip(e, d.a.rot);
 }, true);
 window.addEventListener('mouseup', () => {
@@ -21844,8 +21879,8 @@ window.addEventListener('mousemove', e => {
   if (rotDrag) return;
   const a = state.annotations.find(x => x.id === state.selectedId), ps = a && state.pages[a.page];
   if (!rotable(a) || !ps) { document.body.classList.remove('rot-hover'); return; }
-  const r = ps.wrapper.getBoundingClientRect(), h = rotHandlePos(a, ps.vp);
-  document.body.classList.toggle('rot-hover', !!h && Math.hypot(e.clientX - r.left - h.x, e.clientY - r.top - h.y) <= 11);
+  const r = ps.wrapper.getBoundingClientRect();
+  document.body.classList.toggle('rot-hover', !!rotZoneAt(a, ps, e.clientX - r.left, e.clientY - r.top));
 }, { passive: true });
 
 // ================================================================
@@ -23808,7 +23843,7 @@ const olRot = a => a && a.type === 'text-block' && a.rot;
 const _annotGeometryOL = annotGeometry;
 annotGeometry = function (a, vp, forPdf) {
   const prims = _annotGeometryOL.apply(this, arguments);
-  if (!olRot(a) || state.editingId === a.id) return prims;
+  if (!olRot(a) || state.editingId === a.id || state._rotRaw) return prims;
   const keep = prims.filter(p => p.mask), turn = prims.filter(p => !p.mask);
   const main = turn.find(p => p.main) || turn[0]; if (!main) return prims;
   const b = primBBox(main), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
@@ -25574,8 +25609,10 @@ annotGeometry = function (a, vp, forPdf) {
   if (!a || !a.rot || !prims || !prims.length || !a.pts || !a.pts.length) return prims;
   const isShape = shapeRot(a), isText = a.type === 'textbox';
   if (!isShape && !isText) return prims;
-  if (isText && state.editingId === a.id) return prims;          // straight while typing
-  const [cx, cy] = rotCenterView(a, vp), M = rotMatrixView(a.rot, cx, cy);
+  if (isText && (state.editingId === a.id || state._rotRaw)) return prims;          // straight while typing
+  let [cx, cy] = rotCenterView(a, vp);
+  if (isText) { const tb = bboxOf(prims.map(primBBox).flatMap(q => [[q.x, q.y], [q.x + q.w, q.y + q.h]])); cx = tb.x + tb.w / 2; cy = tb.y + tb.h / 2; }
+  const M = rotMatrixView(a.rot, cx, cy);
   if (isShape && prims.every(p => p.pts && (p.k === 'poly' || p.k === 'line'))) {
     return prims.map(p => ({ ...p, pts: p.pts.map(([x, y]) => mApply(M, x, y)) }));
   }
@@ -25599,6 +25636,257 @@ writeNativeAnnot = async function (doc, lp, a, vp1, rot, tmp, mainCtx) {
   const b2 = { ...a, type: 'polyline', closed: true, pts, rot: 0, cloud: cloud || undefined, subject: a.subject || (typeof subjectOf === 'function' ? subjectOf(a) : undefined) };
   return _writeNativeAnnotROT.call(this, doc, lp, b2, vp1, rot, tmp, mainCtx);
 };
+
+// page content (scanned pictures, page text) can only be picked and moved in Edit PDF, like Acrobat —
+// with the Select tool a drag no longer drags the whole scanned page around
+const PAGE_CONTENT = ['page-image', 'text-block', 'text-edit'];
+const _hitTestPC = hitTest;
+hitTest = function (n, vx, vy) {
+  const editing = state.activeToolGroup === 'edit' || state.activeTool === 'edit-text' || state.prepareMode;
+  if (editing) return _hitTestPC.apply(this, arguments);
+  const all = state.annotations, hidden = all.filter(a => a.page === n && PAGE_CONTENT.includes(a.type));
+  if (!hidden.length) return _hitTestPC.apply(this, arguments);
+  state.annotations = all.filter(a => !hidden.includes(a));
+  try { return _hitTestPC.apply(this, arguments); } finally { state.annotations = all; }
+};
+
+// dragging a handle of text you're typing in: typing ends first, so the change shows live
+const _beginHandleDragED = beginHandleDrag;
+beginHandleDrag = function (n, vx, vy, hh) {
+  if (typeof activeEditor !== 'undefined' && activeEditor && hh && hh.a && activeEditor.annotId === hh.a.id) { hh.a._noRevert = true; activeEditor.finish(true); state.selectedId = hh.a.id; }
+  return _beginHandleDragED.apply(this, arguments);
+};
+
+// typing in turned text: the typing box turns with it, and the text can be turned while you type (like Acrobat)
+const ROT_TEXT = a => a && a.rot && (a.type === 'text-block' || a.type === 'textbox');
+function rotStraightCenter(a) {
+  const ps = state.pages[a.page]; if (!ps) return null;
+  state._rotRaw = true;
+  try {
+    const prims = annotGeometry(a, ps.vp);
+    if (a.type === 'textbox') { const tb = bboxOf(prims.map(primBBox).flatMap(q => [[q.x, q.y], [q.x + q.w, q.y + q.h]])); return [tb.x + tb.w / 2, tb.y + tb.h / 2]; }
+    const main = prims.find(p => p.main && !p.mask) || prims.find(p => !p.mask); if (!main) return null;
+    const b = primBBox(main); return [b.x + b.w / 2, b.y + b.h / 2];
+  } finally { state._rotRaw = false; }
+}
+function rotSyncEditor(a) {
+  if (typeof activeEditor === 'undefined' || !activeEditor || activeEditor.annotId !== a.id || !activeEditor.el) return;
+  const el = activeEditor.el, c = rotStraightCenter(a); if (!c) return;
+  if (!a.rot) { el.style.transform = ''; return; }
+  // measure the typing box straight, in screen pixels, so page zoom / offsets can't throw the pivot off
+  const z = parseFloat(getComputedStyle(el).zoom) || 1, ps = state.pages[a.page];
+  el.style.transform = '';
+  const er = el.getBoundingClientRect(), wr = ps.wrapper.getBoundingClientRect();
+  const ox = (wr.left + c[0] - er.left) / z, oy = (wr.top + c[1] - er.top) / z;
+  el.style.transformOrigin = ox + 'px ' + oy + 'px';
+  el.style.transform = `rotate(${a.rot}deg)`;
+}
+// while typing, the turned outline and handles stay (text itself is in the typing box)
+const _annotGeometryRTE = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  if (!ROT_TEXT(a) || state.editingId !== a.id || state._rotRaw || forPdf) return _annotGeometryRTE.apply(this, arguments);
+  const prims = _annotGeometryRTE.apply(this, arguments);   // straight while editing
+  const c = rotStraightCenter(a); if (!c) return prims;
+  const M = rotMatrixView(a.rot, c[0], c[1]);
+  const keep = prims.filter(p => p.mask), turn = prims.filter(p => !p.mask);
+  const inner = turn.map(p => p.k === 'text' ? { ...p, lines: [], main: false } : p.k === 'rich' ? { ...p, frags: [], main: false } : { ...p, main: false });
+  const b = bboxOf(turn.map(primBBox).flatMap(q => [[q.x, q.y], [q.x + q.w, q.y + q.h]]));
+  const bb = bboxOf([[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([x, y]) => mApply(M, x, y)));
+  return [...keep, { k: 'group', m: M, prims: inner, main: true, x: bb.x, y: bb.y, w: bb.w, h: bb.h }];
+};
+const _editAnnotTextROT = editAnnotText;
+editAnnotText = function (a) {
+  if (!ROT_TEXT(a)) return _editAnnotTextROT.apply(this, arguments);
+  state._rotRaw = true;   // the typing box is laid out on the straight text…
+  let r;
+  try { r = _editAnnotTextROT.apply(this, arguments); } finally { state._rotRaw = false; }
+  rotSyncEditor(a);        // …then turned to match
+  setTimeout(() => { rotSyncEditor(a); renderPageAnnots(a.page); }, 0);
+  Promise.resolve(r).finally(() => renderPageAnnots(a.page));
+  return r;
+};
+// a picture/text turned back to 0 while typing: straight box
+
+// new text being typed in Edit PDF: a box with round handles and the turn handle around it as you type (like Acrobat)
+(function newTextFrameLoop() {
+  const tick = () => {
+    const ed = typeof activeEditor !== 'undefined' && activeEditor;
+    const want = ed && !ed.annotId && ed.el && ed.el.isConnected && state.activeToolGroup === 'edit';
+    let fr = document.getElementById('nt-frame');
+    if (!want) { if (fr) fr.remove(); requestAnimationFrame(tick); return; }
+    const host = ed.el.offsetParent || ed.el.parentNode;
+    if (!fr || fr.parentNode !== host) {
+      if (fr) fr.remove();
+      fr = document.createElement('div'); fr.id = 'nt-frame';
+      fr.innerHTML = '<div class="nt-box"></div>' + ['t', 'b', 'l', 'r'].map(k => `<span class="nt-mv nt-mv-${k}"></span>`).join('') + ['nw', 'ne', 'se', 'sw'].map(k => `<span class="nt-rz" data-k="${k}"></span>`).join('')
+        + ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map(k => `<span class="nt-h" data-k="${k}" style="cursor:${HANDLE_CURSORS[k]}"></span>`).join('')
+        + `<span class="nt-stem"></span><span class="nt-rot"><svg viewBox="0 0 16 16" width="16" height="16">${ROT_ICON}</svg></span>`;
+      host.appendChild(fr);
+    }
+    const er = ed.el.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const x = er.left - hr.left - 3, y = er.top - hr.top - 3, w = er.width + 6, h = er.height + 6;
+    Object.assign(fr.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+    const pos = { nw: [0, 0], n: [w / 2, 0], ne: [w, 0], e: [w, h / 2], se: [w, h], s: [w / 2, h], sw: [0, h], w: [0, h / 2] };
+    fr.querySelectorAll('.nt-h, .nt-rz').forEach(el => { const [px, py] = pos[el.dataset.k]; el.style.left = px + 'px'; el.style.top = py + 'px'; });
+    const st = fr.querySelector('.nt-stem'), ro = fr.querySelector('.nt-rot');
+    Object.assign(st.style, { left: w / 2 + 'px', top: '-18px', height: '18px' });
+    Object.assign(ro.style, { left: w / 2 + 'px', top: '-24px' });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+})();
+
+// grabbing a handle of new text while typing: the text is placed, then turned / resized live, and typing carries on
+let ntResume = null;
+window.addEventListener('mousedown', e => { if (e.target && e.target.closest && e.target.closest('#nt-frame .nt-h, #nt-frame .nt-rot, #nt-frame .nt-rz, #nt-frame .nt-mv')) ntGrab(e); }, true);
+function ntGrab(e) {
+  if (e.button !== 0 || typeof activeEditor === 'undefined' || !activeEditor || activeEditor.annotId) return;
+  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+  const kind = e.target.closest('.nt-mv') ? 'move' : e.target.closest('.nt-rot, .nt-rz') ? 'rot' : 'size', dir = (e.target.closest('[data-k]') || {}).dataset ? e.target.closest('[data-k]').dataset.k : null;
+  const before = new Set(state.annotations.map(a => a.id)), cx0 = e.clientX, cy0 = e.clientY;
+  activeEditor.finish(true);
+  let tries = 0;
+  const wait = () => {
+    const a = state.annotations.find(x => !before.has(x.id) && x.type === 'textbox');
+    if (!a) { if (++tries < 30) setTimeout(wait, 10); return; }
+    const ps = state.pages[a.page], r = ps.wrapper.getBoundingClientRect(), vx = cx0 - r.left, vy = cy0 - r.top;
+    state.selectedId = a.id; renderPageAnnots(a.page);
+    ntResume = a.id;
+    if (kind === 'rot') {
+      const c = rotPivot(a, ps);
+      rotDrag = { a, ps, cx: c[0], cy: c[1], a0: Math.atan2(vy - c[1], vx - c[0]), rot0: a.rot || 0 };
+      document.body.classList.add('rotating');
+    } else if (kind === 'move') {
+      beginObjectDrag(a.page, vx, vy, { annot: a, box: handleBox(a, ps.vp) });
+    } else {
+      const h = annotHandles(a, ps.vp).find(x => x.dir === dir) || annotHandles(a, ps.vp)[0];
+      if (h) beginHandleDrag(a.page, vx, vy, { a, h });
+    }
+  };
+  wait();
+}
+window.addEventListener('mouseup', () => {
+  if (!ntResume) return;
+  const id = ntResume; ntResume = null;
+  setTimeout(() => { const a = state.annotations.find(x => x.id === id); if (a) editAnnotText(a); }, 30);   // keep typing at the end
+});
+
+// text added with Add Text grows sideways as you type (no wrapping) until you resize its box yourself, like Acrobat
+function addTextAutoW(a) { return a && a.type === 'textbox' && a.pad === 1 && a.borderW === 0 && !a.fill && !a.userW; }
+function addTextRefit(a) {
+  if (!addTextAutoW(a) || !a.pts || a.pts.length < 2) return;
+  const ps = state.pages[a.page]; if (!ps) return;
+  const fs = a.fontSize || 12, bold = !!a.bold || !!(a.runs || []).some(r => r.s && r.s.bold);
+  const lines = String(a.text || '').split('\n');
+  const w = Math.max(10, ...lines.map(l => textWidth(l, fs, bold, a.family))) * 1.04 + 8;
+  const V = a.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])), x0 = Math.min(V[0][0], V[1][0]), y0 = Math.min(V[0][1], V[1][1]), y1 = Math.max(V[0][1], V[1][1]);
+  const h = Math.max(y1 - y0, (lines.length * fs * 1.2 + 4) * ps.vp.scale), W = w * ps.vp.scale;
+  let nx = x0, ny = y0;
+  if (a.rot) {   // turned: keep its first corner where it is, so the text grows along its own line instead of drifting
+    const t = a.rot * Math.PI / 180, c = Math.cos(t), sn = Math.sin(t), R = (vx, vy) => [c * vx - sn * vy, sn * vx + c * vy];
+    const oldW = Math.abs(V[1][0] - V[0][0]), oldH = y1 - y0, oc = [x0 + oldW / 2, y0 + oldH / 2];
+    const q = R(-oldW / 2, -oldH / 2), Q = [oc[0] + q[0], oc[1] + q[1]];
+    const r2 = R(-W / 2, -h / 2), C2 = [Q[0] - r2[0], Q[1] - r2[1]];
+    nx = C2[0] - W / 2; ny = C2[1] - h / 2;
+  }
+  a.pts = toPdfPts(ps, [[nx, ny], [nx + W, ny + h]]);
+  return [nx - x0, ny - y0];
+}
+const _editAnnotTextAW = editAnnotText;
+editAnnotText = function (a) {
+  const r = _editAnnotTextAW.apply(this, arguments);
+  if (addTextAutoW(a)) Promise.resolve(r).finally(() => { addTextRefit(a); renderPageAnnots(a.page); });
+  return r;
+};
+const _dragSelectedAW = dragSelected;
+dragSelected = function (d, ps, vx, vy, e) {
+  if (d && d.annot && d.annot.type === 'textbox' && d.handle && d.handle.kind === 'b' && Math.hypot(vx - d.start[0], vy - d.start[1]) > 2) d.annot.userW = true;
+  return _dragSelectedAW.apply(this, arguments);
+};
+// …and its outline and handles follow while you type
+document.addEventListener('input', e => {
+  const ed = e.target && e.target.closest && e.target.closest('.inline-editor');
+  if (!ed || typeof activeEditor === 'undefined' || !activeEditor || !activeEditor.annotId) return;
+  const a = state.annotations.find(x => x.id === activeEditor.annotId);
+  if (!addTextAutoW(a)) return;
+  const keep = a.text; a.text = ed.innerText.replace(/\n$/, ''); const sh = addTextRefit(a); a.text = keep;
+  if (sh && (sh[0] || sh[1])) {   // the typing box moves with the box
+    const z = parseFloat(getComputedStyle(ed).zoom) || 1;
+    ed.style.left = (parseFloat(ed.style.left) || 0) + sh[0] / z + 'px'; ed.style.top = (parseFloat(ed.style.top) || 0) + sh[1] / z + 'px';
+  }
+  renderPageAnnots(a.page); if (a.rot) rotSyncEditor(a);
+}, true);
+
+// while typing in text (Edit PDF): pressing on the edge of its box (the ✥ cursor) moves it instead of selecting letters
+window.addEventListener('mousedown', e => {
+  if (e.button !== 0 || typeof activeEditor === 'undefined' || !activeEditor || !activeEditor.annotId) return;
+  const a = state.annotations.find(x => x.id === activeEditor.annotId); if (!a || a.locked) return;
+  const ps = state.pages[a.page]; if (!ps) return;
+  const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top;
+  if (handleAt(a.page, vx, vy)) return;
+  if (typeof rotZoneAt === 'function' && rotZoneAt(a, ps, vx, vy)) return;
+  const b = handleBox(a, ps.vp); if (!b) return;
+  const inBox = vx >= b.x - 7 && vx <= b.x + b.w + 7 && vy >= b.y - 7 && vy <= b.y + b.h + 7;
+  if (!inBox || !onTextEdge(a, ps, vx, vy)) return;
+  e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+  // move it live and keep typing (like Acrobat): the typing box travels with it
+  a._noRevert = true; touchNative(a);
+  const ed = activeEditor.el;
+  edMove = { a, ps, x0: e.clientX, y0: e.clientY, orig: a.pts.map(p => ps.vp.convertToViewportPoint(p[0], p[1])), l0: parseFloat(ed.style.left) || 0, t0: parseFloat(ed.style.top) || 0, ed, moved: false };
+}, true);
+let edMove = null;
+window.addEventListener('mousemove', e => {
+  const m = edMove; if (!m) return;
+  e.preventDefault(); e.stopPropagation();
+  const dx = e.clientX - m.x0, dy = e.clientY - m.y0;
+  if (!m.moved && Math.hypot(dx, dy) < 3) return;
+  m.moved = true;
+  m.a.pts = toPdfPts(m.ps, m.orig.map(([x, y]) => [x + dx, y + dy]));
+  const z = parseFloat(getComputedStyle(m.ed).zoom) || 1;
+  m.ed.style.left = m.l0 + dx / z + 'px'; m.ed.style.top = m.t0 + dy / z + 'px';
+  renderPageAnnots(m.a.page);
+  if (m.a.rot) rotSyncEditor(m.a);
+}, true);
+window.addEventListener('mouseup', () => {
+  const m = edMove; if (!m) return; edMove = null;
+  if (m.moved) { pushHistory(); markDirty(); }
+  try { m.ed.focus({ preventScroll: true }); } catch (e) {}
+}, true);
+// a slightly wider edge band, so the move cursor is easier to catch (like Acrobat's)
+onTextEdge = function (a, ps, vx, vy) {
+  const b = handleBox(a, ps.vp); if (!b) return false;
+  const ex = Math.min(7, b.w / 5), ey = Math.min(6, b.h / 5);
+  return vx < b.x + ex || vx > b.x + b.w - ex || vy < b.y + ey || vy > b.y + b.h - ey;
+};
+
+// going back into text you added (or grabbing its handles) leaves Add Text for the Edit tool, like Acrobat —
+// so the pointer shows move / resize / rotate on the box instead of the text I-beam everywhere
+const _editAnnotTextTL = editAnnotText;
+editAnnotText = function (a) {
+  if (state.activeTool === 'add-text' && state.activeToolGroup === 'edit') setActiveTool('edit-text');
+  return _editAnnotTextTL.apply(this, arguments);
+};
+// the point an object turns about (same one the drawing uses), so grabbing the handle never makes it jump
+function rotPivot(a, ps) {
+  if (a.type === 'text-block' || a.type === 'textbox') return rotStraightCenter(a);
+  if (shapeRot(a)) return rotCenterView(a, ps.vp);
+  return null;
+}
+// the blue line around text you're typing in sits just outside the box: hovering it shows the move cross too
+$('canvas-area').addEventListener('mousemove', e => {
+  if (typeof activeEditor === 'undefined' || !activeEditor || !activeEditor.annotId || state.drag) return;
+  requestAnimationFrame(() => {
+    if (!activeEditor) return; const a = state.annotations.find(x => x.id === activeEditor.annotId); if (!a) return;
+    const ps = state.pages[a.page]; if (!ps) return;
+    const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top;
+    if (handleAt(a.page, vx, vy) || (typeof rotZoneAt === 'function' && rotZoneAt(a, ps, vx, vy))) return;
+    const b = handleBox(a, ps.vp); if (!b) return;
+    const out = 7, inX = vx >= b.x - out && vx <= b.x + b.w + out, inY = vy >= b.y - out && vy <= b.y + b.h + out;
+    if (!inX || !inY) return;
+    const outside = vx < b.x || vx > b.x + b.w || vy < b.y || vy > b.y + b.h;
+    if (outside || onTextEdge(a, ps, vx, vy)) $('canvas-area').style.cursor = 'move';
+  });
+});
 </script>
 </body>
 </html>
