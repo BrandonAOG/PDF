@@ -27697,6 +27697,46 @@ ffThumb = async function () {
     await pg.render({ canvasContext: g, viewport: vp }).promise;
   } catch (e) { console.warn('form thumbnail', e); }
 };
+
+// ================================================================
+//  TABS: nothing from one document leaks into another
+//  (found by testing: "Remove Hidden Information" picks, Rotate View, the measuring scale and an
+//   open tool carried over into the next file; moved drawings were applied twice after switching back)
+// ================================================================
+const TAB_DOC_KEYS = ['sanitize', 'mScale', 'viewRot', 'stripMetadata'];
+const _loadBytesISO = loadBytes;
+loadBytes = async function (bytes, name, opts = {}) {
+  const fresh = !opts.keep && !opts._tabRestore;
+  if (fresh && state.pdfDoc) {
+    // the tool you had open belongs to the document you were in
+    try { if (state.activeToolGroup || state.prepareMode) deactivateContextTool(); } catch (e) {}
+    try { if (typeof setActiveTool === 'function') setActiveTool('select'); } catch (e) {}
+  }
+  if (fresh) {
+    if (state.pdfDoc) { state._prevDocKeys = {}; TAB_DOC_KEYS.forEach(k => { state._prevDocKeys[k] = state[k]; }); }   // the tab being left keeps its own
+    state.sanitize = null; state.mScale = undefined; state.viewRot = 0; state.multiSel = [];
+  }
+  try { return await _loadBytesISO.apply(this, arguments); } finally { state._prevDocKeys = null; }
+};
+const _tabSnapshotISO = tabSnapshot;
+tabSnapshot = async function () {
+  const s = await _tabSnapshotISO.apply(this, arguments);
+  if (!s) return s;
+  // moved / deleted drawings are already written into the saved bytes: don't apply them a second time
+  s.annotations = (s.annotations || []).filter(a => a.type !== 'page-path');
+  const src = state._prevDocKeys || state;
+  s.docKeys = {}; TAB_DOC_KEYS.forEach(k => { const v = src[k]; s.docKeys[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; });
+  return s;
+};
+const _tabRestoreISO = tabRestore;
+tabRestore = async function (t) {
+  const keys = t && t.snap && t.snap.docKeys;
+  try { if (state.activeToolGroup || state.prepareMode) deactivateContextTool(); } catch (e) {}
+  state.multiSel = [];
+  const r = await _tabRestoreISO.apply(this, arguments);
+  if (keys) TAB_DOC_KEYS.forEach(k => { state[k] = keys[k]; });
+  return r;
+};
 </script>
 </body>
 </html>
