@@ -27724,6 +27724,8 @@ tabSnapshot = async function () {
   if (!s) return s;
   // moved / deleted drawings are already written into the saved bytes: don't apply them a second time
   s.annotations = (s.annotations || []).filter(a => a.type !== 'page-path');
+  // pictures this tab added or replaced (their pixels live in the picture cache, which is per document)
+  s.imgCache = {}; (s.annotations || []).forEach(a => { [a.newImg, a.imgKey].forEach(k => { if (k && state.imgCache && state.imgCache[k]) s.imgCache[k] = state.imgCache[k]; }); });
   const src = state._prevDocKeys || state;
   s.docKeys = {}; TAB_DOC_KEYS.forEach(k => { const v = src[k]; s.docKeys[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; });
   return s;
@@ -27733,6 +27735,8 @@ tabRestore = async function (t) {
   const keys = t && t.snap && t.snap.docKeys;
   try { if (state.activeToolGroup || state.prepareMode) deactivateContextTool(); } catch (e) {}
   state.multiSel = [];
+  // the picture cache belongs to the document on screen: never reuse another tab's pictures (same page/position keys)
+  state.imgCache = { ...((t && t.snap && t.snap.imgCache) || {}) };
   const r = await _tabRestoreISO.apply(this, arguments);
   if (keys) TAB_DOC_KEYS.forEach(k => { state[k] = keys[k]; });
   return r;
