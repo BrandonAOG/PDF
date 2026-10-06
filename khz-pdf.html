@@ -1803,6 +1803,14 @@
   #canvas-area.tool-text-select .textLayer, #canvas-area.tool-text-select .textLayer span { -webkit-user-select:text; user-select:text; }
   img, svg, a, button { -webkit-user-drag:none; }
   [draggable="true"] { -webkit-user-drag:element; }
+
+  /* Organize › Insert Pages dialog */
+  .ovi { display:flex; flex-direction:column; gap:12px; font-size:13px; }
+  .ovi-row { display:flex; align-items:center; gap:12px; } .ovi-l { width:78px; }
+  .ovi-file { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ovi-loc { min-width:180px; padding:3px 4px; }
+  .ovi-grp { border:1px solid #d6d6d6; border-radius:3px; padding:6px 18px 12px; display:flex; flex-direction:column; gap:12px; }
+  .ovi-grp label { display:flex; align-items:center; gap:8px; } .ovi-n { width:56px; padding:3px 4px; }
 </style>
 </head>
 <body>
@@ -26257,6 +26265,172 @@ window.addEventListener('contextmenu', e => {
 // after a crop the page shows right away at the same zoom; let the person know how to finish
 const _cropStartTip = cropStart;
 cropStart = function () { const r = _cropStartTip.apply(this, arguments); if (crop.on) toast('Drag a rectangle on the page, then double-click inside it (or right-click › Crop to Selection). Esc to stop.'); return r; };
+
+// ================================================================
+//  ORGANIZE PAGES › INSERT like Acrobat:
+//  From File… (Shift+Ctrl+I), From Clipboard…, From Scanner…, From Web Page…, Blank Page… (Shift+Ctrl+T)
+//  each one asks where the pages go: Location Before/After, Page First/Last/Page n of N
+// ================================================================
+const OVI_IC = {
+  file: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3 4h14M3 16h14M6 7h8v6H6z"/><path d="M10 8.5v3M8.5 10h3"/></svg>',
+  clip: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 3.5h6v2H7zM6 4.5H4.5v13h7M14 4.5h1.5V9"/><path d="M10 10h7v7.5h-7z"/></svg>',
+  scan: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M5 3h7l3 3v4M5 3v14h5"/><path d="M2.5 13h15M12 15.5h5v2h-5z"/></svg>',
+  web: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c-3 3.5-3 10.5 0 14M10 3c3 3.5 3 10.5 0 14"/></svg>',
+  blank: '<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 2.5h8l3 3V17.5H4z"/><path d="M11.5 2.5V6H15"/></svg>',
+};
+const OVI_KEY = s => (typeof IS_MAC !== 'undefined' && IS_MAC) ? s.replace('Shift+Ctrl+', '⇧⌘') : s;
+
+// "Insert Pages": where should the new pages go?  resolves to an index in the page list, or null
+function ovInsertWhere(label) {
+  const ov = state.ov, N = ov.items.length, idx = ovSelIdx();
+  const cur = idx.length ? Math.max(...idx) + 1 : N;
+  return new Promise(resolve => {
+    let done = false; const fin = v => { if (!done) { done = true; resolve(v); } };
+    const dlg = esDialog('ovi-ov', 'Insert Pages', `<div class="ovi">
+        <div class="ovi-row"><span class="ovi-l">Insert File:</span><span class="ovi-file">${escapeHtml(label)}</span></div>
+        <div class="ovi-row"><span class="ovi-l">Location:</span><select class="ovi-loc"><option value="after">After</option><option value="before">Before</option></select></div>
+        <fieldset class="ovi-grp"><legend>Page</legend>
+          <label><input type="radio" name="ovi-p" value="first"> First</label>
+          <label><input type="radio" name="ovi-p" value="last"> Last</label>
+          <label><input type="radio" name="ovi-p" value="page" checked> Page: <input type="number" class="ovi-n" min="1" max="${N}" value="${Math.max(1, Math.min(N, cur))}"> of ${N}</label>
+        </fieldset></div>`, [
+      { label: 'OK', primary: true, run: d => {
+        const loc = d.querySelector('.ovi-loc').value, p = d.querySelector('[name=ovi-p]:checked').value;
+        let n = p === 'first' ? 1 : p === 'last' ? N : parseInt(d.querySelector('.ovi-n').value, 10);
+        if (!(n >= 1 && n <= N)) { alert(`Enter a page number from 1 to ${N}.`); return false; }
+        fin(loc === 'before' ? n - 1 : n);
+      } },
+      { label: 'Cancel', run: () => fin(null) }], 380);
+    dlg.querySelector('.ovi-n').addEventListener('focus', () => { dlg.querySelector('[name=ovi-p][value=page]').checked = true; });
+    dlg.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); dlg.querySelector('.ap-ok').click(); } });
+    new MutationObserver((m, o) => { if (!dlg.isConnected) { o.disconnect(); fin(null); } }).observe(document.body, { childList: true });
+  });
+}
+
+// pictures (scans, photos, screenshots) become PDF pages
+async function oviImageToExt(blob, name) {
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  const png = /png/i.test(blob.type), jpg = /jpe?g/i.test(blob.type);
+  const bytes = jpg || png ? new Uint8Array(await blob.arrayBuffer()) : new Uint8Array(await (await new Promise(r => c.toBlob(r, 'image/png'))).arrayBuffer());
+  const doc = await PDFLib.PDFDocument.create();
+  const img = jpg ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+  const dpi = Math.max(bmp.width, bmp.height) > 1700 ? 200 : 96, k = 72 / dpi;
+  const w = bmp.width * k, h = bmp.height * k;
+  const pg = doc.addPage([w, h]); pg.drawImage(img, { x: 0, y: 0, width: w, height: h });
+  const out = await doc.save();
+  return { name: name || 'Picture', bytes: out, lib: await PDFLib.PDFDocument.load(out) };
+}
+async function oviFilesToExts(files) {
+  const exts = [];
+  for (const f of files) {
+    if (/^image\//.test(f.type) || /\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(f.name)) { try { exts.push(await oviImageToExt(f, f.name)); } catch (e) { alert(`"${f.name}" couldn't be added: ${e.message}`); } }
+    else { const x = await loadExternalPdf(f); if (x) exts.push(x); }
+  }
+  return exts;
+}
+function oviAdd(exts, at) {
+  const ov = state.ov;
+  const added = exts.flatMap(ext => ext.lib.getPages().map((_, i) => ({ src: 'ext', lib: ext.lib, bytes: ext.bytes, name: ext.name, idx: i, rot: 0, key: uid('o') })));
+  if (!added.length) return;
+  ovPush(); ov.items.splice(at, 0, ...added); ov.sel = new Set(added.map(it => it.key)); ovRender();
+  toast(`Inserted ${added.length} page${added.length > 1 ? 's' : ''}.`);
+}
+
+// From File…
+ovInsertFromFile = async function () {
+  if (!requirePdfLib()) return;
+  const files = await pickFiles(true, '.pdf,application/pdf,image/*');
+  if (!files.length) return;
+  const at = await ovInsertWhere(files.length === 1 ? files[0].name : `${files.length} files`); if (at == null) return;
+  showLoading(true, 'Inserting pages...');
+  try { oviAdd(await oviFilesToExts(files), at); } finally { showLoading(false); }
+};
+// From Clipboard…: pages you copied here, or a picture copied from another app
+async function ovInsertFromClipboard() {
+  const ov = state.ov;
+  if (ov.clip && ov.clip.length) {
+    const at = await ovInsertWhere(`${ov.clip.length} copied page${ov.clip.length > 1 ? 's' : ''}`); if (at == null) return;
+    ovPush(); const add = ov.clip.map(it => ({ ...it, key: uid('o') })); ov.items.splice(at, 0, ...add); ov.sel = new Set(add.map(it => it.key)); ovRender(); return;
+  }
+  let blob = null;
+  try {
+    for (const item of await navigator.clipboard.read()) { const t = item.types.find(x => /^image\//.test(x)); if (t) { blob = await item.getType(t); break; } }
+  } catch (e) {}
+  if (!blob) { toast('The clipboard has no page or picture. Copy a page here (Ctrl+C) or copy a picture in another app first.'); return; }
+  const at = await ovInsertWhere('Clipboard picture'); if (at == null) return;
+  try { oviAdd([await oviImageToExt(blob, 'Clipboard')], at); } catch (e) { alert('The picture on the clipboard couldn’t be added: ' + e.message); }
+}
+// From Scanner…: browsers can't talk to scanners, so scan with the scanner's own app, then pick the scan
+async function ovInsertFromScanner() {
+  const go = await new Promise(res => {
+    esDialog('ovs-ov', 'Insert From Scanner', `<div class="es-note">Web apps can’t control a scanner directly. Scan with your scanner’s app (or Windows Fax and Scan / Image Capture on a Mac), then choose the scanned PDF or picture here.</div>`,
+      [{ label: 'Choose Scanned File…', primary: true, run: () => res(true) }, { label: 'Cancel', run: () => res(false) }], 440);
+  });
+  if (go) ovInsertFromFile();
+}
+// From Web Page…: a link to a PDF or a picture
+function ovInsertFromWeb() {
+  esDialog('ovw-ov', 'Insert From Web Page', `<div class="es-note">Enter the address of a PDF or a picture on the web.</div>
+    <input type="url" class="ovw-url" placeholder="https://" style="width:100%;margin-top:8px">`, [
+    { label: 'Insert', primary: true, run: async d => {
+      const url = d.querySelector('.ovw-url').value.trim(); if (!/^https?:\/\//i.test(url)) { alert('Enter a web address that starts with http:// or https://'); return false; }
+      showLoading(true, 'Downloading...');
+      let blob;
+      try { const r = await fetch(url); if (!r.ok) throw new Error('the site answered ' + r.status); blob = await r.blob(); }
+      catch (e) { showLoading(false); alert('That page couldn’t be downloaded. Many sites don’t let other web apps download from them, and web pages (not PDFs) can’t be turned into PDF pages here — save the page as a PDF in your browser (Print › Save as PDF) and use From File instead.'); return false; }
+      showLoading(false);
+      const name = decodeURIComponent(url.split('/').pop().split('?')[0] || 'Web page');
+      let ext = null;
+      try {
+        if (/^image\//.test(blob.type)) ext = await oviImageToExt(blob, name);
+        else { const bytes = new Uint8Array(await blob.arrayBuffer()); ext = { name, bytes, lib: await PDFLib.PDFDocument.load(bytes) }; }
+      } catch (e) { alert('That address isn’t a PDF or a picture. Save the web page as a PDF in your browser (Print › Save as PDF), then use From File.'); return false; }
+      setTimeout(async () => { const at = await ovInsertWhere(name); if (at != null) oviAdd([ext], at); }, 0);
+    } },
+    { label: 'Cancel' }], 460);
+}
+// Blank Page…
+const _ovInsertBlankOVI = ovInsertBlank;
+ovInsertBlank = async function (where) {
+  const at = await ovInsertWhere('Blank page'); if (at == null) return;
+  const ov = state.ov, ref = ov.items[Math.max(0, Math.min(ov.items.length - 1, at - 1))];
+  const sz = ref ? ovItemSize(ref) : { w: 612, h: 792 };
+  ovPush(); const it = { src: 'blank', w: sz.w, h: sz.h, rot: 0, key: uid('o') };
+  ov.items.splice(at, 0, it); ov.sel = new Set([it.key]); ovRender();
+};
+ovInsertMenu = function (btn) {
+  const r = btn.getBoundingClientRect();
+  openCtxMenu(r.left, r.bottom + 2, [
+    { icon: OVI_IC.file, label: 'From File...', key: OVI_KEY('Shift+Ctrl+I'), action: () => ovInsertFromFile() },
+    { icon: OVI_IC.clip, label: 'From Clipboard...', action: ovInsertFromClipboard },
+    { icon: OVI_IC.scan, label: 'From Scanner...', action: ovInsertFromScanner },
+    { icon: OVI_IC.web, label: 'From Web Page...', action: ovInsertFromWeb },
+    { icon: OVI_IC.blank, label: 'Blank Page...', key: OVI_KEY('Shift+Ctrl+T'), action: () => ovInsertBlank() },
+  ]);
+};
+// shortcuts while organizing
+document.addEventListener('keydown', e => {
+  if (!state.ov || !state.ov.open || !(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'i') { e.preventDefault(); e.stopPropagation(); ovInsertFromFile(); }
+  else if (k === 't') { e.preventDefault(); e.stopPropagation(); ovInsertBlank(); }
+}, true);
+
+// the page box in the toolbar shows which pages are picked (like Acrobat's "4")
+const _ovSyncToolbarOVI = ovSyncToolbar;
+ovSyncToolbar = function () {
+  const r = _ovSyncToolbarOVI.apply(this, arguments);
+  const sel = document.querySelector('#ctx-content .ov-range'); if (!sel || !state.ov) return r;
+  const nums = ovSelIdx().map(i => i + 1).sort((a, b) => a - b);
+  const runs = []; nums.forEach(n => { const l = runs[runs.length - 1]; if (l && n === l[1] + 1) l[1] = n; else runs.push([n, n]); });
+  const txt = runs.map(([a, b]) => a === b ? a : `${a}-${b}`).join(', ');
+  sel.options[0].textContent = txt || 'Select pages…';
+  if (txt && !['all', 'even', 'odd', 'landscape', 'portrait'].includes(sel.value)) sel.value = '';
+  return r;
+};
 </script>
 </body>
 </html>
