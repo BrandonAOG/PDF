@@ -4054,7 +4054,7 @@ function placePointAnnot(tool, n, vx, vy) {
   } else if (tool === 'add-text') {
     inlineEdit(ps, { x: vx, y: vy, size: 12 * state.scale, text: '', multiline: true }).then(txt => {
       if (!txt || !txt.trim()) return;
-      a.type = 'textbox'; a.text = txt; a.color = '#000000'; a.fill = null; a.borderW = 0; a.pad = 1; applyTextDefaults(a); if (lastEditorRuns && lastEditorRuns.text === txt) setRichText(a, txt, lastEditorRuns.styles);
+      a.type = 'textbox'; a.text = txt; a.color = '#000000'; a.fill = null; a.borderW = 0; a.pad = 1; a.editAdded = state.activeToolGroup === 'edit'; applyTextDefaults(a); if (lastEditorRuns && lastEditorRuns.text === txt) setRichText(a, txt, lastEditorRuns.styles);
       // size the box to the text
       const lines = txt.split('\n'), w = Math.max(...lines.map(l => textWidth(l, 12))) + 6, h = lines.length * 14.4 + 4;
       a.pts = toPdfPts(ps, [[vx - state.scale, vy - state.scale], [vx + w * state.scale, vy + h * state.scale]]);
@@ -27739,6 +27739,26 @@ tabRestore = async function (t) {
   state.imgCache = { ...((t && t.snap && t.snap.imgCache) || {}) };
   const r = await _tabRestoreISO.apply(this, arguments);
   if (keys) TAB_DOC_KEYS.forEach(k => { state[k] = keys[k]; });
+  return r;
+};
+
+// ================================================================
+//  EDIT PDF picks only page content (text, pictures, drawings, links, text/pictures added here),
+//  like Acrobat — comments and markups can't be grabbed while editing the page
+// ================================================================
+const EDIT_PICKABLE = a => a && (['text-block', 'page-image', 'page-path', 'text-edit', 'link'].includes(a.type)
+  || (a.type === 'textbox' && !a.native && (a.editAdded || (a.editAdded === undefined && a.pad === 1 && a.borderW === 0 && !a.fill))));
+const _hitTestEDIT = hitTest;
+hitTest = function (n) {
+  if (state.activeToolGroup !== 'edit' || state.prepareMode) return _hitTestEDIT.apply(this, arguments);
+  const all = state.annotations, keep = all.filter(a => a.page !== n || EDIT_PICKABLE(a)), keepSet = new Set(keep);
+  if (keep.length === all.length) return _hitTestEDIT.apply(this, arguments);
+  state.annotations = keep;
+  let r;
+  try { r = _hitTestEDIT.apply(this, arguments); } finally {
+    const allSet = new Set(all), added = state.annotations.filter(a => !keepSet.has(a) && !allSet.has(a));   // e.g. a drawing picked for the first time
+    state.annotations = all; if (added.length) all.push(...added);
+  }
   return r;
 };
 </script>
