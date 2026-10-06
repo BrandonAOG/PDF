@@ -21740,7 +21740,10 @@ dpApply = function (doc) {
 //  Drag it to turn the picture to any angle (hold Shift for 15° steps). Saved into the page.
 // ================================================================
 const ROT_ICON = '<path d="M12.5 5.2A5 5 0 1 0 13 9" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 2.8l2.4 2.5-2.9 1.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
-const rotable = a => a && (a.type === 'page-image' || a.type === 'text-block');
+const SHAPE_ROT = ['rectangle', 'ellipse', 'polygon', 'cloud'];
+const shapeRot = a => a && (SHAPE_ROT.includes(a.type) || (a.type === 'polyline' && a.closed));
+// pictures and text turn in Edit PDF; rectangles, ovals, polygons and clouds turn with any tool
+const rotable = a => a && ((state.activeToolGroup === 'edit' && (a.type === 'page-image' || a.type === 'text-block' || a.type === 'textbox')) || shapeRot(a));
 function rotMatrixView(deg, cx, cy) {
   const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
   return [c, s, -s, c, cx - (c * cx - s * cy), cy - (s * cx + c * cy)];
@@ -21794,7 +21797,7 @@ function rotHandlePos(a, vp) {
 const _drawSelectionRT = drawSelection;
 drawSelection = function (a, vp, g) {
   const r = _drawSelectionRT.apply(this, arguments);
-  if (!rotable(a) || state.activeToolGroup !== 'edit' || (a.locked)) return r;
+  if (!rotable(a) || (a.locked)) return r;
   const h = rotHandlePos(a, vp); if (!h) return r;
   svgEl('line', { x1: h.x, y1: h.top, x2: h.x, y2: h.below ? h.y - 8 : h.y + 8, stroke: '#1473e6', 'stroke-width': 1.2 }, g);
   svgEl('circle', { cx: h.x, cy: h.y, r: 8, fill: '#1473e6', stroke: '#fff', 'stroke-width': 1.2 }, g);
@@ -21803,7 +21806,7 @@ drawSelection = function (a, vp, g) {
 };
 let rotDrag = null;
 window.addEventListener('mousedown', e => {
-  if (e.button !== 0 || state.activeToolGroup !== 'edit') return;
+  if (e.button !== 0) return;
   const a = state.annotations.find(x => x.id === state.selectedId); if (!rotable(a) || a.locked) return;
   const ps = state.pages[a.page]; if (!ps) return;
   const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top, h = rotHandlePos(a, ps.vp);
@@ -21838,7 +21841,7 @@ function rotTip(e, deg) {
 }
 // hovering the handle shows the rotate cursor
 window.addEventListener('mousemove', e => {
-  if (rotDrag || state.activeToolGroup !== 'edit') return;
+  if (rotDrag) return;
   const a = state.annotations.find(x => x.id === state.selectedId), ps = a && state.pages[a.page];
   if (!rotable(a) || !ps) { document.body.classList.remove('rot-hover'); return; }
   const r = ps.wrapper.getBoundingClientRect(), h = rotHandlePos(a, ps.vp);
@@ -25557,6 +25560,45 @@ document.addEventListener('keydown', e => {
   const t = e.target; if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return;
   e.preventDefault(); addBookmarkHere(state.currentPage);
 });
+// ================================================================
+//  TURNING shapes and added text: rectangles, ovals, polygons and clouds get the round ↻ handle
+//  (any tool), text added in Edit PDF too. Saved so Acrobat shows them turned as well.
+// ================================================================
+function rotCenterView(a, vp) {
+  const P = (a.pts || []).map(p => vp.convertToViewportPoint(p[0], p[1]));
+  const b = bboxOf(P); return [b.x + b.w / 2, b.y + b.h / 2];
+}
+const _annotGeometryROT = annotGeometry;
+annotGeometry = function (a, vp, forPdf) {
+  const prims = _annotGeometryROT.apply(this, arguments);
+  if (!a || !a.rot || !prims || !prims.length || !a.pts || !a.pts.length) return prims;
+  const isShape = shapeRot(a), isText = a.type === 'textbox';
+  if (!isShape && !isText) return prims;
+  if (isText && state.editingId === a.id) return prims;          // straight while typing
+  const [cx, cy] = rotCenterView(a, vp), M = rotMatrixView(a.rot, cx, cy);
+  if (isShape && prims.every(p => p.pts && (p.k === 'poly' || p.k === 'line'))) {
+    return prims.map(p => ({ ...p, pts: p.pts.map(([x, y]) => mApply(M, x, y)) }));
+  }
+  const b = bboxOf(prims.map(primBBox).flatMap(q => [[q.x, q.y], [q.x + q.w, q.y + q.h]]));
+  const bb = bboxOf([[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([x, y]) => mApply(M, x, y)));
+  return [{ k: 'group', m: M, prims: prims.map(p => ({ ...p, main: false })), main: true, x: bb.x, y: bb.y, w: bb.w, h: bb.h }];
+};
+// saving: a turned rectangle / oval / polygon / cloud is written as a polygon with its turned corners
+const _writeNativeAnnotROT = writeNativeAnnot;
+writeNativeAnnot = async function (doc, lp, a, vp1, rot, tmp, mainCtx) {
+  if (!a || !a.rot || !shapeRot(a)) return _writeNativeAnnotROT.apply(this, arguments);
+  const V = a.pts.map(p => vp1.convertToViewportPoint(p[0], p[1])), b = bboxOf(V);
+  let outline;
+  if (a.type === 'rectangle' || a.type === 'cloud') outline = rectPts(b);
+  else if (a.type === 'ellipse') outline = ellipsePts(b, 48);
+  else if (a.type === 'polygon') outline = polygonPts(b);
+  else outline = V;
+  const [cx, cy] = [b.x + b.w / 2, b.y + b.h / 2], M = rotMatrixView(a.rot, cx, cy);
+  const pts = outline.map(([x, y]) => mApply(M, x, y)).map(([x, y]) => vp1.convertToPdfPoint(x, y));
+  const cloud = a.type === 'cloud' ? (a.cloud === undefined ? 1 : a.cloud) : a.cloud;
+  const b2 = { ...a, type: 'polyline', closed: true, pts, rot: 0, cloud: cloud || undefined, subject: a.subject || (typeof subjectOf === 'function' ? subjectOf(a) : undefined) };
+  return _writeNativeAnnotROT.call(this, doc, lp, b2, vp1, rot, tmp, mainCtx);
+};
 </script>
 </body>
 </html>
