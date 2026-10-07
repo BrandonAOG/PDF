@@ -29272,13 +29272,17 @@ function syncStarBtn() {
     .home-rec .hr-star { width:28px; text-align:center; color:#777; } .home-rec .hr-star.on { color:#f5b400; } .home-rec .hr-empty { color:#888; padding:10px 8px; }`;
   document.head.appendChild(st);
 })();
+let khzHrGen = 0;
 const _showToolsCenterHR = showToolsCenter;
 showToolsCenter = function (home) {
   const r = _showToolsCenterHR.apply(this, arguments);
   if (!home) return r;
   const tc = $('tools-center'); if (!tc) return r;
+  const gen = ++khzHrGen;   // Home can be drawn twice in a row (closing a file): only the latest one adds the list
   recentList().then(list => {
+    if (gen !== khzHrGen) return;
     if (!tc.classList.contains('show') || !$('tab-home').classList.contains('on')) return;
+    tc.querySelectorAll('.home-rec').forEach(x => x.remove());
     const ago = d => { const s = (Date.now() - d) / 1000; return s < 60 ? 'Just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' hours ago' : new Date(d).toLocaleDateString(); };
     const kb = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
     const star = starredList();
@@ -34055,6 +34059,60 @@ tcShare = async function () {
   });
 };
 (function () { const st = document.createElement('style'); st.textContent = `.ksh{display:flex;flex-direction:column;gap:8px}.ksh-b{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:8px 10px;gap:2px}.ksh-b span{font-size:12px;opacity:.75}`; document.head.appendChild(st); })();
+// ================================================================
+//  Q18: Organize Pages applies each change to the document straight away (like Acrobat).
+//  Undo / Redo inside Organize step through those applied changes.
+// ================================================================
+const khzOv = { timer: null, busy: false, undo: [], redo: [] };
+function khzOvSchedule() {
+  clearTimeout(khzOv.timer);
+  khzOv.timer = setTimeout(khzOvApply, 300);
+}
+async function khzOvApply() {
+  const ov = state.ov; if (!ov || !ov.open || !ov.changed) return;
+  if (khzOv.busy) { khzOvSchedule(); return; }
+  khzOv.busy = true;
+  try {
+    const items = ov.items, selIdx = items.map((it, i) => ov.sel.has(it.key) ? i : -1).filter(i => i >= 0);
+    const rotOnly = !ovIsIdentity(items) && ovRotOnly(items), rots = rotOnly ? items.map(it => ((it.rot % 360) + 360) % 360) : null;
+    const before = state.docUndo ? state.docUndo.length : 0;
+    await ovCommit();
+    if (rotOnly) khzOv.undo.push({ kind: 'rot', rots });
+    else if (state.docUndo && state.docUndo.length > before) khzOv.undo.push({ kind: 'doc' });
+    khzOv.redo = [];
+    // keep the same pages selected
+    const nv = state.ov; if (nv && nv.open) { nv.sel = new Set(selIdx.filter(i => i < nv.items.length).map(i => nv.items[i].key)); ovRender(); }
+  } catch (e) { console.warn('organize apply', e); }
+  finally { khzOv.busy = false; }
+}
+function khzOvReopen() { const ov = state.ov; if (!ov || !ov.open) return; const size = ov.size, multi = ov.multi; ovInit(); state.ov.size = size; state.ov.multi = multi; state.ov.open = true; ovRender(); }
+async function khzOvStep(from, to, undo) {
+  const e = from.pop(); if (!e) return false;
+  if (e.kind === 'rot') {
+    e.rots.forEach((r, i) => { const n = (undo ? (360 - r) : r) % 360 / 90; for (let k = 0; k < n; k++) rotatePage('cw', i + 1); });
+  } else {
+    const ok = undo ? await khzDocSwap(state.docUndo, state.docRedo) : await khzDocSwap(state.docRedo, state.docUndo);
+    if (!ok) return false;
+  }
+  to.push(e); markDirty(); khzOvReopen(); return true;
+}
+{
+  const _r = ovRender;
+  ovRender = function () { const r = _r.apply(this, arguments); if (state.ov && state.ov.open && state.ov.changed) khzOvSchedule(); return r; };
+  const _u = ovUndo, _rd = ovRedo;
+  ovUndo = async function () {
+    if (state.ov && state.ov.changed && state.ov.hist.length) { clearTimeout(khzOv.timer); return _u.apply(this, arguments); }   // a change not applied yet
+    while (khzOv.busy) await new Promise(r => setTimeout(r, 50));
+    if (!(await khzOvStep(khzOv.undo, khzOv.redo, true))) toast('Nothing to undo.');
+  };
+  ovRedo = async function () {
+    if (state.ov && state.ov.future.length) return _rd.apply(this, arguments);
+    while (khzOv.busy) await new Promise(r => setTimeout(r, 50));
+    if (!(await khzOvStep(khzOv.redo, khzOv.undo, false))) toast('Nothing to redo.');
+  };
+  // a new document starts with a clean Organize history
+  const _lb = loadBytes; loadBytes = async function (bytes, name, opts = {}) { if (!opts || !opts.keep) { khzOv.undo = []; khzOv.redo = []; } return _lb.apply(this, arguments); };
+}
 </script>
 </body>
 </html>
