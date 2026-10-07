@@ -35545,6 +35545,26 @@ const khzTcDone = {};
     } catch (err) { return prims; }
   };
 }
+// ================================================================
+//  Sideways scrolling
+//  • Shift + mouse wheel scrolls the pages left/right in every browser (some only do it on some systems)
+//  • a sideways trackpad swipe (Mac) scrolls the pages; when there's nothing more to scroll it does nothing
+//    instead of making the browser go Back/Forward and leave the document
+// ================================================================
+(() => {
+  const canX = (el, dx) => { for (let n = el; n && n !== document.documentElement; n = n.parentElement) { if (n.nodeType !== 1) continue; const cs = getComputedStyle(n); if (!/(auto|scroll)/.test(cs.overflowX) || n.scrollWidth <= n.clientWidth + 1) continue; if (dx < 0 ? n.scrollLeft > 0 : n.scrollLeft < n.scrollWidth - n.clientWidth - 1) return n; } return null; };
+  window.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) return;   // zoom is handled elsewhere
+    const area = $('canvas-area');
+    // Shift + an up/down wheel: turn it into sideways scrolling of the pages
+    if (e.shiftKey && !e.deltaX && e.deltaY && area && area.contains(e.target)) {
+      const px = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaMode === 2 ? e.deltaY * area.clientWidth : e.deltaY;
+      area.scrollLeft += px; e.preventDefault(); return;
+    }
+    // sideways swipe with nothing left to scroll that way: swallow it (no Back / Forward page swipe)
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && e.deltaX && !canX(e.target, e.deltaX)) e.preventDefault();
+  }, { passive: false, capture: true });
+})();
 </script>
 </body>
 </html>
