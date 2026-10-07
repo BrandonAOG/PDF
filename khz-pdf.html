@@ -2989,8 +2989,9 @@ async function loadBytes(bytes, name, opts = {}) {
       standardFontDataUrl: PDFJS_BASE + 'standard_fonts/',
     });
     task.onPassword = (update, reason) => {
-      const pw = prompt(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'This PDF is password protected. Enter the password:');
-      if (pw === null) task.destroy(); else update(pw);
+      showLoading(false);
+      khzAsk(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD ? 'Incorrect password. Try again:' : 'This PDF is password protected. Enter the password:', '', { title: 'Password', password: true })
+        .then(pw => { if (pw === null) task.destroy(); else { showLoading(true, 'Loading PDF...'); update(pw); } });
     };
     pdf = await task.promise;
   } catch (e) {
@@ -6449,7 +6450,7 @@ async function editAnnotText(a, opt = {}) {
     return;
   }
   if (a.type === 'sticky' || a.type === 'stamp') {
-    const txt = prompt('Edit text:', a.text);
+    const txt = await khzAsk('Edit text:', a.text);
     if (txt === null || txt === a.text) return;
     if (!txt.trim()) { deleteAnnot(a.id); return; }
     touchNative(a);
@@ -6780,9 +6781,9 @@ function showBackground() { if (!requireDoc()) return; openModal('modal-backgrou
 function showShareLink() {
   alert('Share links need a cloud account, which this browser version doesn\'t have.\n\nUse File > Save to download the PDF, then share the file (or use Send for Comments to start an email).');
 }
-function showSanitize() {
+async function showSanitize() {
   if (!requireDoc()) return;
-  if (!confirm('Sanitize will remove document metadata (title, author, subject, keywords, creator) and all file attachments when you next save. Continue?')) return;
+  if (!await khzConfirm('Sanitize will remove document metadata (title, author, subject, keywords, creator) and all file attachments when you next save. Continue?')) return;
   state.stripMetadata = true;
   state.meta = { title: '', author: '', subject: '', keywords: '' };
   state.attachments = [];
@@ -7089,7 +7090,7 @@ function handleWriteError(e) {
 async function savePDF(nameOverride) {
   if (!requireDoc()) return;
   const pending = state.annotations.filter(a => a.type === 'redact-area').length;
-  if (pending && !confirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return;
+  if (pending && !await khzConfirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return;
   const name = nameOverride || state.fileName || 'document.pdf';
   showLoading(true, 'Saving...');
   try {
@@ -7615,7 +7616,7 @@ async function applyPageOp() {
     const del = parsePageRange($('po-range').value, N);
     if (!del.length) { alert('Enter a valid page range.'); return; }
     if (del.length >= N) { alert('You can\'t delete every page of the document.'); return; }
-    if (!confirm(`Delete ${del.length} page(s): ${del.join(', ')}?`)) return;
+    if (!await khzConfirm(`Delete ${del.length} page(s): ${del.join(', ')}?`)) return;
     closeModal('modal-pages');
     await rebuildDocument(curItems().filter(it => !del.includes(it.page)), state.fileName, Math.min(del[0], N - del.length));
     toast(`Deleted ${del.length} page(s).`);
@@ -7796,7 +7797,7 @@ async function applySplit() {
     uniq.forEach((s, i) => { const e = (uniq[i + 1] || N + 1) - 1; if (e >= s) groups.push(Array.from({ length: e - s + 1 }, (_, k) => s + k)); });
   }
   if (groups.length < 2) { alert('That setting would produce only one file — nothing to split.'); return; }
-  if (groups.length > 15 && !confirm(`This will download ${groups.length} separate files. Continue?`)) return;
+  if (groups.length > 15 && !await khzConfirm(`This will download ${groups.length} separate files. Continue?`)) return;
   closeModal('modal-split');
   showLoading(true, 'Splitting...');
   try {
@@ -7885,7 +7886,7 @@ async function applyAllRedactions() {
   const marks = state.annotations.filter(a => a.type === 'redact-area');
   if (!marks.length) { alert('Nothing is marked for redaction yet.\n\nUse "Mark Area for Redaction" (drag over the content) or "Find & Redact Text" first.'); return; }
   const pages = [...new Set(marks.map(a => a.page))].sort((a, b) => a - b);
-  if (!confirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Redacted pages are converted to images, so their text will no longer be selectable or searchable.`)) return;
+  if (!await khzConfirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Redacted pages are converted to images, so their text will no longer be selectable or searchable.`)) return;
   closeModal('modal-redact');
   showLoading(true, 'Applying redactions...');
   try {
@@ -8219,7 +8220,7 @@ async function applyEncryption() {
   if (userPw && ownerPw && userPw === ownerPw) { alert('The Open password and the Permissions password must be different.'); return; }
   const perms = { print: $('enc-p-print').checked, edit: $('enc-p-edit').checked, copy: $('enc-p-copy').checked, access: $('enc-p-access').checked };
   const restricted = !(perms.print && perms.edit && perms.copy && perms.access);
-  if (restricted && !ownerPw && !confirm('Without a Permissions password, the restrictions you unchecked can\'t be enforced (anyone who opens the file can change them).\n\nContinue anyway?')) return;
+  if (restricted && !ownerPw && !await khzConfirm('Without a Permissions password, the restrictions you unchecked can\'t be enforced (anyone who opens the file can change them).\n\nContinue anyway?')) return;
   if (!crypto || !crypto.subtle) { alert('This browser doesn\'t allow encryption on this page. Open the editor in Chrome, Edge or Firefox.'); return; }
   state.security = { userPw, ownerPw, perms };
   closeModal('modal-encrypt');
@@ -8483,7 +8484,7 @@ async function signAndSave(opts, place) {
     });
     p7.sign({ detached: true });
     let p7asn = p7.toAsn1();
-    if (typeof khzAddSigTimestamp === 'function' && typeof khzTsaUrl === 'function' && khzTsaUrl()) { try { p7asn = await khzAddSigTimestamp(forge, p7.toAsn1()); } catch (e) { if (!confirm(e.message + '\n\nSign without a time stamp?')) throw new Error('Signing cancelled.'); p7asn = p7.toAsn1(); } }
+    if (typeof khzAddSigTimestamp === 'function' && typeof khzTsaUrl === 'function' && khzTsaUrl()) { try { p7asn = await khzAddSigTimestamp(forge, p7.toAsn1()); } catch (e) { if (!await khzConfirm(e.message + '\n\nSign without a time stamp?')) throw new Error('Signing cancelled.'); p7asn = p7.toAsn1(); } }
     const hex = forge.util.bytesToHex(forge.asn1.toDer(p7asn).getBytes());
     if (hex.length > SIGLEN * 2) throw new Error('Signature is too large.');
     s = s.slice(0, cStart + 1) + hex + s.slice(cStart + 1 + hex.length);
@@ -8982,14 +8983,14 @@ function showFieldProps(a) {
   openModal('modal-fieldprops');
   setTimeout(() => $('fp-name').focus(), 50);
 }
-function saveFieldProps() {
+async function saveFieldProps() {
   const a = state.annotations.find(x => x.id === state.fieldPropsId);
   if (!a) { closeModal('modal-fieldprops'); return; }
   const name = $('fp-name').value.trim();
   if (!name) { alert('Enter a field name.'); return; }
   if (/[.]/.test(name)) { alert('Field names can\'t contain a period.'); return; }
   const clash = state.annotations.some(x => x.type === 'form-field' && x !== a && x.name === name && !(a.kind === 'radio' && x.kind === 'radio'));
-  if (clash && !confirm(`Another field is already named "${name}". Fields with the same name share their value. Continue?`)) return;
+  if (clash && !await khzConfirm(`Another field is already named "${name}". Fields with the same name share their value. Continue?`)) return;
   touchNative(a);
   a.untouched = false;
   a.name = name; a.tooltip = $('fp-tip').value.trim();
@@ -9239,7 +9240,7 @@ function thumbContextMenu(e, n) {
     { icon: '📄', label: 'Insert Blank Page After', action: async () => { const items = curItems(); const sz = pageSize(n); items.splice(n, 0, { src: 'blank', w: sz.w, h: sz.h }); await rebuildDocument(items, state.fileName, n + 1); toast('Blank page inserted.'); } },
     { icon: '📥', label: 'Insert Pages from File…', action: () => { showInsertPages(); $('po-kind').value = 'file'; $('po-kind').onchange(); $('po-after').value = n; } },
     { icon: '📤', label: 'Extract Page', action: () => extractPages(pages(n)) },
-    { icon: '🗑️', label: 'Delete Page', disabled: state.totalPages < 2, action: async () => { if (!confirm(`Delete page ${n}?`)) return; await rebuildDocument(curItems().filter(it => it.page !== n), state.fileName, Math.max(1, n - 1)); toast('Page deleted.'); } },
+    { icon: '🗑️', label: 'Delete Page', disabled: state.totalPages < 2, action: async () => { if (!await khzConfirm(`Delete page ${n}?`)) return; await rebuildDocument(curItems().filter(it => it.page !== n), state.fileName, Math.max(1, n - 1)); toast('Page deleted.'); } },
     '-',
     { icon: '↻', label: 'Rotate Clockwise', action: () => rotatePage('cw', n) },
     { icon: '↺', label: 'Rotate Counterclockwise', action: () => rotatePage('ccw', n) },
@@ -9712,8 +9713,8 @@ function commentAuthor() {
   try { const n = localStorage.getItem('acro-author'); if (n) return n; } catch (e) {}
   return state.authorName || 'Brandon';
 }
-function setCommentAuthor() {
-  const n = prompt('Identity — name used on your comments:', commentAuthor());
+async function setCommentAuthor() {
+  const n = await khzAsk('Identity — name used on your comments:', commentAuthor());
   if (n === null || !n.trim()) return;
   state.authorName = n.trim();
   try { localStorage.setItem('acro-author', n.trim()); } catch (e) {}
@@ -10736,12 +10737,12 @@ async function saveReducedSize() {
 }
 async function revertFile() {
   if (!state.revertBytes) return;
-  if (state.dirty && !confirm('Revert to the last saved version of "' + (state.fileName || 'this file') + '"? Your changes will be lost.')) return;
+  if (state.dirty && !await khzConfirm('Revert to the last saved version of "' + (state.fileName || 'this file') + '"? Your changes will be lost.')) return;
   state.dirty = false;
   loadBytes(state.revertBytes.slice(), state.fileName);
 }
-function exitApp() {
-  if (state.dirty && !confirm('Close without saving your changes?')) return;
+async function exitApp() {
+  if (state.dirty && !await khzConfirm('Close without saving your changes?')) return;
   window.close();
   setTimeout(() => toast('The browser only lets you close this tab yourself (Ctrl+W).'), 300);
 }
@@ -11868,9 +11869,9 @@ function showEditDictionary() {
 // ================================================================
 function allFields() { return Object.entries(state.formFields || {}).flatMap(([n, l]) => l.map(f => ({ ...f, page: +n }))); }
 function refreshFormLayers() { Object.keys(state.pages).forEach(p => renderFormLayer(+p)); }
-function clearForm() {
+async function clearForm() {
   if (!requireDoc() || !state.hasForm) return;
-  if (!confirm('Are you sure you want to reset the form?')) return;
+  if (!await khzConfirm('Are you sure you want to reset the form?')) return;
   allFields().forEach(f => {
     if (f.type === 'signature' || f.readOnly) return;
     state.formValues[f.name] = f.type === 'checkbox' ? false : f.type === 'radio' ? null : '';
@@ -12926,7 +12927,7 @@ function agMenu(btn, rec, filter) {
     rec.status === 'Out for signature' && ['Cancel agreement', async () => { rec.status = 'Cancelled'; rec.history.push({ t: Date.now(), e: 'Cancelled' }); await agPut(rec); showAgreements(filter); }],
     ['Download PDF', () => downloadBlob(new Blob([rec.signedBytes || rec.bytes], { type: 'application/pdf' }), rec.signedName || rec.fileName)],
     ['Activity…', () => alert(rec.title + '\n\n' + rec.history.map(h => new Date(h.t).toLocaleString() + ' — ' + h.e).join('\n'))],
-    ['Delete', async () => { if (!confirm('Delete "' + rec.title + '" from your agreements?')) return; await agDel(rec.id); showAgreements(filter); }],
+    ['Delete', async () => { if (!await khzConfirm('Delete "' + rec.title + '" from your agreements?')) return; await agDel(rec.id); showAgreements(filter); }],
   ].filter(Boolean);
   m.innerHTML = items.map((it, i) => `<div class="ag-mi" data-i="${i}">${it[0]}</div>`).join('');
   document.body.appendChild(m);
@@ -13552,8 +13553,8 @@ function showPlugins() {
 }
 
 // ---------- account (local identity only — there is no online account) ----------
-function signOutLocal() {
-  if (!confirm('Sign out of this app on this computer?\n\nYour name and email are removed from this browser (used for comment authors, e-sign emails and branding). Your documents, recent files and preferences stay.')) return;
+async function signOutLocal() {
+  if (!await khzConfirm('Sign out of this app on this computer?\n\nYour name and email are removed from this browser (used for comment authors, e-sign emails and branding). Your documents, recent files and preferences stay.')) return;
   try { localStorage.removeItem('acro-author'); } catch (e) {}
   setPrefs({ author: '', email: '', title: '', org: '' });
   try { const b = getBrand(); delete b.email; delete b.sender; localStorage.setItem(BRAND_KEY, JSON.stringify(b)); } catch (e) {}
@@ -13893,11 +13894,11 @@ function ovRotate(deg, list) {
   list.forEach(it => { it.rot = (((it.rot || 0) + deg) % 360 + 360) % 360; });
   ovRender();
 }
-function ovDelete(list) {
+async function ovDelete(list) {
   list = ovNeedSel(list); if (!list) return;
   const ov = state.ov;
   if (list.length >= ov.items.length) { alert('You can’t delete all the pages. At least one page must remain in the document.'); return; }
-  if (!confirm(`Are you sure you want to delete page${list.length > 1 ? 's' : ''} ${list.map(it => ov.items.indexOf(it) + 1).join(', ')} from the document?`)) return;
+  if (!await khzConfirm(`Are you sure you want to delete page${list.length > 1 ? 's' : ''} ${list.map(it => ov.items.indexOf(it) + 1).join(', ')} from the document?`)) return;
   ovPush();
   const keys = new Set(list.map(it => it.key));
   ov.items = ov.items.filter(it => !keys.has(it.key));
@@ -17053,8 +17054,8 @@ async function cmbCombine() {
   const S = state.cmb, files = S.files.filter(f => cmbPagesOf(f).length);
   if (!files.length) return;
   const signed = files.filter(f => f.signed);
-  if (signed.length && !confirm(`${signed.map(f => f.name).join(', ')} ${signed.length > 1 ? 'are' : 'is'} digitally signed. The pages will be combined, but the digital signatures won't carry over to the new PDF (the originals stay signed).\n\nCombine anyway?`)) return;
-  if (state.pdfDoc && state.dirty && !S.files.some(f => f.kind === 'current') && !confirm('The open document has unsaved changes that will be closed.\n\nCombine anyway? (Click Cancel, then "Add Open Files" to include it, or save it first.)')) return;
+  if (signed.length && !await khzConfirm(`${signed.map(f => f.name).join(', ')} ${signed.length > 1 ? 'are' : 'is'} digitally signed. The pages will be combined, but the digital signatures won't carry over to the new PDF (the originals stay signed).\n\nCombine anyway?`)) return;
+  if (state.pdfDoc && state.dirty && !S.files.some(f => f.kind === 'current') && !await khzConfirm('The open document has unsaved changes that will be closed.\n\nCombine anyway? (Click Cancel, then "Add Open Files" to include it, or save it first.)')) return;
   showLoading(true, 'Combining files…');
   try {
     const out = await PDFLib.PDFDocument.create();
@@ -18339,11 +18340,11 @@ async function showDocumentProperties(tab) {
     box.querySelectorAll('.dp-fh').forEach(h => h.onclick = () => { const d = h.nextElementSibling, open = !d.classList.toggle('hidden'); h.querySelector('.dp-tw').textContent = open ? '⊟' : '⊞'; });
   } catch (e) { q('.dp-fonts').textContent = 'The fonts could not be listed.'; }
   // security
-  q('.dp-secm').onchange = e => {
+  q('.dp-secm').onchange = async e => {
     const v = e.target.value;
     if (v === 'pw') { close(); showEncrypt(); }
     else if (v === 'cert') { close(); if (typeof showCertify === 'function') showCertify(); else toast('Certificate security: use Protect › Use certificate.'); }
-    else if (enc) { if (confirm('Remove security from this document? (Takes effect when you save.)')) { state.security = null; state.encryptedOriginal = false; if (typeof updateSecurityBadge === 'function') updateSecurityBadge(); markDirty(); close(); showDocumentProperties('Security'); } else e.target.value = 'pw'; }
+    else if (enc) { if (await khzConfirm('Remove security from this document? (Takes effect when you save.)')) { state.security = null; state.encryptedOriginal = false; if (typeof updateSecurityBadge === 'function') updateSecurityBadge(); markDirty(); close(); showDocumentProperties('Security'); } else e.target.value = 'pw'; }
   };
   q('.dp-chg').onclick = () => { close(); showEncrypt(); };
   q('.dp-det').onclick = () => esDialog('dp-sec-ov', 'Document Security', `<div class="es-note">Security method: Password Security<br>Encryption: 256-bit AES (Acrobat X and later)<br>Document open password: ${sec && sec.userPw ? 'Yes' : 'No'}<br>Permissions password: ${sec && sec.ownerPw ? 'Yes' : 'No'}</div>`, [{ label: 'OK', primary: 1 }], 380);
@@ -18663,9 +18664,9 @@ async function tcShare() {
 }
 
 // ----- Optimize PDF (Reduce File Size) -----
-function tcOptimize() {
+async function tcOptimize() {
   if (!requireDoc()) return;
-  if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return;
+  if (state.digitalSigs && state.digitalSigs.length && !await khzConfirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return;
   const ov = esDialog('tc-opt', 'Reduce File Size', `<div class="exp-set">
     <fieldset class="exp-grp"><legend>Pictures</legend>
       <label class="exp-sl">Quality: <select class="o-q"><option value="high">High (300 ppi, light compression)</option><option value="medium" selected>Medium (150 ppi)</option><option value="low">Low (96 ppi, smallest)</option></select></label>
@@ -18768,9 +18769,9 @@ async function tcAccessibility() {
   const ov = esDialog('tc-acc', 'Accessibility Checker', `<div class="tcs"><div class="tcs-h">Full Check — ${checks.filter(c => c[1]).length} passed, ${checks.filter(c => !c[1]).length} need attention</div>
     <table class="tcs-t">${checks.map(c => `<tr><td>${c[1] ? '<span class="tcs-ok">✔</span>' : '<span class="tcs-no">✖</span>'} ${c[0]}</td><td>${escapeHtml(c[2])}</td><td>${!c[1] && c[3] ? `<button class="wc-btn tcs-fix" data-f="${c[3]}">Fix</button>` : ''}</td></tr>`).join('')}</table>
     <div class="es-note">Tagging (reading order, alt text for pictures) needs Acrobat's Accessibility › Autotag; this app checks it and fixes the document-level items.</div></div>`, [{ label: 'Close', primary: 1 }], 600);
-  ov.querySelectorAll('.tcs-fix').forEach(b => b.onclick = () => {
+  ov.querySelectorAll('.tcs-fix').forEach(b => b.onclick = async () => {
     const f = b.dataset.f, P = { ...V };
-    if (f === 'title') { const t = prompt('Document title:', baseName(state.fileName || '')); if (!t) return; state.meta = { ...state.meta, title: t }; state.metaEdited = true; }
+    if (f === 'title') { const t = await khzAsk('Document title:', baseName(state.fileName || '')); if (!t) return; state.meta = { ...state.meta, title: t }; state.metaEdited = true; }
     if (f === 'dtitle') P.displayTitle = true;
     if (f === 'lang') P.lang = 'en-US';
     if (f === 'ocr') { ov.remove(); showOCR(); return; }
@@ -18967,7 +18968,7 @@ function prtAdvMenu(btn) {
 function prtGo(k) {
   if (k !== 'env' && k !== 'policies' && !requireDoc()) return;
   ({ cert: prtCertificate, pw: () => showEncrypt(), restrict: () => protectUsingPassword('edit'), details: prtDetails, props: () => showDocumentProperties('Security'),
-    env: prtEnvelope, policies: prtPolicies, remove: () => { if (confirm('Remove security from this document? The next save will not be password protected.')) removeSecurity(); } })[k]();
+    env: prtEnvelope, policies: prtPolicies, remove: async () => { if (await khzConfirm('Remove security from this document? The next save will not be password protected.')) removeSecurity(); } })[k]();
 }
 
 // ---------- Protect Using Password ----------
@@ -19228,14 +19229,14 @@ function prtPolicies() {
     d.querySelector('.es-dlg').classList.add('exp-win');
     const sv = d.querySelector('.pn-save'); if (sv) sv.onchange = () => { d.querySelector('.pn-pws').style.display = sv.checked ? '' : 'none'; };
   };
-  const apply = () => {
+  const apply = async () => {
     const p = all().find(x => x.id === sel); if (!p || !requireDoc()) return;
     if (p.id === 'b_cert') { close(); prtCertificate(); return; }
     if (p.id === 'b_pw') { close(); showEncrypt(); return; }
     let openPw = p.userPw || '', permPw = p.ownerPw || '';
     if (!p.savePw) {
-      if (p.open) { openPw = prompt(`"${p.name}": password needed to OPEN the document:`); if (openPw === null) return; if (openPw.length < 6) { toast('Use at least 6 characters.'); return; } }
-      permPw = prompt(`"${p.name}": permissions password (needed to change the security later):`); if (permPw === null) return;
+      if (p.open) { openPw = await khzAsk(`"${p.name}": password needed to OPEN the document:`); if (openPw === null) return; if (openPw.length < 6) { toast('Use at least 6 characters.'); return; } }
+      permPw = await khzAsk(`"${p.name}": permissions password (needed to change the security later):`); if (permPw === null) return;
       if (permPw.length < 6) { toast('Use at least 6 characters.'); return; }
       if (permPw === openPw) { toast('The two passwords must be different.'); return; }
     }
@@ -19243,14 +19244,14 @@ function prtPolicies() {
     updateSecurityBadge(); markDirty(); close();
     toast(`Policy "${p.name}" applied — the security is added when you save.`);
   };
-  ov.querySelectorAll('.pol-tb').forEach(b => b.onclick = () => {
+  ov.querySelectorAll('.pol-tb').forEach(b => b.onclick = async () => {
     const p = all().find(x => x.id === sel), a = b.dataset.a;
     if (a === 'new') editor(null, 'new');
     else if (!p) return;
     else if (a === 'copy') editor(p.builtin ? { name: p.name, desc: p.desc, open: true, perms: { print: true, edit: false, copy: false, access: true } } : p, 'copy');
     else if (a === 'view') p.builtin ? esDialog('prt-pol-v', p.name, `<div class="es-note">${escapeHtml(p.desc)}<br><br>Apply it to choose the ${p.id === 'b_cert' ? 'certificates' : 'passwords and permissions'} for this document.</div>`, [{ label: 'Close', primary: 1 }], 420) : editor(p, 'view');
     else if (a === 'edit') editor(p, 'edit');
-    else if (a === 'del') { if (confirm(`Delete the policy "${p.name}"?`)) { setPrefs({ secPolicies: user().filter(x => x.id !== p.id) }); sel = null; draw(); } }
+    else if (a === 'del') { if (await khzConfirm(`Delete the policy "${p.name}"?`)) { setPrefs({ secPolicies: user().filter(x => x.id !== p.id) }); sel = null; draw(); } }
     else if (a === 'fav') { const f = favs(); setPrefs({ secPolicyFavs: f.includes(p.id) ? f.filter(x => x !== p.id) : [...f, p.id] }); draw(); }
   });
   q('.pol-sel').onchange = e => { show = e.target.value; draw(); };
@@ -20334,16 +20335,16 @@ function hfDialog(existing) {
     if (v && S[v]) { const keepRange = hf.range; Object.assign(hf, JSON.parse(JSON.stringify(S[v]))); if (!S[v].range) hf.range = keepRange; put(); }
     draw();
   };
-  q('#hf-save').onclick = () => {
+  q('#hf-save').onclick = async () => {
     read();
-    const nm = prompt('Save Settings As:', q('#hf-saved').value || 'Header Footer Settings ' + (Object.keys(hfSaved()).length + 1));
+    const nm = await khzAsk('Save Settings As:', q('#hf-saved').value || 'Header Footer Settings ' + (Object.keys(hfSaved()).length + 1));
     if (!nm || !nm.trim()) return;
     const S = hfSaved(); const { date, shrunk, ...keep } = hf; S[nm.trim()] = JSON.parse(JSON.stringify(keep)); hfSaveAll(S);
     savedList(); q('#hf-saved').value = nm.trim(); sync();
   };
-  q('#hf-del').onclick = () => {
+  q('#hf-del').onclick = async () => {
     const v = q('#hf-saved').value; if (!v) return;
-    if (!confirm(`Delete the saved settings "${v}"?`)) return;
+    if (!await khzConfirm(`Delete the saved settings "${v}"?`)) return;
     const S = hfSaved(); delete S[v]; hfSaveAll(S); savedList(); sync();
   };
   // ---- OK / multiple files ----
@@ -21296,7 +21297,7 @@ async function svRemember(handle) {
 // ---- the PDF bytes, the same way the old Save made them ----
 async function svBytes() {
   const pending = state.annotations.filter(a => a.type === 'redact-area').length;
-  if (pending && !confirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return null;
+  if (pending && !await khzConfirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return null;
   let bytes = await buildOutputBytes();
   if (state.security) { showLoading(true, 'Encrypting (AES-256)…'); bytes = await encryptPdfBytes(bytes, state.security); }
   return bytes;
@@ -21406,7 +21407,7 @@ async function showSaveDialog() {
   // before writing: shrink the pictures if asked
   const prepare = async () => {
     if (q('.sv-reduce').checked) {
-      if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
+      if (state.digitalSigs && state.digitalSigs.length && !await khzConfirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
       await tcDoOptimize({ q: 'medium', gray: false, meta: true, thumbs: true });
     }
     return true;
@@ -21620,7 +21621,7 @@ async function tabRestore(t) {
 async function closeDocTab(id) {
   const t = state.docTabs.find(x => x.id === id); if (!t) return;
   if (id !== state.activeTabId) {   // a tab in the background
-    if (t.dirty && !confirm(`Do you want to save changes to "${t.name}" before closing?\n\nOK = close without saving · Cancel = keep it open`)) return;
+    if (t.dirty && !await khzConfirm(`Do you want to save changes to "${t.name}" before closing?\n\nOK = close without saving · Cancel = keep it open`)) return;
     state.docTabs = state.docTabs.filter(x => x !== t); renderDocTabs(); return;
   }
   state._closingTab = true;
@@ -22046,7 +22047,7 @@ function linkDialog(n, pts, onObj, existing) {
   const ov = $('lk-ov'); ov.querySelector('.lk-url').addEventListener('focus', () => ov.querySelector('[name=lk-a][value=uri]').checked = true); ov.querySelector('.lk-pg').addEventListener('focus', () => ov.querySelector('[name=lk-a][value=page]').checked = true);
 }
 // following a link: click (Select / Hand tool) or Ctrl+click
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   if (!state.pdfDoc || !e.target.closest || !e.target.closest('.page-wrapper')) return;
   const edit = state.activeToolGroup === 'edit';
   if (!(['select', 'hand'].includes(state.activeTool) && !edit) && !e.ctrlKey) return;
@@ -22054,7 +22055,7 @@ document.addEventListener('click', e => {
   const lk = state.annotations.find(a => a.type === 'link' && a.page === n && (() => { const b = annotBBox(a, ps.vp); return b && vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h; })());
   if (!lk) return;
   if (lk.dest) goToPage(lk.dest);
-  else if (lk.url && confirm('Open this link?\n\n' + lk.url)) window.open(lk.url, '_blank', 'noopener');
+  else if (lk.url && await khzConfirm('Open this link?\n\n' + lk.url)) window.open(lk.url, '_blank', 'noopener');
 }, true);
 // double-click a link in Edit PDF to change it
 window.addEventListener('dblclick', e => {
@@ -24498,7 +24499,7 @@ async function showRestoreVersions() {
       const bytes = await load(b); if (!bytes) return false;
       const same = h && await bkMatch(b, h);
       if (!same) { loadBytes(bytes.slice(), b.name.replace(/\.pdf$/i, '') + ` (${new Date(b.time).toLocaleDateString()}).pdf`); return; }
-      if (state.dirty && !confirm(`Restore the version from ${fmtT(b.time)}? Your unsaved changes will be lost.`)) return false;
+      if (state.dirty && !await khzConfirm(`Restore the version from ${fmtT(b.time)}? Your unsaved changes will be lost.`)) return false;
       showLoading(true, 'Restoring…');
       try { await svWriteHandle(h, bytes); } catch (e) { showLoading(false); handleWriteError(e); return false; }
       tabReplace++;
@@ -24763,7 +24764,7 @@ showSaveDialog = async function () {
   };
   const prepare = async () => {
     if (q('.sv-reduce') && q('.sv-reduce').checked) {
-      if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
+      if (state.digitalSigs && state.digitalSigs.length && !await khzConfirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return false;
       await tcDoOptimize({ q: 'medium', gray: false, meta: true, thumbs: true });
     }
     return true;
@@ -24779,7 +24780,7 @@ showSaveDialog = async function () {
         try {
           const dir = await shDirAt(root, p.parts);
           let exists = false; try { await dir.getFileHandle(name); exists = true; } catch (e) {}
-          if (exists && !confirm(`"${name}" already exists in ${nameOf(p)}.\n\nReplace it? (The version that's there now is kept — File › Restore Previous Version.)`)) return;
+          if (exists && !await khzConfirm(`"${name}" already exists in ${nameOf(p)}.\n\nReplace it? (The version that's there now is kept — File › Restore Previous Version.)`)) return;
           const h = await dir.getFileHandle(name, { create: true });
           close(); if (await prepare()) await svSaveToHandle(h);
           return;
@@ -25011,7 +25012,7 @@ async function recOffer() {
         for (const it of items) await recDel(it.k);
         if (pick.length) toast(`Recovered ${pick.length} document${pick.length > 1 ? 's' : ''}. Save to keep the changes.`);
       } },
-     { label: 'Discard', run: async () => { if (!confirm('Delete the unsaved changes? This can\'t be undone.')) return false; for (const it of items) await recDel(it.k); } },
+     { label: 'Discard', run: async () => { if (!await khzConfirm('Delete the unsaved changes? This can\'t be undone.')) return false; for (const it of items) await recDel(it.k); } },
      { label: 'Later' }], 560);
   ov.classList.add('asc-ov');
 }
@@ -25478,7 +25479,7 @@ function ctpInfo(name) {
   return `<div>${escapeHtml(L)}</div>`;
 }
 
-function pf2Action(act, ctx) {
+async function pf2Action(act, ctx) {
   const { ov, draft, redraw, collect } = ctx;
   switch (act) {
     case 'resetWarn': try { Object.keys(localStorage).filter(k => /dontShow|noWarn|hideWarn|skipWarn/i.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {} draft.noEditWarn = false; toast('All warnings will be shown again.'); redraw(); break;
@@ -25492,7 +25493,7 @@ function pf2Action(act, ctx) {
     case 'cfpEdit': {
       const sel = ov.querySelector('[data-list="cfp"] .on'), name = sel ? sel.textContent : '';
       if (!['JPEG', 'PNG', 'TIFF'].includes(name)) { toast('There are no settings to edit for ' + name + '.'); break; }
-      const dpi = prompt(`${name} resolution (pixels/inch):`, getPref('cfp_' + name + '_dpi', '150')); if (dpi === null) break;
+      const dpi = await khzAsk(`${name} resolution (pixels/inch):`, getPref('cfp_' + name + '_dpi', '150')); if (dpi === null) break;
       const p = {}; p['cfp_' + name + '_dpi'] = String(Math.max(36, Math.min(1200, +dpi || 150))); setPrefs(p);
       const info = ov.querySelector('[data-info="cfp"]'); if (info) info.innerHTML = cfpInfo(name); break;
     }
@@ -25506,7 +25507,7 @@ function pf2Action(act, ctx) {
     case 'update': (async () => { try { const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) { await r.update(); toast(r.waiting || r.installing ? 'An update was found — it installs the next time you open KHZ PDF.' : 'KHZ PDF is up to date.'); } else toast('KHZ PDF is up to date.'); } catch (e) { toast('Could not check for updates right now.'); } })(); break;
     case 'privFile': case 'privFolder': case 'privHost': {
       const what = act === 'privHost' ? 'host name (e.g. example.com)' : act === 'privFile' ? 'file path' : 'folder path';
-      const x = prompt('Add a privileged ' + what + ':'); if (!x || !x.trim()) break;
+      const x = await khzAsk('Add a privileged ' + what + ':'); if (!x || !x.trim()) break;
       collect(); draft.sePriv = [...(draft.sePriv || []), x.trim()]; redraw(); break;
     }
     case 'privRemove': { collect(); const l = draft.sePriv || []; const sel = ov.querySelector('[data-list="priv"] .on'); if (sel) draft.sePriv = l.filter(x => x !== sel.textContent); else draft.sePriv = l.slice(0, -1); redraw(); break; }
@@ -28546,7 +28547,7 @@ applyAllRedactions = async function () {
   const marks = state.annotations.filter(a => a.type === 'redact-area');
   if (!marks.length) return _applyAllRedactionsRaster.apply(this, arguments);
   const pages = [...new Set(marks.map(a => a.page))].sort((a, b) => a - b);
-  if (!confirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Everything else on the page stays as it is.`)) return;
+  if (!await khzConfirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Everything else on the page stays as it is.`)) return;
   closeModal('modal-redact');
   showLoading(true, 'Applying redactions...');
   try {
@@ -29787,7 +29788,7 @@ function importCommentsXFDF() {
 async function flattenComments() {
   if (!requireDoc()) return;
   const list = cmtList(); if (!list.length) { toast('There are no comments to flatten.'); return; }
-  if (!confirm(`Flatten ${list.length} comment${list.length > 1 ? 's' : ''}?\n\nThey become part of the page and can no longer be edited or replied to.`)) return;
+  if (!await khzConfirm(`Flatten ${list.length} comment${list.length > 1 ? 's' : ''}?\n\nThey become part of the page and can no longer be edited or replied to.`)) return;
   showLoading(true, 'Flattening comments…');
   try {
     list.forEach(a => { a.flatten = true; a.untouched = false; });
@@ -30806,9 +30807,9 @@ tcDoOptimize = async function (o) {
   } catch (e) { showLoading(false); alert('Could not reduce the file size: ' + e.message); }
   finally { tabReplace--; }
 };
-tcOptimize = function () {
+tcOptimize = async function () {
   if (!requireDoc()) return;
-  if (state.digitalSigs && state.digitalSigs.length && !confirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return;
+  if (state.digitalSigs && state.digitalSigs.length && !await khzConfirm('This PDF is digitally signed. Reducing its size rewrites the file and the signatures will no longer be valid. Continue?')) return;
   const ck = (c, l, on) => `<label class="exp-sl"><input type="checkbox" class="${c}" ${on ? 'checked' : ''}> ${l}</label>`;
   const ov = esDialog('tc-opt', 'Reduce File Size', `<div class="exp-set">
     <fieldset class="exp-grp"><legend>Pictures</legend>
@@ -32974,8 +32975,8 @@ async function khzAutotagPage(n, med) {
 }
 async function khzAutotag(opts = {}) {
   if (!requireDoc()) return;
-  if (state.khzTags && !opts.silent && !confirm('The document already has tags. Replace them with new automatic tags?')) return;
-  if (!state.khzTags && !opts.silent) { try { const R = await dpRead(); if (R.tagged && !confirm('This document is already tagged. Replace its tags with new automatic tags?')) return; } catch (e) {} }
+  if (state.khzTags && !opts.silent && !await khzConfirm('The document already has tags. Replace them with new automatic tags?')) return;
+  if (!state.khzTags && !opts.silent) { try { const R = await dpRead(); if (R.tagged && !await khzConfirm('This document is already tagged. Replace its tags with new automatic tags?')) return; } catch (e) {} }
   showLoading(true, 'Tagging the document…');
   try {
     if (state.editPrep) { try { await state.editPrep; } catch (e) {} }
@@ -33197,7 +33198,7 @@ const khzRo = { open: false, sel: null, page: 1, timer: null, sig: '' };
 function khzRoClose() { khzRo.open = false; clearInterval(khzRo.timer); document.querySelectorAll('.khz-ro-ov').forEach(x => x.remove()); const d = document.getElementById('khz-ro'); if (d) d.remove(); }
 async function khzReadingOrder() {
   if (!requireDoc()) return;
-  if (!state.khzTags) { if (!confirm('The document has no tags yet. Tag it automatically first?')) return; await khzAutotag({ silent: true }); if (!state.khzTags) return; }
+  if (!state.khzTags) { if (!await khzConfirm('The document has no tags yet. Tag it automatically first?')) return; await khzAutotag({ silent: true }); if (!state.khzTags) return; }
   khzRoClose(); khzRo.open = true; khzRo.sel = null;
   const d = document.createElement('div'); d.id = 'khz-ro';
   d.innerHTML = `<div class="kro-h">Reading Order <button class="kro-x" title="Close">✕</button></div>
@@ -33229,7 +33230,7 @@ async function khzReadingOrder() {
   const move = k => { const list = els(), ids = selIds(); if (!ids.size) return; const idx = list.findIndex(e => ids.has(String(e.id))); const j = idx + k; if (idx < 0 || j < 0 || j >= list.length) return; const [e] = list.splice(idx, 1); list.splice(j, 0, e); markDirty(); khzRoDraw(true); };
   d.querySelector('.kro-up').onclick = () => move(-1); d.querySelector('.kro-dn').onclick = () => move(1);
   d.querySelector('.kro-del').onclick = () => { const ids = selIds(); state.khzTags.pages[state.currentPage] = els().filter(e => !ids.has(String(e.id))); khzRo.sel = null; markDirty(); khzRoDraw(true); };
-  d.querySelector('.kro-clr').onclick = () => { if (!confirm('Remove all the tags on this page? Its content will be marked as background.')) return; state.khzTags.pages[state.currentPage] = []; khzRo.sel = null; markDirty(); khzRoDraw(true); };
+  d.querySelector('.kro-clr').onclick = async () => { if (!await khzConfirm('Remove all the tags on this page? Its content will be marked as background.')) return; state.khzTags.pages[state.currentPage] = []; khzRo.sel = null; markDirty(); khzRoDraw(true); };
   d.querySelector('.kro-re').onclick = async () => { showLoading(true, 'Tagging the page…'); try { state.khzTags.pages[state.currentPage] = await khzAutotagPage(state.currentPage, khzMedSize()); } finally { showLoading(false); } markDirty(); khzRoDraw(true); };
   d.querySelector('.kro-alt').onclick = () => { const f = els().find(e => selIds().has(String(e.id)) && e.type === 'Figure'); khzAltText(f ? f.id : null); };
   khzRo.timer = setInterval(() => khzRoDraw(false), 400);
@@ -33281,7 +33282,7 @@ function khzRoDraw(force) {
 // ---------- Set Alternate Text ----------
 async function khzAltText(focusId) {
   if (!requireDoc()) return;
-  if (!state.khzTags) { if (!confirm('Alternate text is stored in the document tags. Tag the document automatically first?')) return; await khzAutotag({ silent: true }); if (!state.khzTags) return; }
+  if (!state.khzTags) { if (!await khzConfirm('Alternate text is stored in the document tags. Tag the document automatically first?')) return; await khzAutotag({ silent: true }); if (!state.khzTags) return; }
   const figs = []; Object.entries(state.khzTags.pages).forEach(([n, l]) => l.forEach(e => { if (e.type === 'Figure') figs.push({ n: +n, e }); }));
   if (!figs.length) { alert('There are no figures in the tags. Use Reading Order to mark a picture as a Figure.'); return; }
   let i = Math.max(0, figs.findIndex(f => f.e.id === focusId));
@@ -33453,7 +33454,7 @@ showActionWizard = function () {
   ov._files = picked;
   ov.querySelector('.kwz-new').onclick = () => khzWizEdit(null, id => { sel = id; draw(); });
   ov.querySelector('.kwz-edit').onclick = () => { if (ov._act && ov._act.custom) khzWizEdit(ov._act, () => draw()); };
-  ov.querySelector('.kwz-del').onclick = () => { const a = ov._act; if (!a || !a.custom || !confirm(`Delete the action "${a.name}"?`)) return; setPrefs({ wizActions: (getPref('wizActions', []) || []).filter(x => x.id !== a.id) }); draw(); };
+  ov.querySelector('.kwz-del').onclick = async () => { const a = ov._act; if (!a || !a.custom || !await khzConfirm(`Delete the action "${a.name}"?`)) return; setPrefs({ wizActions: (getPref('wizActions', []) || []).filter(x => x.id !== a.id) }); draw(); };
   ov.querySelector('.kwz-add').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = '.pdf,application/pdf';
     inp.onchange = () => { picked.push(...inp.files); ov.querySelector('.kwz-n').textContent = picked.length ? `${picked.length} file(s): ${picked.slice(0, 3).map(f => f.name).join(', ')}${picked.length > 3 ? '…' : ''}` : 'none'; ov.querySelector('input[value=files]').checked = true; }; inp.click(); };
   draw();
@@ -33840,10 +33841,10 @@ async function khzJsApply(fx) {
       else if (e.t === 'page') goToPage(e.n);
       else if (e.t === 'print') printPDF();
       else if (e.t === 'reset') { allFields().forEach(f => { if (f.type === 'signature' || f.readOnly) return; if (e.fields && !e.fields.some(n => f.name === n || f.name.startsWith(n + '.'))) return; state.formValues[f.name] = f.type === 'checkbox' ? false : f.type === 'radio' ? null : ''; }); refreshFormLayers(); markDirty(); calc = true; }
-      else if (e.t === 'url') { if (/^(https?|mailto):/i.test(e.url) && confirm(`This document wants to open:\n${e.url}\n\nOpen it?`)) window.open(e.url, '_blank', 'noopener'); }
+      else if (e.t === 'url') { if (/^(https?|mailto):/i.test(e.url) && await khzConfirm(`This document wants to open:\n${e.url}\n\nOpen it?`)) window.open(e.url, '_blank', 'noopener'); }
       else if (e.t === 'mail' || (e.t === 'submit' && /^mailto:/i.test(e.url))) {
         const to = e.t === 'mail' ? e.to : e.url.replace(/^mailto:/i, '').split('?')[0];
-        if (confirm(`This form wants to email the document${to ? ' to ' + to : ''}.\nThe PDF will be downloaded so you can attach it. Continue?`)) { savePDFAs(); setTimeout(() => { location.href = `mailto:${encodeURIComponent(to || '')}?subject=${encodeURIComponent(e.subject || state.fileName || '')}&body=${encodeURIComponent(e.msg || 'Attached: ' + (state.fileName || 'the PDF'))}`; }, 600); }
+        if (await khzConfirm(`This form wants to email the document${to ? ' to ' + to : ''}.\nThe PDF will be downloaded so you can attach it. Continue?`)) { savePDFAs(); setTimeout(() => { location.href = `mailto:${encodeURIComponent(to || '')}?subject=${encodeURIComponent(e.subject || state.fileName || '')}&body=${encodeURIComponent(e.msg || 'Attached: ' + (state.fileName || 'the PDF'))}`; }, 600); }
       }
       else if (e.t === 'submit') { toast(`This form submits to ${e.url}. Sending form data to a server isn’t done here — use File › Export form data, or email.`, 7000); }
       else if (e.t === 'menu') { const n = e.name; ({ NextPage: nextPage, PrevPage: prevPage, FirstPage: () => goToPage(1), LastPage: () => goToPage(state.totalPages), Print: printPDF, SaveAs: () => savePDFAs(), GoBack: () => history.back && null, ExportData: () => typeof exportFormData === 'function' && exportFormData(), ImportData: () => typeof importFormData === 'function' && importFormData(), FullScreen: () => toggleFullscreen() }[n] || (() => {}))(); }
@@ -33914,7 +33915,7 @@ async function khzDocScripts() {
 }
 async function khzButtonPress(b) {
   if (b.js && b.js.length) { if (!khzJsEnabled()) { toast('JavaScript is turned off (Preferences › JavaScript).'); } else { const res = await khzRunJS(b.js.join('\n'), { target: b.name }); if (res && res.err && res.err !== 'stopped') toast('The button’s script stopped: ' + res.err, 6000); } }
-  if (b.url) { if (confirm(`This button opens:\n${b.url}\n\nOpen it?`)) window.open(b.url, '_blank', 'noopener'); }
+  if (b.url) { if (await khzConfirm(`This button opens:\n${b.url}\n\nOpen it?`)) window.open(b.url, '_blank', 'noopener'); }
   if (b.action) await khzJsApply([{ t: 'menu', name: b.action }]);
   if (b.reset) await khzJsApply([{ t: 'reset', fields: b.reset.fields && b.reset.fields.length ? (b.reset.include === false ? allFields().map(f => f.name).filter(nm => !b.reset.fields.includes(nm)) : b.reset.fields) : null }]);
   if (b.dest != null) { try { const d = typeof b.dest === 'string' ? await state.pdfDoc.getDestination(b.dest) : b.dest; if (d && d[0]) goToPage((await state.pdfDoc.getPageIndex(d[0])) + 1); } catch (e) {} }
@@ -34476,6 +34477,59 @@ KHZ_FS_TYPES.forEach(t => NATIVE_WRITABLE.add(t));
       if (changed) renderAllAnnots();
     } catch (e) { console.warn('fill & sign marks', e); }
     return r;
+  };
+}
+// ================================================================
+//  Q5: no more plain browser popups — alerts, confirmations and questions use the app's own windows
+// ================================================================
+function khzMsgBox(title, html, buttons, opts = {}) {
+  return new Promise(res => {
+    let done = false;
+    const fin = v => { if (done) return; done = true; res(v); };
+    const ov = esDialog('khz-msg-' + Math.random().toString(36).slice(2, 7), escapeHtml(title || 'KHZ PDF'), html,
+      buttons.map((b, i) => ({ label: escapeHtml(b), primary: i === (opts.primary ?? 0), run: o => { fin(opts.read ? opts.read(o, i) : i); } })), opts.width || 440);
+    ov.querySelector('.ap-x').addEventListener('click', () => fin(opts.read ? opts.read(ov, -1) : -1));
+    ov.addEventListener('keydown', e => { if (e.key === 'Escape') fin(opts.read ? opts.read(ov, -1) : -1); if (e.key === 'Enter' && !e.shiftKey && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ov.querySelector('.ap-ok') && ov.querySelector('.ap-ok').click(); } });
+    if (opts.after) opts.after(ov);
+  });
+}
+const khzMsgHtml = m => `<div style="white-space:pre-wrap;line-height:1.45">${escapeHtml(String(m ?? ''))}</div>`;
+// Yes / No question → true / false
+async function khzConfirm(msg, opts = {}) {
+  const r = await khzMsgBox(opts.title || 'KHZ PDF', khzMsgHtml(msg), [opts.ok || 'OK', opts.cancel || 'Cancel']);
+  return r === 0;
+}
+// a question with a typed answer → the text, or null when cancelled
+async function khzAsk(msg, def = '', opts = {}) {
+  return khzMsgBox(opts.title || 'KHZ PDF', `${khzMsgHtml(msg)}<input class="khz-ask" type="${opts.password ? 'password' : 'text'}" style="width:100%;margin-top:8px" value="${escapeHtml(def == null ? '' : String(def))}">`,
+    ['OK', 'Cancel'], { read: (o, i) => i === 0 ? o.querySelector('.khz-ask').value : null, after: o => setTimeout(() => { const i = o.querySelector('.khz-ask'); i.focus(); i.select(); }, 30) });
+}
+// the browser's alert() now shows the app's own message window (one at a time, in order)
+const khzAlertQ = [];
+let khzAlertBusy = false;
+window.alert = function (msg) {
+  khzAlertQ.push(String(msg ?? ''));
+  if (khzAlertBusy) return;
+  khzAlertBusy = true;
+  (async () => { while (khzAlertQ.length) await khzMsgBox('KHZ PDF', khzMsgHtml(khzAlertQ.shift()), ['OK']); khzAlertBusy = false; })();
+};
+// closing a tab with changes: Acrobat's "Do you want to save changes … before closing?"  Yes / No / Cancel
+{
+  const _cdt = closeDocTab;
+  closeDocTab = async function (id) {
+    const t = state.docTabs.find(x => x.id === id); if (!t) return;
+    const active = id === state.activeTabId, dirty = active ? state.dirty : t.dirty;
+    if (dirty) {
+      const r = await khzMsgBox('KHZ PDF', khzMsgHtml(`Do you want to save changes to "${t.name || state.fileName || 'this document'}" before closing?`), ['Yes', 'No', 'Cancel']);
+      if (r !== 0 && r !== 1) return;
+      if (r === 0) {
+        if (!active) await switchDocTab(id);
+        await savePDF();
+        if (state.dirty) return;            // not saved (Save As still open or cancelled): keep it open
+      }
+      if (id === state.activeTabId) state.dirty = false; else t.dirty = false;
+    }
+    return _cdt.apply(this, arguments);
   };
 }
 </script>
