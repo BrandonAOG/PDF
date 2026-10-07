@@ -10009,7 +10009,7 @@ function showAnnotProps(a) {
         ${isLine ? `<label>Start:</label>${endSel('ap-start', le[0])}<label>End:</label>${endSel('ap-end', le[1])}` : ''}
         ${isStroke ? `<label>Style:</label><div class="ap-dd" id="ap-style" data-v="${dk}" tabindex="0"><span class="ap-dd-v">${styleSvg(dk, dashes[dk])}</span><span class="ap-dd-car">⌵</span>
             <div class="ap-dd-list hidden">${Object.keys(dashes).map(k => `<div class="ap-dd-opt ${k === dk ? 'on' : ''}" data-v="${k}">${styleSvg(k, dashes[k])}</div>`).join('')}</div></div>
-        <label>Thickness:</label><span class="ap-spin"><input id="ap-width" type="text" value="${a.width || 1} pt"><span class="ap-arrows"><button data-d="1">▴</button><button data-d="-1">▾</button></span></span>` : ''}
+        <label>Thickness:</label><span class="ap-spin"><input id="ap-width" type="text" value="${a.width || 1} pt"><span class="ap-arrows"><button data-d="0.5">▴</button><button data-d="-0.5">▾</button></span></span>` : ''}
         <label>Color:</label><span class="ap-sw"><input type="color" id="ap-color" value="${/^#[0-9a-f]{6}$/i.test(a.color || '') ? a.color : '#ff0000'}"></span>
         ${hasFill ? `<label>Fill Color:</label><span class="ap-sw ${a.fill ? '' : 'none'}"><input type="color" id="ap-fill" value="${a.fill || '#ffffff'}"><button class="ap-nofill" title="No color">∅</button></span>` : '<span></span><span></span>'}
         <label>Opacity:</label><span><input id="ap-op" type="text" value="${op}%" style="width:44px"></span>
@@ -10051,7 +10051,7 @@ function showAnnotProps(a) {
     ov.querySelectorAll('.ap-tab').forEach(x => x.classList.toggle('on', x === t));
     ov.querySelectorAll('.ap-pane').forEach(p => p.classList.toggle('hidden', p.dataset.p !== t.dataset.t));
   });
-  ov.querySelectorAll('.ap-arrows button').forEach(b => b.onclick = () => { const w = Math.max(0, (parseFloat(q('#ap-width').value) || 1) + +b.dataset.d); q('#ap-width').value = w + ' pt'; live(); });
+  ov.querySelectorAll('.ap-arrows button').forEach(b => b.onclick = () => { const w = Math.min(12, Math.max(0.5, Math.round(((parseFloat(q('#ap-width').value) || 1) + +b.dataset.d) * 2) / 2)); q('#ap-width').value = w + ' pt'; live(); });
   // style dropdown with line previews (like Acrobat)
   const dd = q('#ap-style');
   if (dd) {
@@ -17536,7 +17536,7 @@ function fsMini() {
       + ic('to-line', sv(ICONS.fs_line), 'Change to line') + ic('to-dot', `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`, 'Change to dot') + ic('more', sv('M5 12h.01 M12 12h.01 M19 12h.01'), 'Back')
     : ic('smaller', '<span class="fsm-a s">A</span>', 'Smaller') + ic('bigger', '<span class="fsm-a">A</span>', 'Bigger') + ic('del', sv(ICONS.trash || 'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13'), 'Delete')
       + (a.type === 'textbox' ? `<button data-a="comb" class="${a.comb ? 'on' : ''}" title="Comb: space the letters into boxes">${a.comb ? '<span class="fsm-ab on">Ab</span>' : '<span class="fsm-ab">I<u>Ab</u></span>'}</button>` : '')
-      + (a.type === 'signature' ? '' : ic('more', sv('M5 12h.01 M12 12h.01 M19 12h.01'), 'More'));
+      + ic('more', sv('M5 12h.01 M12 12h.01 M19 12h.01'), 'More');   // signatures too, like Acrobat
   m.querySelectorAll('button').forEach(b => b.onclick = () => fsMiniDo(a, b.dataset.a));
   fsMiniPlace();
 }
@@ -17555,6 +17555,7 @@ function fsCenterHalf(a) {   // centre + half-size in PDF points
   if (FS_POINT.includes(a.type)) return { c: a.pts[0], half: 7 * (a.size || 1) };
   const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]);
   const c = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  if (a.type === 'signature') return { c, half: Math.max(4, Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2) };   // a mark about as tall as the signature
   return { c, half: Math.max(Math.max(...xs) - Math.min(...xs), a.type === 'line' ? 0 : Math.max(...ys) - Math.min(...ys)) / 2 || 7 };
 }
 function fsScale(a, k) {
@@ -17572,6 +17573,7 @@ function fsConvert(a, to) {
   if (a.type === to || !touchNative(a)) return;
   const { c, half } = fsCenterHalf(a);
   if (a.type === 'textbox') { delete a.text; delete a.runs; delete a.fill; delete a.borderW; delete a.pad; }
+  if (a.type === 'signature') { delete a.dataUrl; delete a.fsKeep; a.origin = 'fill-sign'; a.color = a.color || '#000000'; }
   if (FS_POINT.includes(to)) { a.pts = [c]; a.size = half / 7; }
   else if (to === 'ellipse') { const w = Math.max(6, half), h = w * 14 / 22; a.pts = [[c[0] - w, c[1] + h], [c[0] + w, c[1] - h]]; delete a.size; a.width = a.width || 1.5; }
   else if (to === 'line') { const w = Math.max(8, half * 1.6); a.pts = [[c[0] - w, c[1]], [c[0] + w, c[1]]]; delete a.size; a.width = a.width || 1.5; }
@@ -34112,6 +34114,369 @@ async function khzOvStep(from, to, undo) {
   };
   // a new document starts with a clean Organize history
   const _lb = loadBytes; loadBytes = async function (bytes, name, opts = {}) { if (!opts || !opts.keep) { khzOv.undo = []; khzOv.redo = []; } return _lb.apply(this, arguments); };
+}
+// ================================================================
+//  Highlight / Underline / Strikethrough: while you drag, the words show a blue text selection
+//  (like Acrobat); the mark is put on when you let go.
+// ================================================================
+const KHZ_MK_TOOLS = ['highlight', 'underline', 'strikethrough'];
+let khzMkChars = null;   // characters of the page being marked (measured once per drag)
+function khzMkClear() { document.querySelectorAll('.khz-tsel').forEach(x => x.remove()); khzMkChars = null; }
+function khzMkDraw(d) {
+  const ps = state.pages[d.n]; if (!ps) return false;
+  if (!khzMkChars || khzMkChars.n !== d.n) khzMkChars = { n: d.n, list: mkCharsOf(ps) };
+  const chars = khzMkChars.list; if (!chars.length) return false;     // scanned page: the box is used instead
+  const w = ps.wrapper.getBoundingClientRect();
+  const a = mkNearest(chars, w.left + d.start[0], w.top + d.start[1]), b = mkNearest(chars, w.left + d.cur[0], w.top + d.cur[1]);
+  const lineH = chars[a.k] ? chars[a.k].r.height : 12;
+  if (a.k < 0 || b.k < 0 || a.d > lineH * 3 || b.d > lineH * 3) return false;
+  const s = Math.min(a.k, b.k), e = Math.max(a.k, b.k);
+  // join the characters of each line into one band
+  const bands = [];
+  for (let k = s; k <= e; k++) {
+    const r = chars[k].r, last = bands[bands.length - 1];
+    if (last && Math.abs(last.top - r.top) < r.height * 0.5 && r.left - last.right < r.height * 1.5) { last.right = Math.max(last.right, r.right); last.left = Math.min(last.left, r.left); last.bottom = Math.max(last.bottom, r.bottom); last.top = Math.min(last.top, r.top); }
+    else bands.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+  }
+  let ov = ps.wrapper.querySelector('.khz-tsel');
+  if (!ov) { ov = document.createElement('div'); ov.className = 'khz-tsel'; ps.wrapper.appendChild(ov); }
+  ov.innerHTML = bands.map(r => `<i style="left:${r.left - w.left}px;top:${r.top - w.top}px;width:${r.right - r.left}px;height:${r.bottom - r.top}px"></i>`).join('');
+  return true;
+}
+{
+  const _rpa = renderPageAnnots;
+  renderPageAnnots = function (n, preview) {
+    const d = state.drag;
+    if (preview && d && d.mode === 'create' && KHZ_MK_TOOLS.includes(d.tool) && d.n === n && d.cur) {
+      if (khzMkDraw(d)) return _rpa.call(this, n);   // the selection replaces the box preview
+      document.querySelectorAll('.khz-tsel').forEach(x => x.remove());
+    }
+    return _rpa.apply(this, arguments);
+  };
+  window.addEventListener('mouseup', () => setTimeout(khzMkClear, 0), true);
+  const st = document.createElement('style');
+  st.textContent = `.khz-tsel{position:absolute;inset:0;pointer-events:none;z-index:30}.khz-tsel i{position:absolute;background:rgba(0,120,215,.32)}`;
+  document.head.appendChild(st);
+}
+// the pointer for these tools is the text I-beam (Acrobat), not the cross
+KHZ_MK_TOOLS.forEach(t => { TOOL_CURSORS[t] = 'text'; });
+
+// ---- Line thickness: a slider from 0 to 12 pt in 0.5 pt steps (like Acrobat's, but finer) ----
+cmWidthMenu = function (btn) {
+  const old = document.getElementById('khz-lw'); if (old) { old.remove(); if (old._btn === btn) return; }
+  const a = cmSelected(), box = a && a.type === 'textbox';
+  const cur = a ? (box ? (a.borderW === undefined ? 1 : a.borderW) : (a.width || 1)) : (state.inkWidth || 2);
+  const p = document.createElement('div'); p.id = 'khz-lw'; p._btn = btn;
+  p.innerHTML = `<div class="klw-t">Line Thickness</div><div class="klw-r"><input type="range" min="0" max="12" step="0.5" value="${cur}"><span class="klw-v"></span></div>`;
+  document.body.appendChild(p);
+  const r = btn.getBoundingClientRect(); p.style.left = Math.max(6, Math.min(window.innerWidth - 280, r.left - 20)) + 'px'; p.style.top = (r.bottom + 6) + 'px';
+  const rng = p.querySelector('input'), lab = p.querySelector('.klw-v');
+  const show = () => { const w = +rng.value; lab.textContent = w === 0 ? (box ? 'No border' : '0 pt') : w + ' pt'; };
+  const apply = final => {
+    const w = +rng.value; show();
+    if (box) { if (!touchNative(a)) return; a.borderW = w; if (w && !a.borderColor) a.borderColor = '#000000'; renderPageAnnots(a.page); if (final) { pushHistory(); updatePropsBar && updatePropsBar(); } }
+    else if (a && (STROKE_TYPES.includes(a.type) || a.type === 'callout')) setAnnotProp('width', w, !final);
+    else if (final) state.inkWidth = w;
+  };
+  rng.oninput = () => apply(false); rng.onchange = () => apply(true);
+  show();
+  const close = e => { if (e.type === 'keydown' ? e.key === 'Escape' : !p.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { p.remove(); document.removeEventListener('mousedown', close, true); document.removeEventListener('keydown', close, true); } };
+  setTimeout(() => { document.addEventListener('mousedown', close, true); document.addEventListener('keydown', close, true); }, 0);
+};
+(function () { const st = document.createElement('style'); st.textContent = `#khz-lw{position:fixed;z-index:10050;background:#2b2b2b;color:#ddd;border:1px solid #444;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.45);padding:12px 14px;width:250px;font-size:12px}
+  #khz-lw .klw-t{color:#bbb;margin-bottom:10px}#khz-lw .klw-r{display:flex;align-items:center;gap:10px}#khz-lw input{flex:1;accent-color:#4b9cf5}#khz-lw .klw-v{min-width:58px;text-align:right;color:#eee}`; document.head.appendChild(st); })();
+// ================================================================
+//  Q1: Ctrl+S saves back into the file you opened — also for files opened from Recent
+//  (the file's place on your computer is remembered with the recent entry).
+//  Q3: F11 / Ctrl+L full screen can always be left with Esc, F11 or Ctrl+L.
+// ================================================================
+async function khzRecentSetHandle(name, h) {
+  if (!name || !h) return;
+  try {
+    const db = await recentDB();
+    const rec = await new Promise(res => { const r = db.transaction('files').objectStore('files').get(name); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
+    if (!rec) return;
+    rec.handle = h; db.transaction('files', 'readwrite').objectStore('files').put(rec);
+  } catch (e) {}
+}
+{
+  const _lb = loadBytes;
+  loadBytes = async function (bytes, name, opts = {}) {
+    const r = await _lb.apply(this, arguments);
+    if (!(opts && opts.keep) && state.saveHandle && state.fileName) setTimeout(() => khzRecentSetHandle(state.fileName, state.saveHandle), 400);
+    return r;
+  };
+  const _sh = svSaveToHandle;
+  svSaveToHandle = async function (handle) { const r = await _sh.apply(this, arguments); if (r && handle) khzRecentSetHandle(handle.name, handle); return r; };
+  openRecent = async function (name) {
+    try {
+      const db = await recentDB();
+      const rec = await new Promise(res => { const r = db.transaction('files').objectStore('files').get(name); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
+      if (!rec) { toast('That file is no longer in the recent list.'); return; }
+      if (!confirmDiscard()) return;
+      const h = rec.handle;
+      if (h && h.getFile) {
+        try {
+          let p = h.queryPermission ? await h.queryPermission({ mode: 'readwrite' }) : 'granted';
+          if (p !== 'granted' && h.requestPermission) p = await h.requestPermission({ mode: 'readwrite' });
+          if (p === 'granted') {
+            const f = await h.getFile();             // the file as it is now on your computer
+            state._openHandle = h; state.pendingRevert = true;
+            showLoading(true, 'Loading PDF...');
+            await loadBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+            return;
+          }
+        } catch (e) { if (e && e.name === 'NotFoundError') toast(`"${name}" was moved or deleted — opening the copy kept in Recent. Save will ask where to put it.`, 6000); }
+      }
+      state.pendingRevert = true;
+      await loadBytes(new Uint8Array(rec.bytes), rec.name);
+    } catch (e) { showLoading(false); toast('Could not open the recent file.'); }
+  };
+}
+// ---- full screen ----
+const khzBrowserFs = () => !document.fullscreenElement && window.innerHeight >= screen.height - 2 && window.innerWidth >= screen.width - 2;
+toggleFullscreen = function () {
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+  if (khzBrowserFs()) { toast('This is the browser\'s own full screen — press F11 to leave it.', 5000); return; }
+  document.documentElement.requestFullscreen().catch(() => toast('Full screen is not allowed here.'));
+};
+// F11 uses the app's full screen (which Esc leaves, like Acrobat) instead of the browser's
+window.addEventListener('keydown', e => { if (e.key === 'F11' && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); e.stopPropagation(); toggleFullscreen(); } }, true);
+// ================================================================
+Object.assign(ICONS, { cm_audio: 'M4 9.5h3.5l4.5-4v13l-4.5-4H4z M15 9a4 4 0 0 1 0 6 M17.5 6.5a7.5 7.5 0 0 1 0 11' });
+//  Q10: Comment › Attach menu: Attach File and Record Audio (like Acrobat).
+//  Record Audio: click on the page, record (or pick a sound file), OK → a speaker sound comment.
+//  Saved as a PDF Sound annotation (16-bit PCM), read back when the file is opened, double-click plays it.
+// ================================================================
+NATIVE_WRITABLE.add('audio-note');
+const KHZ_SR = 22050;
+function khzWav(pcm16, rate) {   // Int16Array (mono) → WAV bytes
+  const n = pcm16.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, pcm16[i], true);
+  return new Uint8Array(buf);
+}
+async function khzToPcm(arrayBuf) {   // any audio the browser can decode → mono 16-bit at 22.05 kHz
+  const AC = window.AudioContext || window.webkitAudioContext, ac = new AC();
+  try {
+    const src = await ac.decodeAudioData(arrayBuf.slice(0));
+    const len = Math.max(1, Math.ceil(src.duration * KHZ_SR)), off = new OfflineAudioContext(1, len, KHZ_SR);
+    const b = off.createBufferSource(); b.buffer = src; b.connect(off.destination); b.start();
+    const out = (await off.startRendering()).getChannelData(0), pcm = new Int16Array(out.length);
+    for (let i = 0; i < out.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(out[i] * 32767)));
+    return { pcm, rate: KHZ_SR, dur: src.duration };
+  } finally { try { ac.close(); } catch (e) {} }
+}
+// the Sound Recorder window
+function khzSoundRecorder() {
+  return new Promise(resolve => {
+    let rec = null, chunks = [], stream = null, result = null, t0 = 0, tick = null, done = false;
+    const ov = esDialog('khz-rec', 'Sound Recorder', `<div class="krec"><div class="krec-row"><button class="wc-btn krec-go">● Record</button><button class="wc-btn krec-play" disabled>▶ Play</button><span class="krec-t">0:00</span></div>
+      <div class="krec-row"><button class="wc-btn krec-file">Choose a sound file...</button><span class="krec-n"></span></div>
+      <label class="krec-l">Description (optional):</label><input class="krec-d" style="width:100%" placeholder="Sound comment"></div>`,
+    [{ label: 'OK', primary: 1, run: () => { if (!result) { alert('Record something first, or choose a sound file.'); return false; } finish({ ...result, text: ov.querySelector('.krec-d').value.trim() }); } }, { label: 'Cancel', run: () => finish(null) }], 400);
+    const finish = r => { if (done) return; done = true; clearInterval(tick); try { rec && rec.state === 'recording' && rec.stop(); } catch (e) {} if (stream) stream.getTracks().forEach(t => t.stop()); resolve(r); };
+    ov.querySelector('.ap-x').addEventListener('click', () => finish(null));
+    const go = ov.querySelector('.krec-go'), play = ov.querySelector('.krec-play'), tl = ov.querySelector('.krec-t'), ok = ov.querySelector('.ap-ok');
+    const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const take = async (buf, label) => {
+      try { const r = await khzToPcm(buf); result = { pcm: r.pcm, rate: r.rate }; tl.textContent = fmt(r.dur); play.disabled = false; ov.querySelector('.krec-n').textContent = label || ''; }
+      catch (e) { alert('That sound couldn\'t be read: ' + (e.message || e)); }
+    };
+    go.onclick = async () => {
+      if (rec && rec.state === 'recording') { rec.stop(); return; }
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (e) { alert('The microphone isn\'t available. Allow microphone access for this page, or choose a sound file.'); return; }
+      chunks = []; rec = new MediaRecorder(stream);
+      rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+      rec.onstop = async () => { clearInterval(tick); stream.getTracks().forEach(t => t.stop()); stream = null; go.textContent = '● Record'; go.classList.remove('rec'); await take(await new Blob(chunks, { type: rec.mimeType }).arrayBuffer(), 'Recorded'); };
+      rec.start(); t0 = Date.now(); go.textContent = '■ Stop'; go.classList.add('rec'); play.disabled = true;
+      tick = setInterval(() => { tl.textContent = fmt((Date.now() - t0) / 1000); }, 250);
+    };
+    play.onclick = () => { if (!result) return; const a = new Audio(URL.createObjectURL(new Blob([khzWav(result.pcm, result.rate)], { type: 'audio/wav' }))); a.play(); };
+    ov.querySelector('.krec-file').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*,.wav,.mp3,.m4a,.ogg,.aac,.flac'; inp.onchange = async () => { const f = inp.files[0]; if (f) await take(await f.arrayBuffer(), f.name); }; inp.click(); };
+    void ok;
+  });
+}
+function khzRecordAudio() {
+  if (!requireDoc()) return;
+  if (state.activeTool !== 'select') setActiveTool('select');
+  const ghost = document.createElement('div'); const sz = 20;
+  ghost.style.cssText = `position:fixed;left:-9999px;top:0;width:${sz * state.scale}px;height:${sz * state.scale}px;opacity:.8;pointer-events:none;z-index:100002;background:#fff3b0;border:1px solid #b08a00;border-radius:2px`;
+  document.body.appendChild(ghost); document.body.classList.add('khz-placing');
+  khzImgPlace = { f: { url: '' }, w: sz, h: sz, ghost, down: null, box: null, make: async (ps, pts) => {
+    const r = await khzSoundRecorder(); if (!r) return;
+    const key = uid('media'); state.mediaStore[key] = { bytes: khzWav(r.pcm, r.rate) };
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const a = { id: uid('snd'), page: ps.n, type: 'audio-note', pts: [[Math.min(...xs), Math.max(...ys)]], media: { key, name: 'Sound', mime: 'audio/wav', kind: 'sound', rate: r.rate }, note: r.text || '', text: r.text || '', color: '#b08a00', author: commentAuthor(), modDate: Date.now() };
+    addAnnotation(a); selectAnnot(a.id); markDirty(); toast('Sound comment added. Double-click it to play.');
+  } };
+  toast('Click where the sound comment should go. Esc cancels.', 4000);
+}
+// on the page: a small yellow speaker
+{
+  const _ag = annotGeometry;
+  annotGeometry = function (a, vp, forPdf) {
+    if (!a || a.type !== 'audio-note') return _ag.apply(this, arguments);
+    const s = vp.scale, [x, y] = vp.convertToViewportPoint(a.pts[0][0], a.pts[0][1]), z = 20 * s, k = z / 20;
+    const P = pts => pts.map(([u, v]) => [x + u * k, y + v * k]);
+    return [{ k: 'poly', pts: [[x, y], [x + z, y], [x + z, y + z], [x, y + z]], fill: '#fff3b0', stroke: a.color || '#b08a00', width: 1 },
+      { k: 'poly', pts: P([[4, 8], [7.5, 8], [11.5, 4.5], [11.5, 15.5], [7.5, 12], [4, 12]]), fill: '#333333', stroke: '#333333', width: 0.5 },
+      { k: 'line', pts: P([[13.5, 7.5], [15, 10], [13.5, 12.5]]), stroke: '#333333', width: 1.2 * k },
+      { k: 'line', pts: P([[15.5, 5.5], [17.5, 10], [15.5, 14.5]]), stroke: '#333333', width: 1.2 * k }];
+  };
+  // double-click plays it
+  document.addEventListener('dblclick', e => {
+    if (!state.pdfDoc || typeof khzPageAt !== 'function') return;
+    const hit = khzPageAt(e.clientX, e.clientY); if (!hit) return;
+    const h = hitTest(hit.ps.n, e.clientX - hit.r.left, e.clientY - hit.r.top);
+    if (h && h.annot && h.annot.type === 'audio-note') { e.preventDefault(); e.stopPropagation(); const m = state.mediaStore[h.annot.media.key]; if (m) new Audio(khzMediaUrl(h.annot)).play().catch(() => toast('This sound couldn\'t be played.')); }
+  }, true);
+}
+// saving: a Sound annotation with the recording inside (16-bit signed, big-endian, as the PDF standard asks)
+{
+  const _wna = writeNativeAnnot;
+  writeNativeAnnot = async function (doc, lp, a, vp1, rot, tmp, mainCtx) {
+    if (!a || a.type !== 'audio-note') return _wna.apply(this, arguments);
+    const L = PDFLib, ctx = doc.context, H = s => L.PDFHexString.fromText(s || '');
+    const m = state.mediaStore[a.media.key]; if (!m) return;
+    const wav = m.bytes, dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength), rate = dv.getUint32(24, true), n = (wav.length - 44) >> 1;
+    const be = new Uint8Array(n * 2); for (let i = 0; i < n; i++) { const v = dv.getInt16(44 + i * 2, true); be[i * 2] = (v >> 8) & 255; be[i * 2 + 1] = v & 255; }
+    const snd = ctx.register(ctx.flateStream(be, { Type: 'Sound', R: rate, C: 1, B: 16, E: 'Signed' }));
+    const [x0, y0] = a.pts[0], R = [x0, y0 - 20, x0 + 20, y0];
+    const ops = `1 0.953 0.69 rg 0.69 0.54 0 RG 0.5 w 0.25 0.25 19.5 19.5 re B 0.2 g 4 12 m 7.5 12 l 11.5 15.5 l 11.5 4.5 l 7.5 8 l 4 8 l f 0.2 G 1.2 w 13.5 12.5 m 15 10 l 13.5 7.5 l S 15.5 14.5 m 17.5 10 l 15.5 5.5 l S`;
+    const ap = ctx.register(ctx.flateStream(latin1ToBytes(ops), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 20, 20] }));
+    const [r, g, b] = hexToRgb01(a.color || '#b08a00');
+    const ref = ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Sound', Rect: R, F: 4 | (a.locked ? 128 : 0), Name: 'Speaker', Sound: snd, NM: H(a.id), C: [r, g, b],
+      Contents: H(a.note || a.text || 'Sound'), T: H(a.author || commentAuthor()), Subj: H('Sound'), M: L.PDFString.fromDate(khzDateOf(a.modDate)), AP: { N: ap } }));
+    lp.node.addAnnot(ref);
+  };
+}
+// reading Sound comments back
+async function khzImportSounds() {
+  try {
+    const L = PDFLib, N = L.PDFName.of;
+    const doc = await L.PDFDocument.load(state.fileBytes, { updateMetadata: false, ignoreEncryption: true }), ctx = doc.context;
+    let n = 0;
+    for (const p of doc.getPages()) {
+      n++; const an = p.node.lookup(N('Annots')); if (!(an instanceof L.PDFArray)) continue;
+      for (const ref of an.asArray()) {
+        if (!(ref instanceof L.PDFRef)) continue;
+        const a = ctx.lookup(ref); if (!(a instanceof L.PDFDict) || String(a.get(N('Subtype'))) !== '/Sound') continue;
+        const id = ref.generationNumber ? `${ref.objectNumber}R${ref.generationNumber}` : `${ref.objectNumber}R`;
+        if (state.annotations.some(x => x.native === id)) continue;
+        const st = a.lookup(N('Sound')); if (!st || !st.dict) continue;
+        const num = k => { const v = st.dict.lookup(N(k)); return v && v.asNumber ? v.asNumber() : null; };
+        const rate = num('R') || 8000, ch = num('C') || 1, bits = num('B') || 8, enc = String(st.dict.get(N('E')) || '/Raw');
+        let raw; try { raw = st instanceof L.PDFRawStream ? L.decodePDFRawStream(st).decode() : st.getContents(); } catch (e) { continue; }
+        // to mono 16-bit
+        const frames = Math.floor(raw.length / (ch * bits / 8)), pcm = new Int16Array(frames);
+        for (let i = 0; i < frames; i++) {
+          let v;
+          if (bits === 16) { const o = i * ch * 2; v = (raw[o] << 8) | raw[o + 1]; if (v > 32767) v -= 65536; }
+          else { const b = raw[i * ch]; v = enc === '/Signed' ? ((b > 127 ? b - 256 : b) << 8) : ((b - 128) << 8); }
+          pcm[i] = v;
+        }
+        const R = a.lookup(N('Rect')).asArray().map(x => x.asNumber()), key = uid('media');
+        state.mediaStore[key] = { bytes: khzWav(pcm, Math.round(rate)) };
+        let txt = ''; try { const c = a.lookup(N('Contents')); txt = c ? c.decodeText() : ''; } catch (e) {}
+        state.annotations.push({ id: uid('snd'), page: n, type: 'audio-note', pts: [[R[0], R[3]]], media: { key, name: 'Sound', mime: 'audio/wav', kind: 'sound', rate }, note: txt, text: txt, color: '#b08a00', native: id, untouched: true });
+        (state.nativeIds[n] = state.nativeIds[n] || []).push(id);
+      }
+    }
+    renderAllAnnots();
+  } catch (e) { console.warn('sound import', e); }
+}
+{
+  const _ina = importNativeAnnots;
+  importNativeAnnots = async function () { const r = await _ina.apply(this, arguments); await khzImportSounds(); return r; };
+  const _ad = appDraws; appDraws = function (a) { if (a && a.type === 'audio-note') return true; return _ad.apply(this, arguments); };
+}
+// the Attach button opens a menu: Attach File / Record Audio
+{
+  const _cp = cmPick;
+  cmPick = function (tool) {
+    if (tool === 'attach-file') {
+      const btn = document.querySelector('.cm-tool[data-tool="attach-file"]');
+      if (btn && typeof khzBtnMenu === 'function') { khzBtnMenu(btn, [{ label: 'Attach File', ic: 'cm_attach', run: () => _cp.call(this, 'attach-file') }, { label: 'Record Audio', ic: 'cm_audio', run: () => khzRecordAudio() }]); return; }
+    }
+    return _cp.apply(this, arguments);
+  };
+}
+(function () { const st = document.createElement('style'); st.textContent = `.krec-row{display:flex;gap:8px;align-items:center;margin-bottom:10px}.krec-t{font:15px monospace;margin-left:auto}.krec-go.rec{background:#d7373f;color:#fff}.krec-l{display:block;margin:4px 0}.krec-n{font-size:12px;opacity:.8}`; document.head.appendChild(st); })();
+// ================================================================
+//  Q8: Fill & Sign check / cross / dot marks and placed signatures stay editable after saving
+//  (like Acrobat): they are saved as stamp comments, not burned into the page. Marks come back as marks.
+// ================================================================
+const KHZ_FS_TYPES = ['check', 'cross', 'dot', 'signature'];
+KHZ_FS_TYPES.forEach(t => NATIVE_WRITABLE.add(t));
+{
+  const _wna = writeNativeAnnot;
+  writeNativeAnnot = async function (doc, lp, a, vp1, rot, tmp, mainCtx) {
+    if (!a || !KHZ_FS_TYPES.includes(a.type) || a.flatten) return _wna.apply(this, arguments);
+    const L = PDFLib, H = s => L.PDFHexString.fromText(s || '');
+    const prims = annotGeometry(a, vp1, true); if (!prims.length) return;
+    const toPdf = q => vp1.convertToPdfPoint(q[0], q[1]);
+    const corners = prims.flatMap(p => { const b = primBBox(p); return [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]; }).map(toPdf);
+    const xs = corners.map(c => c[0]), ys = corners.map(c => c[1]);
+    const pad = a.type === 'signature' ? 0 : 1.5;
+    const rect = [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+    const mb = lp.getMediaBox(), tp = tmp.doc.addPage([mb.width, mb.height]); tp.setMediaBox(mb.x, mb.y, mb.width, mb.height);
+    for (const p of prims) await drawPrimPDF(tmp.doc, tp, p, vp1, rot, tmp.ctx);
+    await tmp.doc.flush();
+    const ap = await doc.embedPage(tp, { left: rect[0], bottom: rect[1], right: rect[2], top: rect[3] });
+    const [r, g, b] = hexToRgb01(a.color || '#000000');
+    const d = { Type: 'Annot', Subtype: 'Stamp', Name: a.type === 'signature' ? 'KHZSignature' : 'KHZ' + a.type, Rect: rect, F: 4 | (a.locked ? 128 : 0), NM: H(a.id),
+      M: L.PDFString.fromDate(new Date()), T: H(a.author || commentAuthor()), Subj: H(a.type === 'signature' ? 'Signature' : 'Fill & Sign'), C: [r, g, b], AP: { N: ap.ref },
+      Contents: H(a.type === 'signature' ? 'Signature' : { check: 'Check mark', cross: 'Cross mark', dot: 'Dot' }[a.type]) };
+    if (a.type !== 'signature') { d.KHZFS = L.PDFName.of(a.type); d.KHZPts = a.pts.flat().map(v => +(+v).toFixed(3)); if (a.size && a.size !== 1) d.KHZSize = +(+a.size).toFixed(3); }
+    if (a.type === 'signature' && a.dataUrl) { try { const m = /^data:([^;]+);base64,(.*)$/.exec(a.dataUrl); if (m) { d.KHZImg = doc.context.register(doc.context.flateStream(b64ToBytes(m[2]), {})); d.KHZMime = L.PDFString.of(m[1]); } } catch (e) {} }
+    lp.node.addAnnot(doc.context.register(doc.context.obj(d)));
+  };
+  // every Fill & Sign item (text too) is tagged, so reopening gives back the blue A / A / trash / ⋯ bar
+  const _w2 = writeNativeAnnot;
+  writeNativeAnnot = async function (doc, lp, a, vp1, rot, tmp, mainCtx) {
+    const before = (() => { const ar = lp.node.Annots(); return ar ? ar.size() : 0; })();
+    const r = await _w2.apply(this, arguments);
+    if (a && (a.origin === 'fill-sign' || a.fsKeep)) {
+      const ar = lp.node.Annots();
+      if (ar) for (let i = before; i < ar.size(); i++) { const d = doc.context.lookup(ar.get(i)); if (d && d.set) d.set(PDFLib.PDFName.of('KHZOrigin'), PDFLib.PDFName.of('FillSign')); }
+    }
+    return r;
+  };
+}
+// reopening: our marks come back as marks (Acrobat and other viewers just see stamps they can move)
+{
+  const _ina = importNativeAnnots;
+  importNativeAnnots = async function () {
+    const r = await _ina.apply(this, arguments);
+    try {
+      const L = PDFLib, N = L.PDFName.of, doc = await L.PDFDocument.load(state.fileBytes, { updateMetadata: false, ignoreEncryption: true }), ctx = doc.context;
+      let changed = false;
+      doc.getPages().forEach((p, i) => {
+        const an = p.node.lookup(N('Annots')); if (!(an instanceof L.PDFArray)) return;
+        an.asArray().forEach(ref => {
+          if (!(ref instanceof L.PDFRef)) return; const d = ctx.lookup(ref); if (!(d instanceof L.PDFDict)) return;
+          const id = ref.generationNumber ? `${ref.objectNumber}R${ref.generationNumber}` : `${ref.objectNumber}R`;
+          const a = state.annotations.find(x => x.native === id); if (!a) return;
+          if (d.get(N('KHZOrigin'))) { a.origin = 'fill-sign'; changed = true; }
+          if (String(d.get(N('Name'))) === '/KHZSignature') {   // our own signature: back to a signature with its picture
+            const img = d.lookup(N('KHZImg')), mime = d.lookup(N('KHZMime'));
+            if (img) { try { const bytes = img instanceof L.PDFRawStream ? L.decodePDFRawStream(img).decode() : img.getContents(); let bin = ''; for (let k = 0; k < bytes.length; k += 32768) bin += String.fromCharCode.apply(null, bytes.subarray(k, k + 32768)); a.type = 'signature'; a.fsKeep = true; a.dataUrl = `data:${mime ? mime.decodeText() : 'image/png'};base64,` + btoa(bin); changed = true; } catch (e) {} }
+            return;
+          }
+          const kind = d.get(N('KHZFS')); if (!kind) return;
+          const pts = d.lookup(N('KHZPts')); const v = pts && pts.asArray ? pts.asArray().map(x => x.asNumber()) : null; if (!v || v.length < 2) return;
+          const C = d.lookup(N('C')), col = C && C.asArray ? '#' + C.asArray().map(x => Math.round(x.asNumber() * 255).toString(16).padStart(2, '0')).join('') : '#000000';
+          a.type = String(kind).slice(1); a.pts = []; for (let k = 0; k + 1 < v.length; k += 2) a.pts.push([v[k], v[k + 1]]); a.color = col; delete a.dataUrl; const sz = d.lookup(N('KHZSize')); if (sz && sz.asNumber) a.size = sz.asNumber(); changed = true;
+        });
+      });
+      if (changed) renderAllAnnots();
+    } catch (e) { console.warn('fill & sign marks', e); }
+    return r;
+  };
 }
 </script>
 </body>
