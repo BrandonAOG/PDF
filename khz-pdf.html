@@ -17789,6 +17789,7 @@ async function expOCRPages(bytes, pages, lang) {
       const vp = pg.getViewport({ scale: k }), c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
       const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
       await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE, intent: 'print' }).promise;
+      if (typeof khzOcrClean === 'function') try { khzOcrClean(c, v1.width); } catch (e) {}
       const { data } = await worker.recognize(c, {}, { blocks: true, text: false });
       erase[i] = [];
       const allW = ocrWordsOf(data);
@@ -17992,7 +17993,7 @@ async function expDocx(bytes, pages, o) {
   const E = pt => Math.round(pt * 12700), T = pt => Math.round(pt * 20);
   const zip = new JSZip(), rels = [];
   let id = 1, body = '';
-  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}${r.u ? '<w:u w:val="single"/>' : ''}<w:color w:val="${hex6(r.color)}"/><w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/></w:rPr>`;
+  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/><w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
   const run = r => `<w:r>${rPr(r)}<w:t xml:space="preserve">${xmlEsc(r.text)}</w:t></w:r>`;
   const anchorPos = (x, y, w, h, behind, z) => `<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${z}" behindDoc="${behind ? 1 : 0}" locked="${behind ? 1 : 0}" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${E(x)}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${E(y)}</wp:posOffset></wp:positionV><wp:extent cx="${E(w)}" cy="${E(h)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>`;
   const sect = p => `<w:sectPr><w:pgSz w:w="${T(p.w)}" w:h="${T(p.h)}"${p.w > p.h ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${o.layout === 'flow' ? 1080 : 0}" w:right="${o.layout === 'flow' ? 1080 : 0}" w:bottom="${o.layout === 'flow' ? 1080 : 0}" w:left="${o.layout === 'flow' ? 1080 : 0}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
@@ -32091,7 +32092,7 @@ async function khzDocxFlow(bytes, pages, o) {
   const E = pt => Math.round(pt * 12700), T = pt => Math.round(pt * 20), M = 54;
   const zip = new JSZip(), rels = [];
   let body = '', id = 1;
-  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}${r.u ? '<w:u w:val="single"/>' : ''}${hex6(r.color) !== '000000' ? `<w:color w:val="${hex6(r.color)}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/></w:rPr>`;
+  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}${hex6(r.color) !== '000000' ? `<w:color w:val="${hex6(r.color)}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
   const sect = p => `<w:sectPr><w:pgSz w:w="${T(p.w)}" w:h="${T(p.h)}"${p.w > p.h ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${T(M)}" w:right="${T(M)}" w:bottom="${T(M)}" w:left="${T(M)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   for (let i = 0; i < pages.length; i++) {
     const p = pages[i], { paras, med } = khzReadingBlocks(p.runs || []), cw = p.w - 2 * M, ch = p.h - 2 * M;
@@ -32146,6 +32147,7 @@ async function khzDocxFlow(bytes, pages, o) {
     const M = 54, crowded = pages.filter(p => { const area = (p.w - 2 * M) * (p.h - 2 * M); const need = (p.runs || []).reduce((a, r) => a + String(r.text).length * r.size * 0.5 * r.size * 1.25, 0); return need > area * 0.55; }).length;
     return crowded < Math.ceil(pages.length / 3);
   };
+  window.khzFlowSuits = flowSuits;
   expDocx = function (bytes, pages, o) {
     if (!o || o.layout !== 'flow') return _ed.apply(this, arguments);
     if (o.forceFlow || flowSuits(pages)) return khzDocxFlow(bytes, pages, o);
@@ -34675,6 +34677,408 @@ const KHZ_EXP_EXT = { xml03: 'xml' };
     window.toast = (m, ...r) => { if (swallow && /^Exported "/.test(m)) return; return toastO(m, ...r); };   // the original "Exported" message names the default file
     try { return await _ee.apply(this, arguments); }
     finally { setTimeout(() => { window.downloadBlob = dl; swallow = false; window.toast = toastO; }, 0); }
+  };
+}
+// ================================================================
+//  Q15: Word export builds real Word tables from the tables drawn on the page
+//  (shaded row bands, ruled lines and grids), like Acrobat does.
+//  Used by the page-layout Word export; the text inside a table goes into its cells.
+// ================================================================
+
+// ---- 1. find the lines and shaded bands drawn on a page picture ----
+//      (looked for on a picture that still has the text in it: a band keeps going under its words)
+function khzTblStrips(bg) {
+  const c = bg.canvas, W = c.width, H = c.height, k = W / bg.w;
+  const d = c.getContext('2d').getImageData(0, 0, W, H).data;
+  const at = (x, y) => (y * W + x) * 4;
+  const white = i => Math.min(d[i], d[i + 1], d[i + 2]) >= 246;
+  const dist = (i, r) => Math.abs(d[i] - r[0]) + Math.abs(d[i + 1] - r[1]) + Math.abs(d[i + 2] - r[2]);
+  // runs of one colour along a line of pixels; words written on a band don't break it
+  const runs = (len, idx, minLen, gapInk, gapWhite, minFill) => {
+    const out = []; let x = 0;
+    while (x < len) {
+      if (white(idx(x))) { x++; continue; }
+      const s = x, j0 = idx(Math.min(len - 1, x + 2)), r = [d[j0], d[j0 + 1], d[j0 + 2]];
+      if (Math.min(...r) >= 246 || dist(idx(x), r) >= 45) { x++; continue; }
+      let last = x, hit = 1, mi = 0, mw = 0; x++;
+      while (x < len) { const i = idx(x); if (dist(i, r) < 45) { mi = mw = 0; last = x; hit++; } else if (white(i) ? ++mw > gapWhite : ++mi > gapInk) break; x++; }
+      if (last - s + 1 >= minLen && hit / (last - s + 1) >= minFill) out.push({ a: s, b: last, c: r });
+      x = last + 1;
+    }
+    return out;
+  };
+  const close = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]) < 45;
+  // join runs on neighbouring lines that start and end at the same place
+  const join = (n, getRuns, tol) => {
+    const done = [], open = [];
+    for (let y = 0; y < n; y++) {
+      const rs = getRuns(y), keep = [];
+      rs.forEach(r => {
+        const s = open.find(o => !o.hit && Math.abs(o.a - r.a) <= tol && Math.abs(o.b - r.b) <= tol && close(o.c, r.c));
+        if (s) { s.hit = true; s.y1 = y; s.a = Math.min(s.a, r.a); s.b = Math.max(s.b, r.b); } else keep.push({ a: r.a, b: r.b, c: r.c, y0: y, y1: y, hit: true });
+      });
+      for (let j = open.length - 1; j >= 0; j--) if (!open[j].hit) done.push(open.splice(j, 1)[0]);
+      open.push(...keep); open.forEach(o => { o.hit = false; });
+    }
+    return done.concat(open);
+  };
+  let hx = join(H, y => runs(W, x => at(x, y), Math.round(40 * k), Math.round(16 * k / 2.08), 4, 0.55), 4);
+  // a strip with the same colour just above or below is part of a drawing (a logo, a swoosh), not a line
+  const sameNext = (s, y) => { if (y < 0 || y >= H) return 0; let n = 0; for (let x = s.a; x <= s.b; x++) if (dist(at(x, y), s.c) < 45) n++; return n / (s.b - s.a + 1); };
+  hx = hx.filter(s => sameNext(s, s.y0 - 1) < 0.3 && sameNext(s, s.y1 + 1) < 0.3);
+  // soft edge rows of a band belong to the band
+  const bandsPx = hx.filter(s => s.y1 - s.y0 + 1 > 3 * k);
+  hx = hx.filter(s => {
+    if (s.y1 - s.y0 + 1 > 3 * k) return true;
+    const b = bandsPx.find(b => (s.y1 + 1 >= b.y0 - 1 && s.y1 < b.y0) || (s.y0 - 1 <= b.y1 + 1 && s.y0 > b.y1));
+    if (!b || Math.abs(b.a - s.a) > 4 || Math.abs(b.b - s.b) > 4) return true;
+    return !s.c.every((v, i) => v >= b.c[i] - 6);
+  });
+  let vx = join(W, x => runs(H, y => at(x, y), Math.round(8 * k), 0, 0, 1), 3);
+  // an upright line has something else on both sides (inside a shaded band, every column looks like a line)
+  const sideSame = (s, x) => { if (x < 0 || x >= W) return 0; let n = 0; for (let y = s.a; y <= s.b; y++) if (dist(at(x, y), s.c) < 45) n++; return n / (s.b - s.a + 1); };
+  vx = vx.filter(s => sideSame(s, s.y0 - 1) < 0.3 && sideSame(s, s.y1 + 1) < 0.3);
+  const hex = cc => cc.map(v => v.toString(16).padStart(2, '0')).join('');
+  // a strip's colour: the most common colour along its middle (not a soft edge pixel)
+  const mode = (s, horiz) => { const m = Math.round((s.y0 + s.y1) / 2), cnt = {}; let best = null, bn = 0; for (let t = s.a; t <= s.b; t++) { const i = horiz ? at(t, m) : at(m, t); if (white(i)) continue; const key = d[i] + ',' + d[i + 1] + ',' + d[i + 2]; const n = cnt[key] = (cnt[key] || 0) + 1; if (n > bn) { bn = n; best = [d[i], d[i + 1], d[i + 2]]; } } if (best) s.c = best; };
+  hx.forEach(s => mode(s, true)); vx.forEach(s => mode(s, false));
+  const hs = hx.map(s => ({ x0: s.a / k, x1: (s.b + 1) / k, y0: s.y0 / k, y1: (s.y1 + 1) / k, color: hex(s.c) }))
+    .filter(s => s.y1 - s.y0 <= 40).map(s => ({ ...s, kind: s.y1 - s.y0 <= 3 ? 'rule' : 'band' }));
+  const rules = hs.filter(s => s.kind === 'rule');
+  // an upright line counts only when it runs from one ruled line to another (letters and band edges don't)
+  const vs = vx.map(s => ({ y0: s.a / k, y1: (s.b + 1) / k, x0: s.y0 / k, x1: (s.y1 + 1) / k, color: hex(s.c), kind: 'vrule' }))
+    .filter(s => s.x1 - s.x0 <= 3 && s.y1 - s.y0 >= 8)
+    .filter(v => { const xm = (v.x0 + v.x1) / 2, touch = y => rules.some(r => Math.abs((r.y0 + r.y1) / 2 - y) <= 3 && r.x0 - 3 <= xm && r.x1 + 3 >= xm); return touch(v.y0) && touch(v.y1); });
+  return { hs, vs, k };
+}
+
+// table lines confuse text recognition (they get read as "|" and hide the words in the cells): take them out first
+function khzOcrClean(c, wpt) {
+  const { hs, vs, k } = khzTblStrips({ canvas: c, w: wpt }), ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  hs.filter(s => s.kind === 'rule').concat(vs).forEach(s => ctx.fillRect(s.x0 * k - 1, s.y0 * k - 1, (s.x1 - s.x0) * k + 2, (s.y1 - s.y0) * k + 2));
+}
+
+// ---- 2. group them into tables and work out rows, columns and cells ----
+function khzTblFind(bg, runs) {
+  const { hs, vs, k } = khzTblStrips(bg);
+  const els = hs.concat(vs), par = els.map((_, i) => i);
+  const f = i => par[i] === i ? i : (par[i] = f(par[i])), u = (a, b) => { par[f(a)] = f(b); };
+  const ov = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0);
+  for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+    const A = els[i], B = els[j];
+    if (A.kind !== 'vrule' && B.kind !== 'vrule') {
+      const o = ov(A.x0, A.x1, B.x0, B.x1), g = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1);
+      if (o >= 0.6 * Math.min(A.x1 - A.x0, B.x1 - B.x0) && g <= 22) u(i, j);
+    } else if (ov(A.x0 - 3, A.x1 + 3, B.x0, B.x1) >= 0 && ov(A.y0 - 3, A.y1 + 3, B.y0, B.y1) >= 0) u(i, j);
+  }
+  const groups = {}; els.forEach((e, i) => { (groups[f(i)] = groups[f(i)] || []).push(e); });
+  // lines of text, cut where there's a wide gap (text in two columns of the page sits on the same baselines)
+  const lines = [];
+  const junk = r => /^[|│¦]+$/.test(String(r.text).trim());   // OCR reads a ruled line as "|"
+  // one text run can hold a whole row ("Brandon 555-0100 Austin"): look at it word by word
+  const words = r => {
+    const t = String(r.text); if (r.rot || !/\S\s+\S/.test(t)) return [r];
+    const parts = t.split(/(\s+)/), tot = khzTblWidth(r) || 1, k = r.w / tot, out = []; let x = r.x;
+    parts.forEach(pt => { const w = khzTblWidth({ ...r, text: pt }) * k; if (pt.trim()) out.push({ ...r, text: pt, x, w, parent: r }); x += w; });
+    return out;
+  };
+  expLines(runs.filter(r => !r.rot && String(r.text).trim() && !junk(r)).flatMap(words)).forEach(L => { let cur = null; L.runs.forEach(r => { if (!cur || r.x - (cur.runs[cur.runs.length - 1].x + cur.runs[cur.runs.length - 1].w) > Math.max(20, r.size * 2.5)) { cur = { base: L.base, runs: [] }; lines.push(cur); } cur.runs.push(r); }); });
+  const lineBox = L => { const x0 = Math.min(...L.runs.map(r => r.x)), x1 = Math.max(...L.runs.map(r => r.x + r.w)), sz = Math.max(...L.runs.map(r => r.size)); return { x0, x1, y0: L.base - sz * 0.8, y1: L.base + sz * 0.2, mid: L.base - sz * 0.32, sz }; };
+  const cellsOf = L => { const out = []; let cur = null; L.runs.forEach(r => { if (cur && r.x - cur.x1 <= Math.max(6, r.size * 0.9)) { cur.runs.push(r); cur.x1 = Math.max(cur.x1, r.x + r.w); } else { cur = { x0: r.x, x1: r.x + r.w, runs: [r] }; out.push(cur); } }); return out; };
+  const tables = [];
+  const build = (g, depth) => {
+    const H = g.filter(e => e.kind !== 'vrule'), V = g.filter(e => e.kind === 'vrule');
+    if (H.length < 2) return;
+    let x0 = Math.min(...H.map(e => e.x0)), x1 = Math.max(...H.map(e => e.x1)), y0 = Math.min(...g.map(e => e.y0)), y1 = Math.max(...g.map(e => e.y1));
+    if (x1 - x0 < 100) return;
+    const grid = V.filter(v => v.y1 - v.y0 > 6).length >= 2 && H.filter(h => h.x1 - h.x0 > 0.8 * (x1 - x0)).length >= 2;
+    if (!grid && H.length < 3) return;
+    // row edges
+    let edges = [];
+    H.forEach(h => { if (h.kind === 'band') edges.push(h.y0, h.y1); else edges.push((h.y0 + h.y1) / 2); });
+    edges.sort((a, b) => a - b); const E = []; edges.forEach(y => { if (!E.length || y - E[E.length - 1] > 2.5) E.push(y); else E[E.length - 1] = (E[E.length - 1] + y) / 2; });
+    const inside = b => b.mid > E[0] && b.mid < E[E.length - 1] && b.x0 >= x0 - 4 && b.x1 <= x1 + 4;
+    const LB = lines.map(L => ({ L, b: lineBox(L) }));
+    // a row of text just above or below, lined up with the table's columns
+    const rh = (() => { const d = []; for (let i = 1; i < E.length; i++) if (E[i] - E[i - 1] > 6) d.push(E[i] - E[i - 1]); d.sort((a, b) => a - b); return d[d.length >> 1] || 14; })();
+    if (!grid) {
+      const fit = b => b.x0 >= x0 - 4 && b.x1 <= x1 + 4;
+      const up = LB.filter(o => fit(o.b) && o.b.mid < E[0] && o.b.mid > E[0] - rh * 1.1 && (cellsOf(o.L).length >= 2 || o.b.x1 - o.b.x0 < 0.7 * (x1 - x0)));
+      if (up.length) E.unshift(Math.min(...up.map(o => o.b.y0)) - Math.max(1, (rh - (up[0].b.y1 - up[0].b.y0)) / 2));
+      const dn = LB.filter(o => fit(o.b) && o.b.mid > E[E.length - 1] && o.b.mid < E[E.length - 1] + rh * 1.1 && (cellsOf(o.L).length >= 2 || o.b.x1 - o.b.x0 < 0.7 * (x1 - x0)));
+      if (dn.length) E.push(Math.max(...dn.map(o => o.b.y1)) + Math.max(1, (rh - (dn[0].b.y1 - dn[0].b.y0)) / 2));
+    }
+    if (E.length < 2) return;
+    y0 = E[0]; y1 = E[E.length - 1];
+    let rows = []; for (let i = 1; i < E.length; i++) rows.push({ y0: E[i - 1], y1: E[i], lines: [] });
+    const mine = LB.filter(o => inside(o.b));
+    if (mine.length < 2) return;
+    mine.forEach(o => { let r = rows.find(R => o.b.mid >= R.y0 && o.b.mid < R.y1); if (!r) r = rows.reduce((a, R) => Math.abs((R.y0 + R.y1) / 2 - o.b.mid) < Math.abs((a.y0 + a.y1) / 2 - o.b.mid) ? R : a); r.lines.push(o); });
+    // thin empty slivers join the row next to them
+    rows = rows.filter((R, i) => { if (R.y1 - R.y0 >= 3 || R.lines.length) return true; const nb = rows[i + 1] || rows[i - 1]; if (nb) { if (nb === rows[i + 1]) nb.y0 = R.y0; else nb.y1 = R.y1; } return false; });
+    // columns
+    let cols;
+    if (grid) {
+      const xs = V.map(v => (v.x0 + v.x1) / 2).sort((a, b) => a - b), C = [];
+      xs.forEach(x => { if (!C.length || x - C[C.length - 1] > 3) C.push(x); });
+      cols = [x0].concat(C.filter(x => x > x0 + 4 && x < x1 - 4)).concat([x1]);
+    } else {
+      const cov = new Float32Array(Math.ceil(x1 - x0) + 2);
+      let nr = 0;
+      rows.forEach(R => { if (!R.lines.length) return; nr++; const seen = new Uint8Array(cov.length); R.lines.forEach(o => cellsOf(o.L).forEach(c => { for (let x = Math.max(0, Math.floor(c.x0 - x0 - 1)); x <= Math.min(cov.length - 1, Math.ceil(c.x1 - x0 + 1)); x++) seen[x] = 1; })); seen.forEach((v, x) => { cov[x] += v; }); });
+      const thr = Math.max(0, Math.floor(nr * 0.3)); let gut = [];
+      // rows with the most cells show where the columns are (e.g. a label and one value per model)
+      const rc = rows.filter(R => R.lines.length).map(R => R.lines.flatMap(o => cellsOf(o.L)).sort((a, b) => a.x0 - b.x0));
+      const cnt = {}; rc.forEach(c => { cnt[c.length] = (cnt[c.length] || 0) + 1; });
+      const kmax = Math.max(0, ...Object.keys(cnt).map(Number).filter(n => n >= 2 && cnt[n] >= Math.max(2, rc.length * 0.1)));
+      if (kmax >= 2) {
+        const full = rc.filter(c => c.length === kmax), g2 = [];
+        for (let j = 0; j < kmax - 1; j++) { const a = Math.max(...full.map(c => c[j].x1)), b = Math.min(...full.map(c => c[j + 1].x0)); if (b - a < 2) { g2.length = 0; break; } let best = a, bv = Infinity; for (let x = Math.ceil(a); x <= b; x++) { const v = cov[Math.round(x - x0)] || 0; if (v < bv) { bv = v; best = x; } } let e = best; while (e + 1 <= b && (cov[Math.round(e + 1 - x0)] || 0) === bv) e++; g2.push((best + e) / 2); }
+        if (g2.length === kmax - 1) gut = g2;
+      }
+      let s = -1; const gut2 = [];
+      for (let x = 0; x < cov.length; x++) {
+        const low = cov[x] <= thr; if (low && s < 0) s = x;
+        if ((!low || x === cov.length - 1) && s >= 0) {
+          if (x - s >= 4 && s > 2 && x < cov.length - 3) {   // the column edge goes where the fewest cells cross
+            let m = Infinity; for (let q = s; q < x; q++) m = Math.min(m, cov[q]);
+            let a = s; while (cov[a] > m) a++; let b = a; while (b + 1 < x && cov[b + 1] === m) b++;
+            gut2.push((a + b) / 2 + x0);
+          }
+          s = -1;
+        }
+      }
+      gut = gut.length ? gut : gut2;
+      cols = [x0].concat(gut).concat([x1]);
+    }
+    const nc = cols.length - 1;
+    if (rows.length < 2 && nc < 2) return;
+    const colOf = x => { for (let c = 0; c < nc; c++) if (x < cols[c + 1]) return c; return nc - 1; };
+    // cells: which columns join, and what goes in them
+    rows.forEach((R, ri) => {
+      const link = Array.from({ length: nc }, (_, i) => i), lf = i => link[i] === i ? i : (link[i] = lf(link[i]));
+      const items = [];
+      R.lines.forEach(o => {
+        const cs = grid ? (() => { const m = {}; o.L.runs.forEach(r => { const c = colOf(r.x + r.w / 2); (m[c] = m[c] || []).push(r); }); return Object.entries(m).map(([c, rs]) => ({ c0: +c, c1: +c, runs: rs })); })()
+          : cellsOf(o.L).map(c => ({ c0: colOf(c.x0 + 1), c1: colOf(c.x1 - 1), runs: c.runs }));
+        cs.forEach(c => { for (let q = c.c0; q < c.c1; q++) link[lf(q + 1)] = lf(c.c0); items.push({ ...c, line: o }); });
+      });
+      if (grid) {   // no ruled line between two columns: one cell
+        const ym = (R.y0 + R.y1) / 2;
+        for (let c = 1; c < nc; c++) if (!V.some(v => Math.abs((v.x0 + v.x1) / 2 - cols[c]) <= 3 && v.y0 <= ym && v.y1 >= ym)) link[lf(c)] = lf(c - 1);
+      }
+      const tcs = [];
+      for (let c = 0; c < nc; c++) { const root = lf(c); let t = tcs.find(t => t.root === root); if (!t) { t = { root, c0: c, c1: c, items: [] }; tcs.push(t); } t.c1 = c; }
+      items.forEach(it => tcs.find(t => t.c0 <= it.c0 && t.c1 >= it.c0).items.push(it));
+      tcs.forEach(t => { t.x0 = cols[t.c0]; t.x1 = cols[t.c1 + 1]; });
+      R.tcs = tcs;
+      // shading and lines
+      tcs.forEach(t => {
+        const xm = (t.x0 + t.x1) / 2;
+        const band = H.find(h => h.kind === 'band' && h.x0 <= xm && h.x1 >= xm && ov(h.y0, h.y1, R.y0, R.y1) >= 0.6 * (R.y1 - R.y0));
+        if (band) t.fill = band.color;
+        const rule = y => H.filter(h => h.kind === 'rule' && Math.abs((h.y0 + h.y1) / 2 - y) <= 2.5 && ov(h.x0, h.x1, t.x0, t.x1) >= 0.5 * (t.x1 - t.x0)).sort((a, b) => (b.y1 - b.y0) - (a.y1 - a.y0))[0];
+        const top = rule(R.y0), bot = rule(R.y1);
+        if (top) t.top = top; if (bot) t.bottom = bot;
+        const vr = x => V.filter(v => Math.abs((v.x0 + v.x1) / 2 - x) <= 3 && ov(v.y0, v.y1, R.y0, R.y1) >= 0.5 * (R.y1 - R.y0))[0];
+        const l = vr(t.x0), r = vr(t.x1); if (l) t.left = l; if (r) t.right = r;
+      });
+    });
+    const textRows = rows.filter(R => R.lines.length).length, multi = rows.filter(R => R.tcs.filter(t => t.items.length).length >= 2).length;
+    const bases = R => new Set(R.lines.map(o => Math.round(o.L.base / 3))).size;
+    const hts = rows.filter(R => R.lines.length).map(R => R.y1 - R.y0).sort((a, b) => a - b), mh = hts[hts.length >> 1] || 1;
+    const szs = rows.filter(R => R.lines.length).map(R => Math.max(...R.lines.map(o => o.b.sz))), ms = szs.slice().sort((a, b) => a - b)[szs.length >> 1] || 1;
+    const even = hts.filter(h => h >= mh * 0.6 && h <= mh * 1.6).length >= 0.6 * hts.length && szs.filter(z => z >= ms * 0.75 && z <= ms * 1.33).length >= 0.6 * szs.length;
+    if (!grid && (!even || textRows < 4 || multi < 2 || rows.filter(R => R.lines.length && bases(R) <= 2).length < 0.6 * textRows)) return;
+    const allTc = rows.reduce((a, R) => a + R.tcs.length, 0), fullTc = rows.reduce((a, R) => a + R.tcs.filter(t => t.items.length).length, 0);
+    if (grid && (textRows < 2 || fullTc < 0.25 * allTc)) return;
+    // in a ruled grid, a cell with no line under it carries on into the row below
+    if (grid) for (let ri = 1; ri < rows.length; ri++) rows[ri].tcs.forEach(t => {
+      const up = rows[ri - 1].tcs.find(q => q.c0 === t.c0 && q.c1 === t.c1);
+      if (up && !up.bottom && !t.top && !t.items.length) { t.vm = true; up.vstart = true; }
+    });
+    // two ruled tables stacked with a gap between them: make them two tables
+    if (grid && !depth) {
+      const gaps = rows.filter(R => R.tcs.length === 1 && !R.tcs[0].items.length && !R.tcs[0].left && !R.tcs[0].right && R.y1 - R.y0 > 4);
+      if (gaps.length) {
+        const cuts = gaps.map(R => (R.y0 + R.y1) / 2), parts = cuts.concat([Infinity]).map(() => []);
+        g.forEach(e => { const m = (e.y0 + e.y1) / 2; let i = 0; while (i < cuts.length && m > cuts[i]) i++; parts[i].push(e); });
+        parts.forEach(pg => build(pg, 1));
+        return;
+      }
+    }
+    tables.push({ x0, x1, y0, y1, cols, rows, grid, strips: g, runs: new Set(mine.flatMap(o => o.L.runs.map(r => r.parent || r)).concat(runs.filter(r => junk(r) && r.x + r.w / 2 >= x0 && r.x + r.w / 2 <= x1 && r.base - r.size * 0.3 >= y0 && r.base - r.size * 0.3 <= y1))) });
+  };
+  Object.values(groups).forEach(g => build(g, 0));
+  return tables;
+}
+
+// ---- 3. write a table as Word XML (floating, at its place on the page) ----
+let khzTblMeasureCtx = null;
+function khzTblWidth(r) {
+  try {
+    if (!khzTblMeasureCtx) khzTblMeasureCtx = document.createElement('canvas').getContext('2d');
+    khzTblMeasureCtx.font = `${r.italic ? 'italic ' : ''}${r.bold ? 'bold ' : ''}${r.size}px "${expFont(r.fam)}", Arial, Helvetica, sans-serif`;
+    return khzTblMeasureCtx.measureText(r.text).width;
+  } catch (e) { return String(r.text).length * r.size * 0.5; }
+}
+function khzTblXml(t) {
+  const T = pt => Math.round(pt * 20);
+  // text sizes read by OCR wobble from word to word: in a table, sizes close to the usual one become the usual one
+  const all = t.rows.flatMap(R => R.lines.flatMap(o => o.L.runs.map(r => r.size))).sort((a, b) => a - b), med = all[all.length >> 1] || 9;
+  const SZ = z => z >= med * 0.5 && z <= med * 2 ? med : z;
+  const gx = t.cols.map(T), grid = []; for (let c = 1; c < gx.length; c++) grid.push(gx[c] - gx[c - 1]);
+  const bdr = (side, s) => s ? `<w:${side} w:val="single" w:sz="${Math.max(2, Math.min(96, Math.round((s.kind === 'vrule' ? s.x1 - s.x0 : s.y1 - s.y0) * 8)))}" w:space="0" w:color="${s.color.toUpperCase()}"/>` : `<w:${side} w:val="nil"/>`;
+  const rPr = (r, sc) => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/>${sc && sc < 100 ? `<w:w w:val="${sc}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
+  let x = `<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="${T(t.x0)}" w:tblpY="${T(t.y0)}"/><w:tblOverlap w:val="overlap"/><w:tblW w:w="${gx[gx.length - 1] - gx[0]}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="nil"/>`).join('')}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr><w:tblGrid>${grid.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+  t.rows.forEach(R => {
+    x += `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${Math.max(20, T(R.y1 - R.y0))}" w:hRule="atLeast"/></w:trPr>`;
+    R.tcs.forEach(c => {
+      const w = gx[c.c1 + 1] - gx[c.c0];
+      let ps = '';
+      if (!c.vm) {
+        // one paragraph per line of text in this cell, each placed at its own height
+        const byLine = []; c.items.forEach(it => { const b = it.line.L.base; let g = byLine.find(g => Math.abs(g.base - b) < Math.max(2, it.runs[0].size * 0.5)); if (!g) { g = { base: b, its: [] }; byLine.push(g); } g.its.push(it); });
+        let prevBottom = R.y0;
+        const paras = [];
+        byLine.sort((a, b) => a.base - b.base).forEach(({ base, its }) => {
+          const head = R.lines.length === 1 && R.tcs.filter(q => q.items.length).length === 1;   // a heading row keeps its own size
+          const rs = its.flatMap(i => i.runs).sort((a, b) => a.x - b.x).map(r => ({ ...r, size: head ? r.size : SZ(r.size) })), sz = Math.max(...rs.map(r => r.size));
+          const L = sz * 1.17, before = Math.max(0, base - prevBottom - (L - sz * 0.22)); prevBottom = base + sz * 0.22;
+          const lx = Math.min(...rs.map(r => r.x)), rx = Math.max(...rs.map(r => r.x + r.w)), cw = c.x1 - c.x0;
+          const lg = lx - c.x0, rg = c.x1 - rx;
+          const parts = []; rs.forEach((r, q) => { const pr = rs[q - 1]; if (pr && r.x - (pr.x + pr.w) > r.size * 0.2 && !/\s$/.test(pr.text) && !/^\s/.test(r.text)) parts.push({ ...r, text: ' ' }); parts.push(r); });
+          const need = parts.reduce((a, r) => a + khzTblWidth(r), 0);
+          let jc = 'left', ind = '';
+          if (lg > Math.max(8, cw * 0.04) && Math.abs(lg - rg) < Math.max(5, cw * 0.15)) jc = 'center';
+          else if (rg < lg) { jc = 'right'; ind = `<w:ind w:right="${T(Math.max(0, rg))}"/>`; }
+          else ind = `<w:ind w:left="${T(Math.max(0, lg))}"/>`;
+          const room = jc === 'center' ? cw - 2 : jc === 'right' ? cw - Math.max(0, rg) - 1 : cw - Math.max(0, lg) - 1;
+          const sc = need > room ? Math.max(55, Math.floor(room / need * 100)) : 100;
+          paras.push({ before, L, ind, jc, body: parts.map(r => `<w:r>${rPr(r, sc)}<w:t xml:space="preserve">${xmlEsc(r.text)}</w:t></w:r>`).join('') });
+        });
+        // keep the lines inside the row's height
+        const sumL = paras.reduce((a, q) => a + q.L, 0), sumB = paras.reduce((a, q) => a + q.before, 0), room = R.y1 - R.y0 - 0.5;
+        if (sumL + sumB > room) { const f = sumB > 0 ? Math.max(0, (room - sumL) / sumB) : 0; paras.forEach(q => { q.before *= f; }); if (sumL > room) paras.forEach(q => { q.L *= room / sumL; }); }
+        paras.forEach(q => { ps += `<w:p><w:pPr><w:spacing w:before="${T(q.before)}" w:after="0" w:line="${Math.max(20, T(q.L))}" w:lineRule="exact"/>${q.ind}<w:jc w:val="${q.jc}"/></w:pPr>${q.body}</w:p>`; });
+      }
+      if (!ps) ps = `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>`;
+      x += `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${c.c1 > c.c0 ? `<w:gridSpan w:val="${c.c1 - c.c0 + 1}"/>` : ''}${c.vm ? '<w:vMerge/>' : c.vstart ? '<w:vMerge w:val="restart"/>' : ''}<w:tcBorders>${bdr('top', c.top)}${bdr('left', c.left)}${bdr('bottom', c.bottom)}${bdr('right', c.right)}</w:tcBorders>${c.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${c.fill.toUpperCase()}"/>` : ''}<w:noWrap/><w:vAlign w:val="top"/></w:tcPr>${ps}</w:tc>`;
+    });
+    x += '</w:tr>';
+  });
+  return x + '</w:tbl><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>';
+}
+
+// ---- 4. hook into the page-layout Word export ----
+{
+  const _ex = expDocx;
+  expDocx = async function (bytes, pages, o) {
+    o = o || {};
+    const pageMode = o.layout !== 'flow' || (!o.forceFlow && window.khzFlowSuits && !window.khzFlowSuits(pages));
+    if (!pageMode || o.tables === false) return _ex.apply(this, arguments);
+    let bgs, raw;
+    try { bgs = await expBackgrounds(bytes, 150, { comments: o.comments }); raw = Object.keys(expBackgrounds.erase || {}).length ? await expBackgrounds(bytes, 150, { comments: o.comments, erase: {} }) : bgs; } catch (e) { return _ex.apply(this, arguments); }
+    showLoading(true, 'Finding tables…');
+    const found = pages.map((p, i) => { try { return raw[i] ? khzTblFind(raw[i], p.runs || []) : []; } catch (e) { console.warn('tables', e); return []; } });
+    if (!found.some(t => t.length)) {
+      const _bg = expBackgrounds; expBackgrounds = async () => bgs;
+      try { return await _ex.call(this, bytes, pages, { ...o, layout: 'page' }); } finally { expBackgrounds = _bg; }
+    }
+    // the table's shading and lines now belong to the Word table: take them out of the page picture
+    found.forEach((ts, i) => {
+      if (!ts.length) return;
+      const ctx = bgs[i].canvas.getContext('2d'), k = bgs[i].canvas.width / bgs[i].w; ctx.fillStyle = '#fff';
+      const er = (expBackgrounds.erase || {})[i] || [];
+      ts.forEach(t => {
+        t.strips.forEach(s => { ctx.fillRect(s.x0 * k - 1, s.y0 * k - 1, (s.x1 - s.x0) * k + 2, (s.y1 - s.y0) * k + 2); });
+        // words read by OCR that went into the table: clear their patches too
+        er.forEach(r => { if (r.x + r.w / 2 >= t.x0 && r.x + r.w / 2 <= t.x1 && r.y + r.h / 2 >= t.y0 && r.y + r.h / 2 <= t.y1) ctx.fillRect(r.x * k - 1, r.y * k - 1, r.w * k + 2, r.h * k + 2); });
+      });
+      bgs[i].url = bgs[i].canvas.toDataURL('image/jpeg', 0.85);
+    });
+    const pages2 = pages.map((p, i) => { const used = new Set(found[i].flatMap(t => [...t.runs])); return used.size ? { ...p, runs: p.runs.filter(r => !used.has(r)) } : p; });
+    const _bg = expBackgrounds; expBackgrounds = async () => bgs;
+    let blob; try { blob = await _ex.call(this, bytes, pages2, { ...o, layout: 'page' }); } finally { expBackgrounds = _bg; }
+    const JSZip = await loadJSZip(), zip = await JSZip.loadAsync(blob);
+    let doc = await zip.file('word/document.xml').async('string');
+    const mark = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>', at = [];
+    let q = doc.indexOf(mark); while (q >= 0) { at.push(q); q = doc.indexOf(mark, q + 1); }
+    for (let i = Math.min(at.length, pages.length) - 1; i >= 0; i--) if (found[i].length) doc = doc.slice(0, at[i]) + found[i].map(khzTblXml).join('') + doc.slice(at[i]);
+    zip.file('word/document.xml', doc);
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE' });
+  };
+}
+// ================================================================
+//  Pages sit exactly on the screen's pixel grid.
+//  A page placed half a pixel off gets its picture snapped to whole pixels by the browser while
+//  comment marks (strikethrough, underline…) are drawn exactly, so at some zoom levels a strike-through
+//  looked a little high or low on the text. Nudging each page onto whole screen pixels keeps them together.
+// ================================================================
+let khzSnapRaf = 0;
+function khzSnapPages() {
+  cancelAnimationFrame(khzSnapRaf);
+  khzSnapRaf = requestAnimationFrame(() => {
+    if (!state.pages) return;
+    const dpr = window.devicePixelRatio || 1, area = $('canvas-area'), ar = area && area.getBoundingClientRect();
+    const list = Object.values(state.pages).filter(ps => ps && ps.wrapper && ps.wrapper.isConnected);
+    // read everything first, then write
+    const reads = list.map(ps => {
+      const old = ps._snap || [0, 0], r = ps.wrapper.getBoundingClientRect();
+      if (ar && (r.bottom < ar.top - 200 || r.top > ar.bottom + 200)) return null;
+      const L = r.left - old[0], T = r.top - old[1];
+      return [ps, (Math.round(L * dpr) - L * dpr) / dpr, (Math.round(T * dpr) - T * dpr) / dpr];
+    }).filter(Boolean);
+    reads.forEach(([ps, dx, dy]) => {
+      const o = ps._snap || [0, 0];
+      if (Math.abs(o[0] - dx) < 0.01 && Math.abs(o[1] - dy) < 0.01) return;
+      ps._snap = [dx, dy];
+      ps.wrapper.style.translate = (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) ? '' : `${dx.toFixed(3)}px ${dy.toFixed(3)}px`;
+    });
+  });
+}
+{
+  const _rl = relayoutAll; relayoutAll = function () { const r = _rl.apply(this, arguments); khzSnapPages(); return r; };
+  const _rc = renderCanvas; renderCanvas = async function () { const r = await _rc.apply(this, arguments); khzSnapPages(); return r; };
+  window.addEventListener('resize', khzSnapPages);
+  document.addEventListener('scroll', e => { if (e.target && e.target.id === 'canvas-area') khzSnapPages(); }, true);
+}
+
+// The browser draws page text with its baseline on a whole screen pixel, so at some zoom levels the words
+// sit up to half a pixel lower or higher than their exact spot. Strikethrough and underline lines follow
+// the words they mark the same way (on screen only; the saved PDF keeps the exact position).
+const khzTcDone = {};
+{
+  const _gt = getTextContent;
+  getTextContent = function (n) {
+    const p = _gt.apply(this, arguments);
+    const src = state.textCache && state.textCache[n];
+    if (!khzTcDone[n] || khzTcDone[n].src !== src) { const e = khzTcDone[n] = { src, tc: null }; Promise.resolve(p).then(tc => { e.tc = tc; if (state.annotations.some(a => a.page === n && (a.type === 'strikethrough' || a.type === 'underline'))) renderPageAnnots(n); }, () => {}); }
+    return p;
+  };
+  const _ag = annotGeometry;
+  annotGeometry = function (a, vp, forPdf) {
+    const prims = _ag.apply(this, arguments);
+    if (forPdf || !a || (a.type !== 'strikethrough' && a.type !== 'underline') || !prims || !prims.length) return prims;
+    try {
+      if ((vp.rotation || 0) % 180) return prims;
+      const e = khzTcDone[a.page]; if (!e || !e.tc || state.textCache[a.page] !== e.src) return prims;
+      const ps = state.pages[a.page]; if (!ps || ps.capped) return prims;
+      const V = a.pts.map(p => vp.convertToViewportPoint(p[0], p[1])), x0 = Math.min(...V.map(v => v[0])), x1 = Math.max(...V.map(v => v[0])), y0 = Math.min(...V.map(v => v[1])), y1 = Math.max(...V.map(v => v[1]));
+      let best = null, bo = 0;
+      e.tc.items.forEach(it => {
+        const t = it.transform; if (!t || t[1] || t[2] || !it.str || !it.str.trim()) return;
+        const b = vp.convertToViewportPoint(t[4], t[5]), b2 = vp.convertToViewportPoint(t[4] + (it.width || 0), t[5]);
+        const bx0 = Math.min(b[0], b2[0]), bx1 = Math.max(b[0], b2[0]), by = b[1];
+        if (by < y0 - 1 || by > y1 + (y1 - y0) * 0.5) return;
+        const o = Math.min(x1, bx1) - Math.max(x0, bx0); if (o > bo) { bo = o; best = by; }
+      });
+      if (best === null) return prims;
+      const dpr = window.devicePixelRatio || 1, d = (Math.round(best * dpr) - best * dpr) / dpr;
+      if (Math.abs(d) < 0.01) return prims;
+      return prims.map(p => p.k === 'line' ? { ...p, pts: p.pts.map(q => [q[0], q[1] + d]) } : p);
+    } catch (err) { return prims; }
   };
 }
 </script>
