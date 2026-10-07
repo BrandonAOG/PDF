@@ -17839,12 +17839,25 @@ async function expOCRPages(bytes, pages, lang) {
         erase[i].push({ x: b.x0 / k - 1.5, y: b.y0 / k - 1.5, w: (b.x1 - b.x0) / k + 3, h: (b.y1 - b.y0) / k + 3 });
       });
       addWords(allW);
+      // text turned on its side (a "Spec Sheet" bar down the page edge) reads as junk: look again, turned upright
+      if (typeof khzOcrSideways === 'function') {
+        try { await khzOcrSideways({ worker, clean: c, k, page: pages[i], erase: erase[i], cx, weak: allW.filter(w => (w.confidence ?? 99) < 80 || String(w.text || '').trim().length <= 3) }); }
+        catch (e) { console.warn('sideways OCR', e); }
+        try { await worker.setParameters({ tessedit_pageseg_mode: '6' }); } catch (e) {}
+      }
+      // lines read twice over each other: read again on their own
+      if (typeof khzOcrConflicts === 'function') {
+        try { await khzOcrConflicts({ worker, clean: c, k, page: pages[i], erase: erase[i], learn: learnLines, addWords }); } catch (e) { console.warn('OCR overlaps', e); }
+        try { await worker.setParameters({ tessedit_pageseg_mode: '6' }); } catch (e) {}
+      }
       // second look: each table cell read again on its own
       if (raw && typeof khzOcrCells === 'function') {
         try { await khzOcrCells({ worker, raw, clean: c, k, wpt: v1.width, page: pages[i], erase: erase[i], learn: learnLines, addWords, note: n => showLoading(true, `Recognizing text on page ${i + 1}… (table cell ${n})`) }); }
         catch (e) { console.warn('cell OCR', e); }
         try { await worker.setParameters({ tessedit_pageseg_mode: '6' }); } catch (e) {}
       }
+      // which kind of typeface: plain (Arial), with serifs (Times New Roman) or typewriter (Courier New)
+      if (typeof khzOcrFonts === 'function') try { khzOcrFonts(c, k, pages[i]); } catch (e) { console.warn('OCR fonts', e); }
     }
   } finally { try { await worker.terminate(); } catch (e) {} pdf.destroy(); }
   return erase;
@@ -17960,13 +17973,28 @@ async function expRender1(pdf, i, dpi, o = {}) {
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   await pg.render({ canvasContext: ctx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode ? pdfjsLib.AnnotationMode.ENABLE : undefined, intent: 'print' }).promise;
   if (o.erase && o.erase.length) {   // scanned words that became real text: paint them out with the paper color
-    o.erase.forEach(r => { const x = r.x * k, y = r.y * k, w = r.w * k, h = r.h * k; let px = [255, 255, 255];
-      // the paper colour: the most common of eight points just outside the word (one dark neighbour can't turn it grey)
-      try { const pts = [[x - 3, y - 3], [x + w / 2, y - 3], [x + w + 3, y - 3], [x - 3, y + h / 2], [x + w + 3, y + h / 2], [x - 3, y + h + 3], [x + w / 2, y + h + 3], [x + w + 3, y + h + 3]]
-          .map(([a, b]) => ctx.getImageData(Math.max(0, Math.min(ctx.canvas.width - 1, a)), Math.max(0, Math.min(ctx.canvas.height - 1, b)), 1, 1).data);
-        const key = c => [c[0] >> 4, c[1] >> 4, c[2] >> 4].join(','), cnt = {}; pts.forEach(c => { const q = key(c); cnt[q] = (cnt[q] || 0) + 1; });
-        const best = Object.entries(cnt).sort((a, b) => b[1] - a[1] || b[0].split(',').reduce((s, v) => s + +v, 0) - a[0].split(',').reduce((s, v) => s + +v, 0))[0][0];
-        px = pts.find(c => key(c) === best); } catch (e) {} ctx.fillStyle = `rgb(${px[0]},${px[1]},${px[2]})`; ctx.fillRect(x, y, w, h); });
+    // only the letters are painted out, in the colour under them; shading, lines and anything else in the word's box stay
+    // (painting the whole box left grey patches wherever a box crossed into a shaded row)
+    o.erase.forEach(r => {
+      const W = ctx.canvas.width, H = ctx.canvas.height, x0 = Math.max(0, Math.floor(r.x * k)), y0 = Math.max(0, Math.floor(r.y * k)), x1 = Math.min(W, Math.ceil((r.x + r.w) * k)), y1 = Math.min(H, Math.ceil((r.y + r.h) * k)), w = x1 - x0, h = y1 - y0;
+      if (w < 1 || h < 1) return;
+      try {
+        const id = ctx.getImageData(x0, y0, w, h), d = id.data, n = w * h, cnt = new Map();
+        for (let i = 0; i < n; i++) { const q = i * 4, key = (d[q] >> 3) << 10 | (d[q + 1] >> 3) << 5 | (d[q + 2] >> 3); cnt.set(key, (cnt.get(key) || 0) + 1); }
+        let bk = 0, bn = -1; cnt.forEach((v, key) => { if (v > bn) { bn = v; bk = key; } });
+        let sr = 0, sg = 0, sb = 0, sn = 0;   // the exact paper colour: average of the pixels in that most common shade
+        for (let i = 0; i < n; i++) { const q = i * 4; if (((d[q] >> 3) << 10 | (d[q + 1] >> 3) << 5 | (d[q + 2] >> 3)) === bk) { sr += d[q]; sg += d[q + 1]; sb += d[q + 2]; sn++; } }
+        const bg = [sr / sn, sg / sn, sb / sn], bl = bg[0] * 0.3 + bg[1] * 0.59 + bg[2] * 0.11;
+        const ink = new Uint8Array(n);
+        for (let i = 0; i < n; i++) { const q = i * 4; if (Math.abs(d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11 - bl) > 60) ink[i] = 1; }
+        // and the soft edges of the letters
+        for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+          let near = ink[yy * w + xx]; for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1 && !near; dx++) { const Y = yy + dy, X = xx + dx; if (Y >= 0 && Y < h && X >= 0 && X < w && ink[Y * w + X]) near = 1; }
+          if (near) { const q = (yy * w + xx) * 4, l = d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11; if (ink[yy * w + xx] || Math.abs(l - bl) > 12) { d[q] = bg[0]; d[q + 1] = bg[1]; d[q + 2] = bg[2]; } }
+        }
+        ctx.putImageData(id, x0, y0);
+      } catch (e) {}
+    });
   }
   if (o.gray) { const id = ctx.getImageData(0, 0, c.width, c.height), d = id.data; for (let j = 0; j < d.length; j += 4) { const g = Math.round(d[j] * 0.299 + d[j + 1] * 0.587 + d[j + 2] * 0.114); d[j] = d[j + 1] = d[j + 2] = g; } ctx.putImageData(id, 0, 0); }
   return { canvas: c, w: v1.width, h: v1.height, url: o.png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', o.jpeg || 0.85) };
@@ -18038,9 +18066,12 @@ async function expDocx(bytes, pages, o) {
       if (!last) body += `<w:p><w:pPr>${sect(p)}</w:pPr></w:p>`;
     } else {
       const boxes = p.runs.map((r, k) => {
-        const n = id++, w = r.w * 1.12 + r.size * 0.6, h = r.size * 1.35, bx = r.rot ? expRotBox(r, w, h, r.size * 0.92) : { x: r.x, y: r.base - r.size * 0.92 };
-        const rotA = r.rot ? ` rot="${Math.round(((r.rot % 360) + 360) % 360 * 60000)}"` : '';
-        return `<w:r><w:drawing>${anchorPos(bx.x, bx.y, w, h, false, 10 + k)}<wp:docPr id="${n}" name="Text ${n}"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm${rotA}><a:off x="0" y="0"/><a:ext cx="${E(w)}" cy="${E(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>${run(r)}</w:p></w:txbxContent></wps:txbx><wps:bodyPr rot="0" vert="horz" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+        const n = id++, ra = ((Math.round(r.rot || 0) % 360) + 360) % 360, side = ra === 90 || ra === 270;
+        // text turned a quarter turn: an upright box with vertical writing (Word and LibreOffice both keep it in place)
+        let w = r.w * 1.12 + r.size * 0.6, h = r.size * 1.35, bx, vert = 'horz', rotA = '';
+        if (side) { const len = w; w = h; h = len; vert = ra === 270 ? 'vert270' : 'vert'; bx = ra === 270 ? { x: r.x - r.size * 0.92, y: r.base - h + r.size * 0.3 } : { x: r.x - r.size * 0.43, y: r.base - r.size * 0.3 }; }
+        else { bx = r.rot ? expRotBox(r, w, h, r.size * 0.92) : { x: r.x, y: r.base - r.size * 0.92 }; rotA = r.rot ? ` rot="${Math.round(ra * 60000)}"` : ''; }
+        return `<w:r><w:drawing>${anchorPos(bx.x, bx.y, w, h, false, 10 + k)}<wp:docPr id="${n}" name="Text ${n}"/><wp:cNvGraphicFramePr/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm${rotA}><a:off x="0" y="0"/><a:ext cx="${E(w)}" cy="${E(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>${run(r)}</w:p></w:txbxContent></wps:txbx><wps:bodyPr rot="0" vert="${vert}" wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t" anchorCtr="0"><a:noAutofit/></wps:bodyPr></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
       }).join('');
       body += `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/>${last ? '' : sect(p)}</w:pPr>${img}${boxes}</w:p>`;
     }
@@ -34788,7 +34819,9 @@ function khzOcrClean(c, wpt) {
 function khzTblFind(bg, runs) {
   const st = khzTblStrips(bg), k = st.k, pw = bg.w, ph = bg.canvas.height / k;
   // the sheet border of a drawing isn't a table: leave lines that run (almost) the full page
-  const hs = st.hs.filter(h => h.x1 - h.x0 < pw * 0.8), vs = st.vs.filter(v => v.y1 - v.y0 < ph * 0.7);
+  // (only when the page really has a border: long upright lines at both sides; full-width shaded rows stay)
+  const longV = st.vs.filter(v => v.y1 - v.y0 >= ph * 0.7), framed = longV.length >= 2 && Math.max(...longV.map(v => v.x0)) - Math.min(...longV.map(v => v.x0)) > pw * 0.6;
+  const hs = framed ? st.hs.filter(h => h.kind === 'band' || h.x1 - h.x0 < pw * 0.8) : st.hs, vs = framed ? st.vs.filter(v => v.y1 - v.y0 < ph * 0.7) : st.vs;
   const els = hs.concat(vs), par = els.map((_, i) => i);
   const f = i => par[i] === i ? i : (par[i] = f(par[i])), u = (a, b) => { par[f(a)] = f(b); };
   const ov = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0);
@@ -34954,7 +34987,7 @@ function khzTblWidth(r) {
 // character width (Word's "scale") so a word takes the same width as in the PDF: the original typeface is often
 // narrower or wider than the font Word uses for it (Acrobat does the same)
 function khzScaleFor(r) {
-  if (!r || !r.w || !r.text || r.rot || String(r.text).trim().length < 2) return 100;
+  if (!r || !r.w || !r.text || (r.rot && ![90, 270].includes(((Math.round(r.rot) % 360) + 360) % 360)) || String(r.text).trim().length < 2) return 100;
   if (!khzFontAvailable(expFont(r.fam))) return 100;
   const nat = khzTblWidth(r); if (!nat) return 100;
   const sc = Math.round(Math.max(50, Math.min(150, r.w / nat * 100)));
@@ -35157,6 +35190,289 @@ function khzFontAvailable(name) {   // can this browser measure the font? (if no
   };
   const _f = expTextRunsFallback;
   expTextRunsFallback = async function (n, data) { const from = data.runs.length; const r = await _f.apply(this, arguments); await fix(n, r, from); return r; };
+}
+
+// ---- 7. text recognition: fixing the usual misreads ----
+//      "0il"/"Qil" → "Oil", "Ib" → "lb", "997¢cc" → "997cc", "3,6OO" → "3,600", "26 KW" → "26 kW".
+//      A word is only changed when it isn't a real word (dictionary, or read clearly elsewhere in the document)
+//      and the corrected form is; part numbers and codes are left alone.
+async function khzOcrFix(pages, erase) {
+  const runs = pages.flatMap(p => (p.runs || []).filter(r => r.ocr));
+  if (!runs.length) return 0;
+  let typo = null; try { if (typeof loadSpeller === 'function') typo = await loadSpeller(); } catch (e) {}
+  const docW = new Map();
+  runs.forEach(r => { if ((r._conf ?? 99) < 85) return; String(r.text).split(/\s+/).forEach(t => { const b = t.replace(/^[^A-Za-z]+|[^A-Za-z]+$/g, ''); if (b.length >= 2 && /^[A-Za-z]+$/.test(b)) docW.set(b.toLowerCase(), (docW.get(b.toLowerCase()) || 0) + 1); }); });
+  const known = w => { if (!w) return false; const l = w.toLowerCase(); if ((docW.get(l) || 0) >= 2) return true; if (!typo) return false; try { return typo.check(w) || typo.check(l) || typo.check(w[0] + l.slice(1)); } catch (e) { return false; } };
+  const SWAP = [['0', 'O'], ['0', 'o'], ['1', 'l'], ['1', 'I'], ['1', 'i'], ['5', 'S'], ['5', 's'], ['8', 'B'], ['Q', 'O'], ['¢', 'c'], ['€', 'e'], ['|', 'l'], ['|', 'I'], ['!', 'l'], ['I', 'l'], ['l', 'I'], ['rn', 'm'], ['vv', 'w'], ['cl', 'd'], ['ii', 'n']];
+  const caseLike = (orig, cand) => { const L = orig.replace(/[^A-Za-z]/g, ''); return L.length >= 2 && L === L.toUpperCase() ? cand.toUpperCase() : cand; };
+  const fixAlpha = core => {
+    if (known(core)) return null;
+    const cands = new Set();
+    const one = s => { const out = []; SWAP.forEach(([a, b]) => { let i = s.indexOf(a); while (i >= 0) { out.push(s.slice(0, i) + b + s.slice(i + a.length)); i = s.indexOf(a, i + 1); } }); return out; };
+    one(core).forEach(c => { cands.add(c); if (core.length <= 12) one(c).forEach(c2 => cands.add(c2)); });
+    for (const c of cands) { const cc = caseLike(core, c); if (/^[A-Za-z'’-]+$/.test(cc) && (/^[A-Z]?[a-z'’-]+$/.test(cc) || cc === cc.toUpperCase()) && known(cc)) return cc; }
+    return null;
+  };
+  let n = 0;
+  // a word's box never runs into the next word on its line (an over-wide box would stretch the word over its neighbour)
+  pages.forEach(p => { const rs = (p.runs || []).filter(r => r.ocr && !r.rot).sort((a, b) => a.base - b.base || a.x - b.x); rs.forEach((r, i) => { const q = rs[i + 1]; if (q && Math.abs(q.base - r.base) < r.size * 0.4 && q.x > r.x && r.x + r.w > q.x - r.size * 0.2) r.w = Math.max(r.size * 0.5, q.x - r.x - r.size * 0.25); }); });
+  // the text just before a run on the same line (a value and its unit can be two pieces)
+  const before = new Map(); pages.forEach(p => { const rs = (p.runs || []).filter(r => r.ocr).slice().sort((a, b) => a.base - b.base || a.x - b.x); rs.forEach((r, i) => { const q = rs[i - 1]; if (q && Math.abs(q.base - r.base) < r.size * 0.4 && r.x - (q.x + q.w) < r.size * 3) before.set(r, String(q.text)); }); });
+  runs.forEach(r => {
+    const parts = String(r.text).split(/(\s+)/);
+    let changed = false;
+    for (let i = 0; i < parts.length; i++) {
+      const tok = parts[i]; if (!tok || /^\s+$/.test(tok)) continue;
+      const m = tok.match(/^([^A-Za-z0-9¢€|!]*)(.*?)([^A-Za-z0-9¢€|!]*)$/), pre = m[1], core = m[2], post = m[3];
+      if (!core) continue;
+      const prevTok = (i >= 2 ? parts[i - 2] : (before.get(r) || '').split(/\s+/).pop() || '').trim(), afterNum = /\d[\d.,/]*\)?$/.test(prevTok);
+      let out = null;
+      if (/^\d+¢c*$/.test(core)) out = core.replace(/¢c*/, 'cc');                                   // 997¢cc → 997cc
+      else if (/^([0-9SIl])[o0]f(\d)$/.test(core)) out = core.replace(/^([0-9SIl])[o0]f(\d)$/, (x, a, b) => a.replace('S', '5').replace(/[Il]/, '1') + ' of ' + b);   // 4of7, Sof7 → 5 of 7
+      else if (/^1bs?$/.test(core) && afterNum) out = 'l' + core.slice(1);                           // 1.1 1b → 1.1 lb
+      else if (/^\d+\.\d+1bs?$/.test(core)) out = core.replace(/1(bs?)$/, ' l$1');                    // 1.11b → 1.1 lb
+      else if (/^~\d/.test(core) || (pre.endsWith('(') && /^~/.test(core))) out = core.replace(/^~/, '-');   // (~10 °C → (-10 °C
+      else if (/^Ib(s?)$/.test(core) && (afterNum || /^\(?\d/.test(prevTok))) out = 'lb' + core.slice(2);  // Ib, Ibs after a number
+      else if (/^\d+(\.\d+)?Ib(s?)$/.test(core)) out = core.replace(/Ib/, 'lb');
+      else if (/^K[Ww](h?)$/.test(core) && afterNum) out = 'kW' + core.slice(2);                   // 26 KW → 26 kW
+      else if (/^[\d.,:/-]*[OoIlSB][\d.,:/-]*$/.test(core) && /\d/.test(core) && (core.match(/\d/g) || []).length >= Math.max(1, (core.match(/[OoIlSB]/g) || []).length) && !known(core)) {
+        out = core.replace(/[Oo]/g, '0').replace(/[Il]/g, '1').replace(/S/g, '5').replace(/B/g, '8');   // figures read as letters: 3,6OO → 3,600
+      } else {
+        const letters = (core.match(/[A-Za-z]/g) || []).length, digits = (core.match(/\d/g) || []).length;
+        if (core.length >= 2 && letters >= 1 && letters >= digits * 2 - 1 && /^[A-Za-z0-9¢€|!'’-]+$/.test(core) && !/^[A-Z]{1,3}\d/.test(core)) out = fixAlpha(core);   // 0il → Oil (codes like W2, BTX20L stay)
+      }
+      if (/~$/.test(pre) && /^\d/.test(core)) { parts[i] = pre.slice(0, -1) + '-' + (out || core) + post; changed = true; n++; continue; }   // (~10 °C → (-10 °C
+      if (out && out !== core) { parts[i] = pre + out + post; changed = true; n++; }
+    }
+    if (changed) r.text = parts.join('');
+  });
+  // page numbers in a footer or side bar: "dof 7" on page 4 of 7 is "4 of 7"
+  if (pages.length >= 2) pages.forEach((p, i) => (p.runs || []).forEach(r => { if (!r.ocr) return; const m = String(r.text).trim().match(/^(\S{1,2}?)\s*[o0]f\s*(\d{1,3})$/); if (m && +m[2] === pages.length) { const t = `${i + 1} of ${m[2]}`; if (r.text !== t) { r.text = t; n++; } return; }
+    // just "dof" left in a side bar (the page count wasn't read)
+    if (/^\S{1,2}[o0]f$/.test(String(r.text).trim()) && (r.x < 60 || r.x > (p.w || 612) - 60)) {
+      r.text = `${i + 1} of ${pages.length}`; n++;
+      // the count after it is still in the page picture: clear it and give the text its full width
+      const full = r.w * 6 / 3; if (erase && erase[i]) erase[i].push({ x: r.x - 1, y: r.base - r.size * 0.95, w: full + 3, h: r.size * 1.25 }); r.w = full;
+    } }));
+  // logos and stylised lettering ("THE GENERAC PROMISE" with spaced-out letters) read as junk: a patch of text where
+  // hardly anything is a real word and the reading was unsure stays part of the page picture, like Acrobat does
+  pages.forEach((p, i) => {
+    const rs = (p.runs || []).filter(r => r.ocr && !r.rot); if (!rs.length) return;
+    const box = r => ({ x0: r.x - r.size * 0.6, x1: r.x + r.w + r.size * 0.6, y0: r.base - r.size * 1.1, y1: r.base + r.size * 0.5 });
+    const groups = [];
+    rs.forEach(r => { const b = box(r); const hit = groups.filter(g => g.some(q => { const c = box(q); return b.x0 < c.x1 && b.x1 > c.x0 && b.y0 < c.y1 && b.y1 > c.y0; })); if (!hit.length) groups.push([r]); else { hit[0].push(r); for (let j = 1; j < hit.length; j++) { hit[0].push(...hit[j]); groups.splice(groups.indexOf(hit[j]), 1); } } });
+    groups.forEach(g => {
+      let all = 0, good = 0, cs = 0, cw = 0;
+      g.forEach(r => { String(r.text).split(/\s+/).forEach(t => { const core = t.replace(/[^A-Za-z0-9]/g, ''), nch = core.length; if (!nch) return; all += nch; if (/\d/.test(core) || (core.length >= 2 && known(core))) good += nch; }); const L = (String(r.text).match(/[A-Za-z0-9]/g) || []).length || 1; cs += (r._conf ?? 99) * L; cw += L; });
+      if (!all || good / all >= 0.5 || cs / cw >= 80) return;
+      g.forEach(r => { p.runs.splice(p.runs.indexOf(r), 1); n++; if (window.khzDropDebug) window.khzDropDebug.push((i + 1) + ': ' + r.text); });
+      // and its letters stay in the picture
+      if (erase && erase[i]) { const bx = g.map(box); erase[i] = erase[i].filter(e => !bx.some(b => e.x < b.x1 && e.x + e.w > b.x0 && e.y < b.y1 && e.y + e.h > b.y0)); }
+    });
+  });
+  return n;
+}
+{
+  const _ocr = expOCRPages;
+  expOCRPages = async function (bytes, pages) { const r = await _ocr.apply(this, arguments); try { const n = await khzOcrFix(pages, r); if (n) console.info('OCR corrections:', n); } catch (e) { console.warn('ocr fix', e); } return r; };
+}
+
+// ---- 8. text recognition: text turned on its side ----
+// black text on white (cell shading, dark bars with white lettering…) — what the reader handles best
+function khzOcrBinarize(x, W, H, pad) {
+  const id = x.getImageData(0, 0, W, H), q = id.data, lum = [];
+  for (let yy = pad; yy < H - pad; yy++) for (let xx = pad; xx < W - pad; xx++) { const t = (yy * W + xx) * 4; lum.push(q[t] * 0.3 + q[t + 1] * 0.59 + q[t + 2] * 0.11); }
+  if (!lum.length) return false;
+  lum.sort((a, b) => a - b);
+  const bg = lum[lum.length >> 1], dark = bg < 128;
+  const ink = dark ? lum[Math.floor(lum.length * 0.998)] : lum[Math.floor(lum.length * 0.002)];
+  if (Math.abs(bg - ink) < 40) return false;
+  const thr = (bg + ink) / 2;
+  for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
+    const t = (yy * W + xx) * 4, inside = yy >= pad && yy < H - pad && xx >= pad && xx < W - pad;
+    const g = q[t] * 0.3 + q[t + 1] * 0.59 + q[t + 2] * 0.11, isInk = inside && (dark ? g >= thr : g <= thr);
+    q[t] = q[t + 1] = q[t + 2] = isInk ? 0 : 255;
+  }
+  x.putImageData(id, 0, 0);
+  return true;
+}
+async function khzOcrSideways(o) {
+  const { worker, clean, k, page, cx } = o;
+  const boxes = o.weak.map(w => ({ ...w.bbox })).filter(b => b.x1 > b.x0 && b.y1 > b.y0);
+  if (!boxes.length) return;
+  // group nearby doubtful words
+  const gap = 12 * k / 4.17, groups = [];
+  boxes.forEach(b => {
+    let g = groups.find(G => b.x0 - gap < G.x1 && b.x1 + gap > G.x0 && b.y0 - gap < G.y1 && b.y1 + gap > G.y0);
+    if (g) { g.x0 = Math.min(g.x0, b.x0); g.y0 = Math.min(g.y0, b.y0); g.x1 = Math.max(g.x1, b.x1); g.y1 = Math.max(g.y1, b.y1); g.n++; }
+    else groups.push({ ...b, n: 1 });
+  });
+  // merge groups that now overlap
+  for (let a = 0; a < groups.length; a++) for (let b = groups.length - 1; b > a; b--) { const A = groups[a], B = groups[b]; if (B.x0 - gap < A.x1 && B.x1 + gap > A.x0 && B.y0 - gap < A.y1 && B.y1 + gap > A.y0) { A.x0 = Math.min(A.x0, B.x0); A.y0 = Math.min(A.y0, B.y0); A.x1 = Math.max(A.x1, B.x1); A.y1 = Math.max(A.y1, B.y1); A.n += B.n; groups.splice(b, 1); } }
+  const Wc = clean.width, Hc = clean.height;
+  for (const G of groups) {
+    const gw = G.x1 - G.x0, gh = G.y1 - G.y0;
+    if (gh < 30 * k / 4.17 || gh < gw * 1.6) continue;                       // only tall, narrow patches can be sideways writing
+    const m = 6 * k / 4.17, X0 = Math.max(0, Math.floor(G.x0 - m)), Y0 = Math.max(0, Math.floor(G.y0 - m)), X1 = Math.min(Wc, Math.ceil(G.x1 + m)), Y1 = Math.min(Hc, Math.ceil(G.y1 + m));
+    const w = X1 - X0, h = Y1 - Y0, pad = 20;
+    let best = null;
+    for (const dir of [-90, 90]) {                                              // -90: reads bottom to top, 90: top to bottom
+      const cv = document.createElement('canvas'); cv.width = h + 2 * pad; cv.height = w + 2 * pad;
+      const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
+      x.save(); x.translate(pad, pad);
+      if (dir === -90) { x.translate(h, 0); x.rotate(Math.PI / 2); } else { x.translate(0, w); x.rotate(-Math.PI / 2); }
+      x.drawImage(clean, X0, Y0, w, h, 0, 0, w, h); x.restore();
+      if (!khzOcrBinarize(x, cv.width, cv.height, pad)) continue;
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      const { data } = await worker.recognize(cv, {}, { blocks: true, text: false });
+      const ws = ocrWordsOf(data).filter(q => String(q.text || '').trim() && (q.confidence ?? 99) >= 60);
+      const chars = ws.reduce((a, q) => a + (String(q.text).match(/[A-Za-z0-9]/g) || []).length, 0);
+      const conf = chars ? ws.reduce((a, q) => a + (q.confidence ?? 99) * (String(q.text).match(/[A-Za-z0-9]/g) || []).length, 0) / chars : 0;
+      if (chars >= 3 && conf >= 80 && (!best || conf * chars > best.conf * best.chars)) {
+        const id = x.getImageData(0, 0, cv.width, cv.height).data;
+        ws.forEach(q => { const b = q.bbox; let ink = 0, tot = 0; for (let yy = Math.max(0, b.y0); yy < Math.min(cv.height, b.y1); yy++) for (let xx = Math.max(0, b.x0); xx < Math.min(cv.width, b.x1); xx++) { tot++; if (!id[(yy * cv.width + xx) * 4]) ink++; } q._ink = tot ? ink / tot : 0; });
+        best = { dir, ws, conf, chars };
+      }
+    }
+    if (!best) continue;
+    // words in rotated picture → page picture
+    const toPage = (u, v) => best.dir === -90 ? { x: X0 + (v - pad), y: Y0 + h - (u - pad) } : { x: X0 + w - (v - pad), y: Y0 + (u - pad) };
+    const runs = best.ws.map(q => {
+      const b = q.bbox, bl = q.baseline && q.baseline.y0 !== undefined ? (q.baseline.y0 + q.baseline.y1) / 2 : b.y1 - (b.y1 - b.y0) * 0.2;
+      const est = []; (q.symbols || []).forEach(sy => { const t = sy.text, hh = sy.bbox ? sy.bbox.y1 - sy.bbox.y0 : 0; const r = 'acemnorsuvwxz'.includes(t) ? 0.53 : /[A-IK-PR-Z0-9]/.test(t) ? 0.716 : 'bdhkl'.includes(t) ? 0.74 : 0; if (r && hh > 3) est.push(hh / r); });
+      est.sort((a, c) => a - c);
+      const em = est.length ? est[est.length >> 1] : (b.y1 - b.y0) / 0.8, o0 = toPage(b.x0, bl), c0 = toPage(b.x0, b.y0), c1 = toPage(b.x1, b.y1);
+      const bb = { x0: Math.min(c0.x, c1.x), y0: Math.min(c0.y, c1.y), x1: Math.max(c0.x, c1.x), y1: Math.max(c0.y, c1.y) };
+      const col = (typeof wordColors === 'function' ? wordColors(cx, bb) : { fg: [0, 0, 0] }).fg;
+      return { r: { x: o0.x / k, base: o0.y / k, size: em / k, text: String(q.text).trim(), fam: 'sans', bold: (q._ink || 0) > 0.36, italic: false, color: '#' + col.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), w: (b.x1 - b.x0) / k, rot: best.dir, ocr: true, _conf: q.confidence }, bb };
+    });
+    // the junk read the first time in this patch goes
+    const gx0 = X0 / k, gy0 = Y0 / k, gx1 = X1 / k, gy1 = Y1 / k;
+    for (let q = page.runs.length - 1; q >= 0; q--) { const r = page.runs[q]; if (r.ocr && !r.rot && r.x >= gx0 - 1 && r.x + r.w <= gx1 + 1 && r.base - r.size * 0.3 >= gy0 && r.base - r.size * 0.3 <= gy1) page.runs.splice(q, 1); }
+    // one piece of text per line
+    const merged = [];
+    runs.sort((a, b) => best.dir === -90 ? b.r.base - a.r.base || a.r.x - b.r.x : a.r.base - b.r.base || b.r.x - a.r.x);
+    runs.forEach(({ r, bb }) => { const p = merged[merged.length - 1]; if (p && Math.abs((best.dir === -90 ? p.x - r.x : r.x - p.x)) < r.size * 0.3 && Math.abs(r.base - (p.base + (best.dir === -90 ? -p.w : p.w))) < r.size * 1.5) { p.text += ' ' + r.text; p.w = Math.abs(r.base - p.base) + r.w; p._conf = Math.min(p._conf, r._conf); } else merged.push({ ...r }); o.erase.push({ x: bb.x0 / k - 1.5, y: bb.y0 / k - 1.5, w: (bb.x1 - bb.x0) / k + 3, h: (bb.y1 - bb.y0) / k + 3 }); });
+    page.runs.push(...merged);
+  }
+  // words of one sideways line found in separate patches: join them
+  const side = page.runs.filter(r => r.ocr && (r.rot === 90 || r.rot === -90));
+  side.sort((a, b) => a.rot - b.rot || a.x - b.x || (a.rot === -90 ? b.base - a.base : a.base - b.base));
+  for (let i = side.length - 1; i > 0; i--) {
+    const p = side[i - 1], r = side[i], end = p.rot === -90 ? p.base - p.w : p.base + p.w;
+    if (p.rot === r.rot && Math.abs(p.x - r.x) < r.size * 0.3 && Math.abs(r.base - end) < r.size * 1.2 && Math.abs(p.size - r.size) < r.size * 0.2) {
+      p.text += ' ' + r.text; p.w = Math.abs(r.base - p.base) + r.w; p._conf = Math.min(p._conf ?? 99, r._conf ?? 99);
+      page.runs.splice(page.runs.indexOf(r), 1);
+    }
+  }
+}
+
+// ---- 9. text recognition: matching the typeface ----
+//      Each clearly read word is drawn in Arial, Times New Roman and Courier New at the same size and width, and
+//      compared with the scan; the closest look wins. Lines then agree with themselves, and the page's usual
+//      typeface fills in words too short to judge.
+function khzOcrFonts(canvas, k, page) {
+  const FAMS = [['sans', 'Arial, "Liberation Sans", Helvetica, sans-serif'], ['serif', '"Times New Roman", "Liberation Serif", Times, serif'], ['mono', '"Courier New", "Liberation Mono", Courier, monospace']];
+  const runs = (page.runs || []).filter(r => r.ocr && !r.rot && (r._conf ?? 99) >= 80 && (String(r.text).match(/[A-Za-z]/g) || []).length >= 4 && !/[™®©°•]/.test(r.text));   // symbols draw differently in every font
+  if (!runs.length) return;
+  const src = canvas.getContext('2d'), tmp = document.createElement('canvas'), t = tmp.getContext('2d', { willReadFrequently: true });
+  const inkOf = (d, n, thr) => { const a = new Uint8Array(n); for (let i = 0; i < n; i++) { const q = i * 4; a[i] = d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11 < thr ? 1 : 0; } return a; };
+  // compared with a little slack (a pixel either way), so letter spacing that drifts a bit doesn't decide it
+  const grow = (a, W, H) => { const b = new Uint8Array(a.length); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (!a[y * W + x]) continue; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && yy < H && xx >= 0 && xx < W) b[yy * W + xx] = 1; } } return b; };
+  const vote = new Map(), byLine = new Map(), szs = runs.map(r => r.size).sort((a, b) => a - b), medSz = szs[szs.length >> 1] || 10;
+  runs.slice(0, 400).forEach(r => {
+    const X0 = Math.round(r.x * k), Y0 = Math.round((r.base - r.size * 0.85) * k), W = Math.round(r.w * k), H = Math.round(r.size * 1.12 * k);
+    if (W < 8 || H < 8 || W > 4000) return;
+    let d; try { d = src.getImageData(X0, Y0, W, H).data; } catch (e) { return; }
+    const lum = []; for (let i = 0; i < d.length; i += 16) lum.push(d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11); lum.sort((a, b) => a - b);
+    const bg = lum[lum.length >> 1], ink = lum[Math.floor(lum.length * 0.02)]; if (bg - ink < 40) return;
+    const A0 = inkOf(d, W * H, (bg + ink) / 2), A = grow(A0, W, H);
+    // each typeface tried plain and bold (bold detection on scans isn't perfect); the better of the two counts
+    const scores = FAMS.map(([fam, css]) => [fam, Math.max(...(r.bold || r.size >= medSz * 1.25 ? ['', 'bold '] : ['']).map(wt => {
+      tmp.width = W; tmp.height = H; t.fillStyle = '#fff'; t.fillRect(0, 0, W, H); t.fillStyle = '#000';
+      t.font = `${wt}${r.size * k}px ${css}`; const mw = t.measureText(r.text).width || 1;
+      t.setTransform(W / mw, 0, 0, 1, 0, 0); t.textBaseline = 'alphabetic'; t.fillText(r.text, 0, r.size * 0.85 * k); t.setTransform(1, 0, 0, 1, 0, 0);
+      const B0 = inkOf(t.getImageData(0, 0, W, H).data, W * H, 128), B = grow(B0, W, H);
+      // ink of each that lands on the other (with slack), both ways
+      let ab = 0, na = 0, ba = 0, nb = 0; for (let i = 0; i < A0.length; i++) { if (A0[i]) { na++; if (B[i]) ab++; } if (B0[i]) { nb++; if (A[i]) ba++; } }
+      return na && nb ? (ab / na) * (ba / nb) : 0;
+    }))]).sort((a, b) => b[1] - a[1]);
+    const margin = scores[0][1] - scores[1][1], win = margin > 0.02 ? scores[0][0] : null;
+    if (window.khzFontDebug) window.khzFontDebug.push(r.text + ' ' + scores.map(s => s[0] + ':' + s[1].toFixed(3)).join(' ') + (window.khzFontDebugImg && window.khzFontDebugImg.test(r.text) ? ' IMG ' + (() => { const cc = document.createElement('canvas'); cc.width = W; cc.height = H; cc.getContext('2d').putImageData(src.getImageData(X0, Y0, W, H), 0, 0); return cc.toDataURL(); })() : ''));
+    // a line goes by how clearly its words look like each typeface, not just by counting them
+    if (r._line) { const e = byLine.get(r._line) || {}; e[scores[0][0]] = (e[scores[0][0]] || 0) + margin; e._n = (e._n || 0) + 1; byLine.set(r._line, e); }
+    if (win) vote.set(r, win);
+  });
+  // the page's usual typeface: the one its lines look most like overall
+  const tally = {}; byLine.forEach(e => Object.entries(e).forEach(([f, m]) => { if (f !== '_n') tally[f] = (tally[f] || 0) + m; }));
+  vote.forEach((f, r) => { if (!r._line) tally[f] = (tally[f] || 0) + 0.05; });
+  const total = vote.size, top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+  const pageFam = top ? top[0] : 'sans', sumT = Object.values(tally).reduce((a, b) => a + b, 0) || 1, strict = top && top[1] / sumT >= 0.85 ? 2 : 1;   // a page that's nearly all one typeface needs stronger evidence to switch
+  // a line only differs from the page's usual typeface on clear evidence (a narrow sans can pass for a serif word here and there)
+  (page.runs || []).forEach(r => {
+    if (!r.ocr || r.fam !== 'sans') return;
+    const L = r._line && byLine.get(r._line);
+    let fam = pageFam;
+    if (L) { const e = Object.entries(L).filter(([f]) => f !== '_n').sort((a, b) => b[1] - a[1]), lead = e[0], other = (L[pageFam] || 0); if (lead && lead[0] !== pageFam && lead[1] - other >= 0.04 * strict && (L._n >= 2 ? lead[1] >= 0.1 * strict : lead[1] >= 0.08 * strict)) fam = lead[0]; }
+    else if (vote.has(r) && vote.get(r) !== pageFam && total < 3) fam = vote.get(r);
+    r.fam = fam;
+  });
+}
+
+// ---- 10. text recognition: lines read twice over each other ----
+//      Now and then the reader returns two overlapping versions of one line ("engine ine to th Ilest electroni…").
+//      Such a line is read again on its own, and the clean reading replaces both.
+async function khzOcrConflicts(o) {
+  const { worker, clean, k, page } = o;
+  const rs = (page.runs || []).filter(r => r.ocr && !r.rot);
+  const bx = r => ({ x0: r.x, x1: r.x + r.w, y0: r.base - r.size * 0.75, y1: r.base + r.size * 0.2 });
+  const clash = new Set();
+  for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) {
+    const A = bx(rs[a]), B = bx(rs[b]), ox = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0), oy = Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0);
+    const simil = Math.min(rs[a].size, rs[b].size) / Math.max(rs[a].size, rs[b].size) > 0.6;   // big lettering over small print is a logo, not a doubled line
+    if (simil && ox > 0.3 * Math.min(A.x1 - A.x0, B.x1 - B.x0) && oy > 0.4 * Math.min(A.y1 - A.y0, B.y1 - B.y0)) { clash.add(rs[a]); clash.add(rs[b]); }
+  }
+  if (!clash.size) return;
+  // whole lines around each clash
+  const regions = [];
+  clash.forEach(r => {
+    let R = regions.find(g => g.has(r)); if (R) return;
+    R = new Set([r]); let grew = true;
+    while (grew) { grew = false; rs.forEach(q => { if (R.has(q)) return; if ([...R].some(p => Math.min(p.size, q.size) / Math.max(p.size, q.size) > 0.6 && Math.abs(p.base - q.base) < Math.max(p.size, q.size) * 0.6 && q.x < p.x + p.w + Math.max(p.size, q.size) * 1.5 && q.x + q.w > p.x - Math.max(p.size, q.size) * 1.5)) { R.add(q); grew = true; } }); }
+    regions.push(R);
+  });
+  const Wc = clean.width, Hc = clean.height;
+  for (const R of regions) {
+    // the line's band from its usual size and baseline (a misjudged word size mustn't pull in the lines above and below)
+    const list = [...R], md = a => { const q = a.slice().sort((u, v) => u - v); return q[q.length >> 1]; }, mSz = md(list.map(r => r.size)), lo = Math.min(...list.map(r => r.base)), hi = Math.max(...list.map(r => r.base));
+    const x0 = Math.min(...list.map(r => r.x)), x1 = Math.max(...list.map(r => r.x + r.w)), y0 = lo - mSz * 0.92, y1 = hi + mSz * 0.28;
+    const X0 = Math.max(0, Math.floor(x0 * k) - 4), Y0 = Math.max(0, Math.floor(y0 * k) - 2), X1 = Math.min(Wc, Math.ceil(x1 * k) + 4), Y1 = Math.min(Hc, Math.ceil(y1 * k) + 2), w = X1 - X0, h = Y1 - Y0;
+    if (w < 8 || h < 8) continue;
+    const sz = mSz, up = Math.max(1, Math.min(3, 60 / (sz * k))), pad = 20;
+    const cv = document.createElement('canvas'); cv.width = Math.round(w * up) + 2 * pad; cv.height = Math.round(h * up) + 2 * pad;
+    const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); x.imageSmoothingQuality = 'high'; x.drawImage(clean, X0, Y0, w, h, pad, pad, w * up, h * up);
+    if (!khzOcrBinarize(x, cv.width, cv.height, pad)) continue;
+    await worker.setParameters({ tessedit_pageseg_mode: h < sz * k * 1.8 ? '7' : '6' });
+    const { data } = await worker.recognize(cv, {}, { blocks: true, text: false });
+    const words = ocrWordsOf(data).filter(q => String(q.text || '').trim() && (q.confidence ?? 99) >= 40);
+    if (!words.length) continue;
+    const L = q => (String(q.text).match(/[A-Za-z0-9]/g) || []).length || 1, conf = words.reduce((a, q) => a + (q.confidence ?? 99) * L(q), 0) / words.reduce((a, q) => a + L(q), 0);
+    if (window.khzDropDebug) window.khzDropDebug.push('CONFLICT ' + list.map(r => r.text).join('|') + ' => ' + words.map(q => q.text + ':' + Math.round(q.confidence)).join(' ') + ' conf ' + Math.round(conf) + ' h ' + h + ' sz ' + Math.round(sz * k));
+    // what the old readings held without counting the doubled parts twice
+    const taken = [], ov = (A, B) => Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) > 0.3 * Math.min(A.x1 - A.x0, B.x1 - B.x0) && Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) > 0;
+    list.slice().sort((a, b) => (b._conf ?? 99) - (a._conf ?? 99)).forEach(r => { if (!taken.some(t => ov(bx(t), bx(r)))) taken.push(r); });
+    const oldChars = taken.reduce((a, r) => a + L(r), 0), oldConf = taken.reduce((a, r) => a + (r._conf ?? 99) * L(r), 0) / (oldChars || 1), newChars = words.reduce((a, q) => a + L(q), 0);
+    if (conf < 60 || newChars < oldChars * 0.8 || (conf < oldConf - 10 && newChars < oldChars)) continue;   // a fuller reading may be a little less sure
+    const P = v => ({ x0: (v.x0 - pad) / up + X0, x1: (v.x1 - pad) / up + X0, y0: (v.y0 - pad) / up + Y0, y1: (v.y1 - pad) / up + Y0 });
+    const mapped = words.map(q => ({ ...q, bbox: P(q.bbox), baseline: q.baseline && q.baseline.y0 !== undefined ? { ...q.baseline, x0: (q.baseline.x0 - pad) / up + X0, x1: (q.baseline.x1 - pad) / up + X0, y0: (q.baseline.y0 - pad) / up + Y0, y1: (q.baseline.y1 - pad) / up + Y0 } : q.baseline, symbols: (q.symbols || []).map(sy => ({ ...sy, bbox: sy.bbox ? P(sy.bbox) : sy.bbox })) }));
+    list.forEach(r => { const j = page.runs.indexOf(r); if (j >= 0) page.runs.splice(j, 1); });
+    if (window.khzDropDebug) window.khzDropDebug.push('MAPPED ' + mapped.map(q => q.text + '@' + Math.round(q.bbox.x0 / k) + ',' + Math.round(q.bbox.y0 / k) + '-' + Math.round(q.bbox.y1 / k) + ' sy' + (q.symbols || []).length + ' c' + Math.round(q.confidence)).join(' ') + ' up ' + up.toFixed(2));
+    const before = new Set(page.runs), mBase = md(list.map(r => r.base));
+    o.learn(mapped); o.addWords(mapped, true);
+    // the line keeps the size and baseline it had (a crop can make letters look taller than they are)
+    const oneLine = hi - lo < mSz * 0.5;   // several lines: each keeps its own baseline
+    page.runs.forEach(r => { if (!before.has(r) && !r.rot) { if (oneLine || Math.abs(r.size - mSz) > mSz * 0.25) r.size = mSz; if (oneLine && Math.abs(r.base - mBase) > mSz * 0.35) r.base = mBase; } });
+  }
 }
 // ================================================================
 //  Pages sit exactly on the screen's pixel grid.
