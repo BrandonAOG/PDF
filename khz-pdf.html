@@ -9041,7 +9041,17 @@ function writeFormFieldChanges(doc) {
         form.markFieldAsDirty(f.ref);
       } else if ((f instanceof L.PDFDropdown || f instanceof L.PDFOptionList) && a.options && a.options.length) { f.setOptions(a.options); if (a.fontSize) f.setFontSize(a.fontSize); }
     } catch (e) { console.warn('update field', a.name, e); }
-    if (a.name !== a.origName && !a.origName.includes('.')) {
+    if (a.name !== a.origName && a.name.includes('.')) {   // e.g. date → date.0.0 (Create Multiple Copies): move it into the date › 0 branch, like Acrobat
+      try {
+        const N = L.PDFName.of, ref = f.ref, dict = f.acroField.dict, par = dict.lookup(N('Parent'));
+        const holder = par instanceof L.PDFDict ? par.lookup(N('Kids')) : form.acroForm.dict.lookup(N('Fields'));
+        if (holder instanceof L.PDFArray) { const i = holder.asArray().findIndex(x => x === ref || (x.objectNumber === ref.objectNumber)); if (i >= 0) holder.remove(i); }
+        const parts = a.name.split('.'), last = parts.pop();
+        dict.set(N('T'), L.PDFHexString.fromText(last));
+        if (parts.length) { const [node, nodeRef] = form.findOrCreateNonTerminals(parts); dict.set(N('Parent'), nodeRef); node.addField(ref); }
+        else { dict.delete(N('Parent')); form.acroForm.addField(ref); }
+      } catch (e) { console.warn('rename field', a.name, e); }
+    } else if (a.name !== a.origName && !a.origName.includes('.')) {
       try { f.acroField.setPartialName(a.name); } catch (e) { f.acroField.dict.set(L.PDFName.of('T'), L.PDFHexString.fromText(a.name)); }
     }
   });
@@ -23162,7 +23172,8 @@ pasteAnnot = function () {
   if (c && c.type === 'form-field') { c.existing = false; delete c.origName; delete c.wid; delete c.origRect; c.untouched = false; }
   const r = _pasteAnnotFF.apply(this, arguments);
   const a = state.annotations.find(x => x.id === state.selectedId);
-  if (a && a.type === 'form-field' && a.kind !== 'radio') { a.name = ffNextName(a.kind); renderPageAnnots(a.page); }
+  // pasted fields keep their name, like Acrobat: both copies are the same field and show the same value
+  if (a && a.type === 'form-field') renderPageAnnots(a.page);
   return r;
 };
 
@@ -23282,10 +23293,14 @@ function ffMultiCopies(a) {
       const ps = state.pages[a.page], s = ps.vp.scale;
       const U = bboxOf(sel.map(ffVB).flatMap(b => [[b.x, b.y], [b.x + b.w, b.y + b.h]]));
       const made = [];
+      // Acrobat names the copies by row and column: name.row.column (name.row when only copying down, name.column when only across);
+      // the original becomes name.0.0
+      const base = o => o.name.replace(/(\.\d+){1,2}$/, ''), nm = (o, r, c) => dn > 1 && ac > 1 ? `${base(o)}.${r}.${c}` : dn > 1 ? `${base(o)}.${r}` : `${base(o)}.${c}`;
+      if (dn * ac > 1) sel.forEach(o => { if (o.kind === 'radio') return; const n0 = nm(o, 0, 0); if (o.name !== n0) { touchNative && touchNative(o); if (o.existing && !o.origName) o.origName = o.name; o.name = n0; o.untouched = false; } });
       for (let r = 0; r < dn; r++) for (let c = 0; c < ac; c++) {
         if (!r && !c) continue;
         sel.forEach(o => { const b = ffVB(o), n2 = cloneAnnot(o); n2.existing = false; delete n2.origName; delete n2.wid; delete n2.origRect; n2.untouched = false;
-          n2.name = o.kind === 'radio' ? o.name : `${o.name.replace(/\.\d+$/, '')}.${r * ac + c}`.replace(/\./g, '_');
+          n2.name = o.kind === 'radio' ? o.name : nm(o, r, c);
           if (o.kind === 'radio') n2.exportValue = (o.exportValue || 'Choice') + '_' + (r * ac + c);
           ffSetVB(n2, { ...b, x: b.x + c * (U.w + sp * s), y: b.y + r * (U.h + sp * s) }); state.annotations.push(n2); made.push(n2.id); });
       }
@@ -23985,7 +24000,7 @@ function ffBoxAP(doc, form, f, w, a, font, key) {
   let on = null; if (n0 && n0.keys) n0.keys().forEach(kk => { const s = kk.asString().slice(1); if (s !== 'Off') on = s; });
   if (a.kind === 'checkbox') on = (String(a.exportValue || on || 'Yes').replace(/[^A-Za-z0-9_\-.]/g, '') || 'Yes');
   on = on || 'Yes';
-  const bc = ffHex2(a.bc), bg = ffHex2(a.bg), tc = ffHex2(a.color) || [0, 0, 0], bw = bc ? (a.bw || 1) : 0, round = a.kind === 'radio';
+  const bc = ffHex2(a.bc), bg = ffHex2(a.bg), tc = ffHex2(a.color) || [0, 0, 0], bw = bc ? (a.bw || 1) : 0, round = a.kind === 'radio' && (a.chkStyle || 'circle') === 'circle';   // Acrobat: round only with the Circle style, square for the others
   const kap = (x, y, rx, ry) => { const c = 0.5523; return `${x + rx} ${y} m ${x + rx} ${y + ry * c} ${x + rx * c} ${y + ry} ${x} ${y + ry} c ${x - rx * c} ${y + ry} ${x - rx} ${y + ry * c} ${x - rx} ${y} c ${x - rx} ${y - ry * c} ${x - rx * c} ${y - ry} ${x} ${y - ry} c ${x + rx * c} ${y - ry} ${x + rx} ${y - ry * c} ${x + rx} ${y} c`; };
   const shape = inset => round ? kap(W / 2, H / 2, W / 2 - inset, H / 2 - inset) : `${inset} ${inset} ${W - inset * 2} ${H - inset * 2} re`;
   let base = '';
@@ -28227,6 +28242,7 @@ formFieldGeometry = function (a, vp, V, box) {
   if (!a || (a.kind !== 'checkbox' && a.kind !== 'radio')) return prims;
   const style = a.chkStyle || (a.kind === 'radio' ? 'circle' : 'check');
   const out = prims.filter(p => p.k !== 'text' || p.bg === '#ffe14d');   // keep the tab-order number
+  if (a.kind === 'radio' && style === 'circle' && out[0] && out[0].k === 'poly') out[0] = { ...out[0], pts: ellipsePts(box, 32) };   // circle style: a round button, like Acrobat
   const tag = prims.find(p => p.k === 'text' && p.bg !== '#ffe14d');
   out.push(...ffStyleGlyph(style, box, '#1a2ee6'));
   // the name sits just to the right of the small box instead of being cut down to one letter inside it
@@ -34531,6 +34547,36 @@ window.alert = function (msg) {
     }
     return _cdt.apply(this, arguments);
   };
+}
+// ================================================================
+//  Q23: radio button choices are saved under their own names (Choice1, Choice2 …), like Acrobat —
+//  not as 0, 1, 2 with a separate list of names (/Opt), which some apps and scripts read wrongly.
+// ================================================================
+function khzRadioNames(doc) {
+  const L = PDFLib, N = L.PDFName.of, ctx = doc.context;
+  let form; try { form = doc.getForm(); } catch (e) { return; }
+  form.getFields().forEach(f => {
+    if (!(f instanceof L.PDFRadioGroup)) return;
+    const d = f.acroField.dict, opt = d.lookup(N('Opt')); if (!(opt instanceof L.PDFArray)) return;
+    const names = opt.asArray().map(o => { try { return o.decodeText ? o.decodeText() : String(o); } catch (e) { return null; } });
+    if (names.some(n => !n) || new Set(names).size !== names.length) return;   // same choice twice = "select in unison": keep the list
+    const map = {}; names.forEach((n, i) => { map[String(i)] = n; });
+    const rename = st => { const k = st && st.asString ? st.asString().slice(1) : null; return k != null && map[k] != null ? N(map[k]) : null; };
+    f.acroField.getWidgets().forEach(w => {
+      const ap = w.dict.lookup(N('AP')); if (ap instanceof L.PDFDict) ['N', 'D'].forEach(k => {
+        const sub = ap.lookup(N(k)); if (!(sub instanceof L.PDFDict)) return;
+        for (const [key, val] of [...sub.entries()]) { const nk = rename(key); if (nk) { sub.delete(key); sub.set(nk, val); } }
+      });
+      const as = rename(w.dict.get(N('AS'))); if (as) w.dict.set(N('AS'), as);
+    });
+    const v = rename(d.get(N('V'))); if (v) d.set(N('V'), v);
+    const dv = rename(d.get(N('DV'))); if (dv) d.set(N('DV'), dv);
+    d.delete(N('Opt'));
+  });
+}
+{
+  const _w = writeFormFieldChanges;
+  writeFormFieldChanges = function (doc) { const r = _w.apply(this, arguments); try { khzRadioNames(doc); } catch (e) { console.warn('radio names', e); } return r; };
 }
 </script>
 </body>
