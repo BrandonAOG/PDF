@@ -1,5 +1,5 @@
 // KHZ PDF offline support. Change VERSION when you upload a new khz-pdf.html to refresh the saved copy sooner.
-const VERSION = 'khz-pdf-v2';
+const VERSION = 'khz-pdf-v4';
 // libraries keep their version in the address, so they live in their own cache that survives app updates
 const LIBCACHE = 'khz-pdf-libs';
 const SHELL = ['./', './khz-pdf.html', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
@@ -23,7 +23,11 @@ const EXTRA = [
   'https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js',
   'https://cdn.jsdelivr.net/npm/node-forge@1.3.1/dist/forge.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'
+  'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+  'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.js',
+  'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.wasm',
+  'https://cdn.jsdelivr.net/npm/mammoth@1.13.0/mammoth.browser.min.js',
+  'https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js'
 ];
 const saveMissing = (cache, urls) => caches.open(cache).then(c => Promise.all(urls.map(u => c.match(u).then(hit => hit || c.add(u).catch(() => {})))));
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)\//;
