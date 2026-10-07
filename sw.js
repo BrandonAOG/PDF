@@ -27,7 +27,19 @@ const EXTRA = [
   'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.js',
   'https://cdn.jsdelivr.net/npm/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.wasm',
   'https://cdn.jsdelivr.net/npm/mammoth@1.13.0/mammoth.browser.min.js',
-  'https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js'
+  'https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js',
+  'https://cdn.jsdelivr.net/npm/@fontsource/arimo@5.3.0/files/arimo-latin-400-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/arimo@5.3.0/files/arimo-latin-400-italic.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/arimo@5.3.0/files/arimo-latin-700-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/arimo@5.3.0/files/arimo-latin-700-italic.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/tinos@5.3.0/files/tinos-latin-400-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/tinos@5.3.0/files/tinos-latin-400-italic.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/tinos@5.3.0/files/tinos-latin-700-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/tinos@5.3.0/files/tinos-latin-700-italic.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/cousine@5.3.0/files/cousine-latin-400-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/cousine@5.3.0/files/cousine-latin-400-italic.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/cousine@5.3.0/files/cousine-latin-700-normal.woff',
+  'https://cdn.jsdelivr.net/npm/@fontsource/cousine@5.3.0/files/cousine-latin-700-italic.woff'
 ];
 const saveMissing = (cache, urls) => caches.open(cache).then(c => Promise.all(urls.map(u => c.match(u).then(hit => hit || c.add(u).catch(() => {})))));
 const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|unpkg\.com)\//;
