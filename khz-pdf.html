@@ -17789,40 +17789,62 @@ async function expOCRPages(bytes, pages, lang) {
       const vp = pg.getViewport({ scale: k }), c = document.createElement('canvas'); c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
       const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
       await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE, intent: 'print' }).promise;
-      if (typeof khzOcrClean === 'function') try { khzOcrClean(c, v1.width); } catch (e) {}
+      // a copy with the table lines still in it (to find the tables), then the lines come out for reading
+      let raw = null;
+      if (typeof khzOcrClean === 'function') try { raw = document.createElement('canvas'); raw.width = c.width; raw.height = c.height; raw.getContext('2d').drawImage(c, 0, 0); khzOcrClean(c, v1.width); } catch (e) { raw = null; }
       const { data } = await worker.recognize(c, {}, { blocks: true, text: false });
       erase[i] = [];
       const allW = ocrWordsOf(data);
-      // a steady text size per line: the middle word height of the line (icons and logos on the same line don't blow it up)
       const hOf = w => w.bbox.y1 - w.bbox.y0, med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+      // text size from the height of the letters themselves: x-height letters (a c e m n o…), capitals and figures,
+      // tall lower-case letters (b d h k l) — brackets, descenders (g p y) and accents don't count
+      const symEst = w => { const out = []; (w.symbols || []).forEach(sy => { const t = sy.text; if (!t || t.length !== 1 || !sy.bbox || (sy.confidence ?? 99) < 50) return; const h = sy.bbox.y1 - sy.bbox.y0; const r = 'acemnorsuvwxz'.includes(t) ? 0.53 : /[A-IK-PR-Z0-9]/.test(t) ? 0.716 : 'bdhkl'.includes(t) ? 0.74 : 0; if (r && h > 3) out.push(h / r); }); return out; };
+      const lineEm = new Map();
+      const learnLines = words => { const by = new Map(); words.forEach(w => { if (!w.line || (w.confidence ?? 99) < 55) return; if (!by.has(w.line)) by.set(w.line, []); by.get(w.line).push(...symEst(w)); }); by.forEach((e, L) => { if (e.length >= 3) lineEm.set(L, med(e)); }); };
+      learnLines(allW);
       const lineH = new Map(); allW.forEach(w => { if (!w.line) return; if (!lineH.has(w.line)) lineH.set(w.line, []); if (String(w.text || '').trim().length >= 2 && (w.confidence ?? 99) >= 60) lineH.get(w.line).push(hOf(w)); });
       const pageMed = med(allW.filter(w => String(w.text || '').trim().length >= 2).map(hOf)) || 1;
+      const emOf = w => {
+        const own = symEst(w), L = lineEm.get(w.line);
+        if (own.length >= 3 && (!L || Math.abs(med(own) - L) > L * 0.35)) return med(own);
+        if (L) return L;
+        if (own.length) return med(own);
+        const lh = lineH.get(w.line), mh = lh && lh.length ? med(lh) : 0;
+        return (mh && hOf(w) < mh * 1.8 ? mh : hOf(w)) / 0.8;
+      };
       // bold: words whose letters carry clearly more ink for their height than the page's ordinary text
       const ink = w => { try { const b = w.bbox, W = Math.max(1, b.x1 - b.x0), H = Math.max(1, b.y1 - b.y0), d = cx.getImageData(b.x0, b.y0, W, H).data; let n = 0; for (let q = 0; q < d.length; q += 4) if (d[q] + d[q + 1] + d[q + 2] < 560) n++; return n / (W * H); } catch (e) { return 0; } };
       const inkOf = new Map(); allW.forEach(w => { if (String(w.text || '').trim().length >= 3) inkOf.set(w, ink(w)); });
       const inkMed = med([...inkOf.values()]) || 1;
-      const rawBold = w => (inkOf.get(w) || 0) > inkMed * 1.3;
+      const rawBold = w => (inkOf.has(w) ? inkOf.get(w) : ink(w)) > inkMed * 1.3;
       const lineBold = new Map(); allW.forEach(w => { if (!w.line || !inkOf.has(w)) return; const e = lineBold.get(w.line) || [0, 0]; e[0]++; if (rawBold(w)) e[1]++; lineBold.set(w.line, e); });
       // a whole line agrees: mostly bold → bold, mostly plain → plain unless a word is far heavier
       const isBold = w => { const e = lineBold.get(w.line); if (e && e[0] >= 2) { if (e[1] / e[0] >= 0.6) return true; if (e[1] / e[0] < 0.35) return (inkOf.get(w) || 0) > inkMed * 1.75; } return rawBold(w); };
-      allW.forEach(w => {
+      const addWords = (words, inCell) => words.forEach(w => {
         const txt = String(w.text || '').trim(), conf = w.confidence === undefined ? 99 : w.confidence; if (!txt || conf < 40) return;
         // icons, logos and stylized lettering stay part of the picture (like Acrobat) instead of becoming broken text
-        if (conf < 60 && (txt.length <= 2 || !/[A-Za-z0-9]{2}/.test(txt))) return;
+        // (inside a table cell read on its own, a short word like "(7" is real text)
+        if (conf < 60 && (inCell ? !/[A-Za-z0-9]/.test(txt) : (txt.length <= 2 || !/[A-Za-z0-9]{2}/.test(txt)))) return;
         if (hOf(w) > pageMed * 2.6 && conf < 88) return;
         if (/^[@®©™°•*~^_|\\]+$/.test(txt) && conf < 80) return;
-        const b = w.bbox, lh = lineH.get(w.line), mh = lh && lh.length ? med(lh) : 0;
-        const hPx = mh && (lh.length >= 3 || Math.abs(hOf(w) - mh) < mh * 0.6) && hOf(w) < mh * 1.8 ? mh : hOf(w);
-        const basePx = w.baseline && w.baseline.y0 !== undefined && Math.abs(w.baseline.y0 - b.y1) < hPx ? (w.baseline.y0 + w.baseline.y1) / 2 : b.y1 - hPx * 0.18;
+        const b = w.bbox, em = emOf(w);
+        const basePx = w.baseline && w.baseline.y0 !== undefined && Math.abs(w.baseline.y0 - b.y1) < em * 0.5 ? (w.baseline.y0 + w.baseline.y1) / 2 : b.y1 - em * 0.15;
         const col = (typeof wordColors === 'function' ? wordColors(cx, b) : { fg: [0, 0, 0] }).fg;
-        const color = '#' + col.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), size = hPx / k * 0.92;
+        const color = '#' + col.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), size = em / k;
         const prev = pages[i].runs[pages[i].runs.length - 1];
         // words on the same line (and close together) become one piece of text
         const bold = isBold(w) || (txt.length < 3 && prev && prev._line === w.line && prev.bold);
-        if (prev && prev.ocr && prev._line === w.line && b.x0 / k - (prev.x + prev.w) < size * 1.5 && prev.color === color && prev.bold === bold) { prev.text += ' ' + txt; prev.w = b.x1 / k - prev.x; prev.size = Math.max(prev.size, size); }
-        else pages[i].runs.push({ x: b.x0 / k, base: basePx / k, size, text: txt, fam: 'sans', bold, italic: false, color, w: (b.x1 - b.x0) / k, ocr: true, _line: w.line });
+        if (prev && prev.ocr && prev._line === w.line && b.x0 / k - (prev.x + prev.w) < size * 1.5 && prev.color === color && prev.bold === bold && Math.abs(prev.size - size) < size * 0.2) { prev.text += ' ' + txt; prev.w = b.x1 / k - prev.x; prev._conf = Math.min(prev._conf, conf); }
+        else pages[i].runs.push({ x: b.x0 / k, base: basePx / k, size, text: txt, fam: 'sans', bold, italic: false, color, w: (b.x1 - b.x0) / k, ocr: true, _line: w.line, _conf: conf });
         erase[i].push({ x: b.x0 / k - 1.5, y: b.y0 / k - 1.5, w: (b.x1 - b.x0) / k + 3, h: (b.y1 - b.y0) / k + 3 });
       });
+      addWords(allW);
+      // second look: each table cell read again on its own
+      if (raw && typeof khzOcrCells === 'function') {
+        try { await khzOcrCells({ worker, raw, clean: c, k, wpt: v1.width, page: pages[i], erase: erase[i], learn: learnLines, addWords, note: n => showLoading(true, `Recognizing text on page ${i + 1}… (table cell ${n})`) }); }
+        catch (e) { console.warn('cell OCR', e); }
+        try { await worker.setParameters({ tessedit_pageseg_mode: '6' }); } catch (e) {}
+      }
     }
   } finally { try { await worker.terminate(); } catch (e) {} pdf.destroy(); }
   return erase;
@@ -17993,8 +18015,8 @@ async function expDocx(bytes, pages, o) {
   const E = pt => Math.round(pt * 12700), T = pt => Math.round(pt * 20);
   const zip = new JSZip(), rels = [];
   let id = 1, body = '';
-  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/><w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
-  const run = r => `<w:r>${rPr(r)}<w:t xml:space="preserve">${xmlEsc(r.text)}</w:t></w:r>`;
+  const rPr = r => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/>${r.sc && r.sc !== 100 ? `<w:w w:val="${r.sc}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
+  const run = r => `<w:r>${rPr({ ...r, sc: typeof khzScaleFor === 'function' ? khzScaleFor(r) : 100 })}<w:t xml:space="preserve">${xmlEsc(r.text)}</w:t></w:r>`;
   const anchorPos = (x, y, w, h, behind, z) => `<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="${z}" behindDoc="${behind ? 1 : 0}" locked="${behind ? 1 : 0}" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>${E(x)}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>${E(y)}</wp:posOffset></wp:positionV><wp:extent cx="${E(w)}" cy="${E(h)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>`;
   const sect = p => `<w:sectPr><w:pgSz w:w="${T(p.w)}" w:h="${T(p.h)}"${p.w > p.h ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${o.layout === 'flow' ? 1080 : 0}" w:right="${o.layout === 'flow' ? 1080 : 0}" w:bottom="${o.layout === 'flow' ? 1080 : 0}" w:left="${o.layout === 'flow' ? 1080 : 0}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
   pages.forEach((p, i) => {
@@ -18099,7 +18121,7 @@ async function expPptx(bytes, pages, o) {
     const s = pptx.addSlide();
     if (bgs[i]) s.addImage({ data: bgs[i].url, x: 0, y: 0, w: inch(p0.w), h: inch(p0.h) });
     const sx = p0.w / p.w, sy = p0.h / p.h;
-    p.runs.forEach(r => { const bw = r.w * 1.12 + r.size * 0.6, bh = r.size * 1.3, bx = r.rot ? expRotBox(r, bw, bh, r.size * 0.95) : { x: r.x, y: r.base - r.size * 0.95 }; s.addText(r.text, { x: inch(bx.x * sx), y: inch(bx.y * sy), w: inch(bw * sx), h: inch(bh * sy), rotate: r.rot ? Math.round(((r.rot % 360) + 360) % 360) : undefined, fontSize: Math.max(1, Math.round(r.size * k * Math.min(sx, sy) * 10) / 10), fontFace: expFont(r.fam), bold: r.bold, italic: r.italic, underline: r.u ? { style: 'sng' } : undefined, color: hex6(r.color), margin: 0, valign: 'top', wrap: false, fit: 'none', paraSpaceBefore: 0, paraSpaceAfter: 0 }); });
+    p.runs.forEach(r => { const bw = r.w * 1.12 + r.size * 0.6, bh = r.size * 1.3, bx = r.rot ? expRotBox(r, bw, bh, r.size * 0.95) : { x: r.x, y: r.base - r.size * 0.95 }; s.addText(r.text, { x: inch(bx.x * sx), y: inch(bx.y * sy), w: inch(bw * sx), h: inch(bh * sy), rotate: r.rot ? Math.round(((r.rot % 360) + 360) % 360) : undefined, fontSize: Math.max(1, Math.round(r.size * Math.min(1, (typeof khzScaleFor === 'function' ? khzScaleFor(r) : 100) / 100) * k * Math.min(sx, sy) * 10) / 10), fontFace: expFont(r.fam), bold: r.bold, italic: r.italic, underline: r.u ? { style: 'sng' } : undefined, color: hex6(r.color), margin: 0, valign: 'top', wrap: false, fit: 'none', paraSpaceBefore: 0, paraSpaceAfter: 0 }); });
   });
   return pptx.write({ outputType: 'blob' });
 }
@@ -18143,7 +18165,7 @@ function expTiff(c, dpi, gray) {   // baseline TIFF, uncompressed
 // ----- HTML -----
 async function expHtml(bytes, pages, o, base) {
   const bgs = o.images ? await expBackgrounds(bytes, 130, { comments: true }) : [];
-  const css = r => `left:${r.x.toFixed(2)}pt;top:${(r.base - r.size * 0.92).toFixed(2)}pt;${r.rot ? `transform:rotate(${r.rot.toFixed(2)}deg);transform-origin:0 ${(r.size * 0.92).toFixed(2)}pt;` : ''}font-size:${r.size.toFixed(2)}pt;font-family:'${expFont(r.fam).replace(/'/g, '')}',${/mono/.test(r.fam || '') ? 'monospace' : /serif/.test(r.fam || '') && !/sans/.test(r.fam || '') ? 'serif' : 'sans-serif'};${r.bold ? 'font-weight:bold;' : ''}${r.italic ? 'font-style:italic;' : ''}${r.u ? 'text-decoration:underline;' : ''}color:#${hex6(r.color)}`;
+  const css = r => `left:${r.x.toFixed(2)}pt;top:${(r.base - r.size * 0.92).toFixed(2)}pt;${r.rot ? `transform:rotate(${r.rot.toFixed(2)}deg);transform-origin:0 ${(r.size * 0.92).toFixed(2)}pt;` : ''}font-size:${(r.size * Math.min(1, (typeof khzScaleFor === 'function' ? khzScaleFor(r) : 100) / 100)).toFixed(2)}pt;font-family:'${expFont(r.fam).replace(/'/g, '')}',${/mono/.test(r.fam || '') ? 'monospace' : /serif/.test(r.fam || '') && !/sans/.test(r.fam || '') ? 'serif' : 'sans-serif'};${r.bold ? 'font-weight:bold;' : ''}${r.italic ? 'font-style:italic;' : ''}${r.u ? 'text-decoration:underline;' : ''}color:#${hex6(r.color)}`;
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${xmlEsc(base)}</title>
 <style>body{margin:0;background:#525659;padding:20px 0}.pg{position:relative;margin:0 auto 20px;background:#fff center/100% 100% no-repeat;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden}.pg span{position:absolute;white-space:pre;line-height:1.2}@media print{body{background:none;padding:0}.pg{box-shadow:none;margin:0;page-break-after:always}}</style></head><body>
 ${pages.map((p, i) => `<div class="pg" id="page${i + 1}" style="width:${p.w.toFixed(2)}pt;height:${p.h.toFixed(2)}pt${bgs[i] ? `;background-image:url(${bgs[i].url})` : ''}">\n${p.runs.map(r => `<span style="${css(r)}">${xmlEsc(r.text)}</span>`).join('\n')}\n</div>`).join('\n')}
@@ -32144,6 +32166,9 @@ async function khzDocxFlow(bytes, pages, o) {
     if (!pages.length) return true;
     const ocr = pages.filter(p => (p.runs || []).some(r => r.ocr)).length;
     if (ocr >= Math.ceil(pages.length / 2)) return false;
+    // drawings (plans, drawing sets, posters): sheets bigger than Legal, or text in short scattered labels
+    const drawing = pages.filter(p => Math.max(p.w, p.h) > 1015 || ((p.runs || []).length >= 30 && (p.runs || []).filter(r => String(r.text).trim().split(/\s+/).length <= 3).length > (p.runs || []).length * 0.7)).length;
+    if (drawing >= Math.ceil(pages.length / 2)) return false;
     const M = 54, crowded = pages.filter(p => { const area = (p.w - 2 * M) * (p.h - 2 * M); const need = (p.runs || []).reduce((a, r) => a + String(r.text).length * r.size * 0.5 * r.size * 1.25, 0); return need > area * 0.55; }).length;
     return crowded < Math.ceil(pages.length / 3);
   };
@@ -34761,7 +34786,9 @@ function khzOcrClean(c, wpt) {
 
 // ---- 2. group them into tables and work out rows, columns and cells ----
 function khzTblFind(bg, runs) {
-  const { hs, vs, k } = khzTblStrips(bg);
+  const st = khzTblStrips(bg), k = st.k, pw = bg.w, ph = bg.canvas.height / k;
+  // the sheet border of a drawing isn't a table: leave lines that run (almost) the full page
+  const hs = st.hs.filter(h => h.x1 - h.x0 < pw * 0.8), vs = st.vs.filter(v => v.y1 - v.y0 < ph * 0.7);
   const els = hs.concat(vs), par = els.map((_, i) => i);
   const f = i => par[i] === i ? i : (par[i] = f(par[i])), u = (a, b) => { par[f(a)] = f(b); };
   const ov = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0);
@@ -34908,6 +34935,7 @@ function khzTblFind(bg, runs) {
         return;
       }
     }
+    if ((x1 - x0) * (y1 - y0) > pw * ph * 0.6) return;
     tables.push({ x0, x1, y0, y1, cols, rows, grid, strips: g, runs: new Set(mine.flatMap(o => o.L.runs.map(r => r.parent || r)).concat(runs.filter(r => junk(r) && r.x + r.w / 2 >= x0 && r.x + r.w / 2 <= x1 && r.base - r.size * 0.3 >= y0 && r.base - r.size * 0.3 <= y1))) });
   };
   Object.values(groups).forEach(g => build(g, 0));
@@ -34923,6 +34951,15 @@ function khzTblWidth(r) {
     return khzTblMeasureCtx.measureText(r.text).width;
   } catch (e) { return String(r.text).length * r.size * 0.5; }
 }
+// character width (Word's "scale") so a word takes the same width as in the PDF: the original typeface is often
+// narrower or wider than the font Word uses for it (Acrobat does the same)
+function khzScaleFor(r) {
+  if (!r || !r.w || !r.text || r.rot || String(r.text).trim().length < 2) return 100;
+  if (!khzFontAvailable(expFont(r.fam))) return 100;
+  const nat = khzTblWidth(r); if (!nat) return 100;
+  const sc = Math.round(Math.max(50, Math.min(150, r.w / nat * 100)));
+  return Math.abs(sc - 100) < 4 ? 100 : sc;
+}
 function khzTblXml(t) {
   const T = pt => Math.round(pt * 20);
   // text sizes read by OCR wobble from word to word: in a table, sizes close to the usual one become the usual one
@@ -34930,7 +34967,7 @@ function khzTblXml(t) {
   const SZ = z => z >= med * 0.5 && z <= med * 2 ? med : z;
   const gx = t.cols.map(T), grid = []; for (let c = 1; c < gx.length; c++) grid.push(gx[c] - gx[c - 1]);
   const bdr = (side, s) => s ? `<w:${side} w:val="single" w:sz="${Math.max(2, Math.min(96, Math.round((s.kind === 'vrule' ? s.x1 - s.x0 : s.y1 - s.y0) * 8)))}" w:space="0" w:color="${s.color.toUpperCase()}"/>` : `<w:${side} w:val="nil"/>`;
-  const rPr = (r, sc) => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/>${sc && sc < 100 ? `<w:w w:val="${sc}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
+  const rPr = (r, sc) => `<w:rPr><w:rFonts w:ascii="${xmlEsc(expFont(r.fam))}" w:hAnsi="${xmlEsc(expFont(r.fam))}" w:cs="${xmlEsc(expFont(r.fam))}"/>${r.bold ? '<w:b/>' : ''}${r.italic ? '<w:i/>' : ''}<w:color w:val="${hex6(r.color)}"/>${sc && sc !== 100 ? `<w:w w:val="${sc}"/>` : ''}<w:sz w:val="${Math.max(2, Math.round(r.size * 2))}"/><w:szCs w:val="${Math.max(2, Math.round(r.size * 2))}"/>${r.u ? '<w:u w:val="single"/>' : ''}</w:rPr>`;
   let x = `<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="${T(t.x0)}" w:tblpY="${T(t.y0)}"/><w:tblOverlap w:val="overlap"/><w:tblW w:w="${gx[gx.length - 1] - gx[0]}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="nil"/>`).join('')}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr><w:tblGrid>${grid.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   t.rows.forEach(R => {
     x += `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${Math.max(20, T(R.y1 - R.y0))}" w:hRule="atLeast"/></w:trPr>`;
@@ -34949,13 +34986,15 @@ function khzTblXml(t) {
           const lx = Math.min(...rs.map(r => r.x)), rx = Math.max(...rs.map(r => r.x + r.w)), cw = c.x1 - c.x0;
           const lg = lx - c.x0, rg = c.x1 - rx;
           const parts = []; rs.forEach((r, q) => { const pr = rs[q - 1]; if (pr && r.x - (pr.x + pr.w) > r.size * 0.2 && !/\s$/.test(pr.text) && !/^\s/.test(r.text)) parts.push({ ...r, text: ' ' }); parts.push(r); });
-          const need = parts.reduce((a, r) => a + khzTblWidth(r), 0);
+          const need = parts.reduce((a, r) => a + khzTblWidth(r), 0), orig = rx - lx;
           let jc = 'left', ind = '';
           if (lg > Math.max(8, cw * 0.04) && Math.abs(lg - rg) < Math.max(5, cw * 0.15)) jc = 'center';
           else if (rg < lg) { jc = 'right'; ind = `<w:ind w:right="${T(Math.max(0, rg))}"/>`; }
           else ind = `<w:ind w:left="${T(Math.max(0, lg))}"/>`;
           const room = jc === 'center' ? cw - 2 : jc === 'right' ? cw - Math.max(0, rg) - 1 : cw - Math.max(0, lg) - 1;
-          const sc = need > room ? Math.max(55, Math.floor(room / need * 100)) : 100;
+          let sc = need > 0 && orig > 0 ? Math.max(50, Math.min(150, Math.round(orig / need * 100))) : 100;
+          if (need * sc / 100 > room) sc = Math.max(50, Math.floor(room / need * 100));
+          if (Math.abs(sc - 100) < 4) sc = 100;
           paras.push({ before, L, ind, jc, body: parts.map(r => `<w:r>${rPr(r, sc)}<w:t xml:space="preserve">${xmlEsc(r.text)}</w:t></w:r>`).join('') });
         });
         // keep the lines inside the row's height
@@ -35009,6 +35048,115 @@ function khzTblXml(t) {
     zip.file('word/document.xml', doc);
     return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE' });
   };
+}
+
+// ---- 5. text recognition: a second look at each table cell on its own ----
+//      Reading a whole page, the recogniser can miss short words in cells (a lone "2"), break a label in two or
+//      misjudge a line. Reading one cell at a time is much more reliable, so cells that came out empty-but-inked
+//      or with doubtful words are read again; the new reading is kept only when it's better.
+async function khzOcrCells(o) {
+  const { worker, raw, clean, k, wpt, page } = o;
+  const tables = khzTblFind({ canvas: raw, w: wpt }, page.runs.filter(r => r.ocr));
+  if (!tables.length) return;
+  const jobs = [];
+  tables.forEach(t => t.rows.forEach(R => R.tcs.forEach(c => { if (!c.vm) jobs.push({ x0: c.x0, x1: c.x1, y0: R.y0, y1: c.vstart ? (t.rows.slice(t.rows.indexOf(R) + 1).find(q => !q.tcs.some(z => z.c0 === c.c0 && z.vm)) || t.rows[t.rows.length - 1]).y0 : R.y1, runs: [...new Set(c.items.flatMap(it => it.runs.map(r => r.parent || r)))] }); })));
+  const cctx = clean.getContext('2d'), Wc = clean.width, Hc = clean.height;
+  const alnum = s => (String(s).match(/[A-Za-z0-9]/g) || []).length;
+  let n = 0;
+  for (const J of jobs) {
+    if (J.runs.some(r => r.x < J.x0 - 2 || r.x + r.w > J.x1 + 2)) continue;   // text running across cells: leave it
+    const oldConf = J.runs.length ? Math.min(...J.runs.map(r => r._conf ?? 99)) : 0;
+    if (J.runs.length && oldConf >= 90) continue;                                // already read well
+    const X0 = Math.max(0, Math.round((J.x0 + 1) * k)), X1 = Math.min(Wc, Math.round((J.x1 - 1) * k)), Y0 = Math.max(0, Math.round((J.y0 + 0.4) * k)), Y1 = Math.min(Hc, Math.round((J.y1 - 0.4) * k));
+    const w = X1 - X0, h = Y1 - Y0; if (w < 6 || h < 6) continue;
+    // anything written here at all?
+    const d = cctx.getImageData(X0, Y0, w, h).data; let dark = 0;
+    for (let q = 0; q < d.length; q += 4) if (d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11 < 140) dark++;
+    if (dark < 12) continue;
+    // a word cut by the cell edge (text centred across two rows): leave it to the page reading
+    const edgeInk = yy => { let m = 0; for (let xx = 0; xx < w; xx++) { const q = (yy * w + xx) * 4; if (d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11 < 140) m++; } return m; };
+    const edgeInkX = xx => { let m = 0; for (let yy = 0; yy < h; yy++) { const q = (yy * w + xx) * 4; if (d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11 < 140) m++; } return m; };
+    if (edgeInk(0) > Math.max(2, w * 0.04) || edgeInk(h - 1) > Math.max(2, w * 0.04) || edgeInkX(0) > 1 || edgeInkX(w - 1) > 1) continue;
+    const lineH = Math.min(h, (J.runs.length ? Math.max(...J.runs.map(r => r.size)) * 1.2 : 9) * k);
+    const up = Math.max(1, Math.min(4, 90 / Math.max(1, lineH))), pad = 20;
+    const cv = document.createElement('canvas'); cv.width = Math.round(w * up) + 2 * pad; cv.height = Math.round(h * up) + 2 * pad;
+    const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); x.imageSmoothingQuality = 'high'; x.drawImage(clean, X0, Y0, w, h, pad, pad, w * up, h * up);
+    // black text on white: shaded cells and soft edges confuse the reader
+    { const id = x.getImageData(0, 0, cv.width, cv.height), q = id.data, lum = [];
+      for (let yy = pad; yy < cv.height - pad; yy++) for (let xx = pad; xx < cv.width - pad; xx++) { const t = (yy * cv.width + xx) * 4; lum.push(q[t] * 0.3 + q[t + 1] * 0.59 + q[t + 2] * 0.11); }
+      lum.sort((a1, b1) => a1 - b1);
+      const bgL = lum[lum.length >> 1] || 255, dk = lum[Math.floor(lum.length * 0.002)] || 0, thr = (bgL + dk) / 2;   // paper (or cell shading) vs. the darkest ink
+      for (let t = 0; t < q.length; t += 4) { const g = q[t] * 0.3 + q[t + 1] * 0.59 + q[t + 2] * 0.11; const v = bgL - dk > 40 && g <= thr ? 0 : 255; q[t] = q[t + 1] = q[t + 2] = v; }
+      x.putImageData(id, 0, 0); }
+    n++; if (o.note && n % 5 === 1) o.note(n);
+    // one line: read as a line, then as a single word, then (for a tiny mark) as a single character; keep the best
+    const modes = h < lineH * 1.7 ? (dark < 400 ? ['7', '8', '10'] : ['7', '8']) : ['6', '7'];
+    let words = [], bestScore = -1;
+    for (const m of modes) {
+      await worker.setParameters({ tessedit_pageseg_mode: m });
+      const { data } = await worker.recognize(cv, {}, { blocks: true, text: false });
+      const ws = ocrWordsOf(data).filter(q => String(q.text || '').trim() && (q.confidence ?? 99) >= 40);
+      const sc = ws.reduce((a2, q) => a2 + Math.max(1, alnum(q.text)) * (q.confidence ?? 99), 0);
+      if (window.khzCellDebug) window.khzCellDebug.push({ cell: [J.x0, J.y0, J.x1, J.y1].map(v => Math.round(v)), m, old: J.runs.map(r => r.text).join(' '), oldConf, got: ocrWordsOf(data).map(q => q.text + ':' + Math.round(q.confidence)).join(' '), dark, up: +up.toFixed(2) });
+      if (sc > bestScore) { bestScore = sc; words = ws; }
+      if (ws.length && ws.every(q => (q.confidence ?? 99) >= 90)) break;
+    }
+    if (!words.length) continue;
+    const newChars = words.reduce((a, q) => a + alnum(q.text), 0), oldChars = J.runs.reduce((a, r) => a + alnum(r.text), 0);
+    const newConf = words.reduce((a, q) => a + (q.confidence ?? 99) * Math.max(1, alnum(q.text)), 0) / words.reduce((a, q) => a + Math.max(1, alnum(q.text)), 0);
+    const better = !J.runs.length ? newChars >= 1 && newConf >= 65
+      : newChars >= oldChars && newConf >= oldConf - 5 && (newChars > oldChars || newConf >= oldConf + 8);   // never lose letters or figures
+    if (!better) continue;
+    // back to page picture coordinates
+    const P = v => ({ x0: (v.x0 - pad) / up + X0, x1: (v.x1 - pad) / up + X0, y0: (v.y0 - pad) / up + Y0, y1: (v.y1 - pad) / up + Y0 });
+    const mapped = words.map(q => ({ ...q, bbox: P(q.bbox), baseline: q.baseline && q.baseline.y0 !== undefined ? { ...q.baseline, x0: (q.baseline.x0 - pad) / up + X0, x1: (q.baseline.x1 - pad) / up + X0, y0: (q.baseline.y0 - pad) / up + Y0, y1: (q.baseline.y1 - pad) / up + Y0 } : q.baseline, symbols: (q.symbols || []).map(sy => ({ ...sy, bbox: sy.bbox ? P(sy.bbox) : sy.bbox })) }));
+    const gone = new Set(J.runs); for (let q = page.runs.length - 1; q >= 0; q--) if (gone.has(page.runs[q])) page.runs.splice(q, 1);
+    o.learn(mapped); o.addWords(mapped, true);
+  }
+}
+
+// ---- 6. the PDF's own font names for the Word export (Arial Narrow, Verdana, Calibri…) ----
+const KHZ_WORD_FONTS = ['Arial Narrow', 'Arial Black', 'Arial', 'Verdana', 'Tahoma', 'Calibri Light', 'Calibri', 'Cambria', 'Candara', 'Consolas', 'Constantia', 'Corbel',
+  'Times New Roman', 'Georgia', 'Garamond', 'Book Antiqua', 'Bookman Old Style', 'Century Gothic', 'Century Schoolbook', 'Century', 'Courier New', 'Franklin Gothic Medium',
+  'Franklin Gothic Book', 'Gill Sans MT', 'Lucida Console', 'Lucida Sans Unicode', 'Palatino Linotype', 'Segoe UI', 'Trebuchet MS', 'Aptos', 'Myriad Pro', 'Minion Pro', 'Helvetica', 'Univers'];
+function khzWordFont(realName) {
+  let s = String(realName || '').replace(/^[A-Z]{6}\+/, '').replace(/[,-](Bold|Italic|Oblique|BoldItalic|BoldOblique|Regular|Roman|Book|Medium|Light|Semibold|Black|Condensed|Narrow)*$/i, '').replace(/(PSMT|PS|MT)$/, '');
+  const spaced = s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').trim().toLowerCase();
+  return KHZ_WORD_FONTS.find(f => f.toLowerCase() === spaced || f.replace(/ /g, '').toLowerCase() === s.toLowerCase()) || '';
+}
+const khzFontOk = {};
+function khzFontAvailable(name) {   // can this browser measure the font? (if not, its widths can't be matched)
+  if (name in khzFontOk) return khzFontOk[name];
+  try { const c = document.createElement('canvas').getContext('2d'), t = 'mmmmmmmmmmlli WW 0123'; c.font = '40px monospace'; const a = c.measureText(t).width; c.font = `40px "${name}", monospace`; khzFontOk[name] = Math.abs(c.measureText(t).width - a) > 0.5; }
+  catch (e) { khzFontOk[name] = false; }
+  return khzFontOk[name];
+}
+{
+  const famFor = (n, tc, fn, base) => {
+    try { const pg = state.pages[n] && (state.pages[n].origPage || state.pages[n].page); if (pg && pg.commonObjs.has(fn)) { const fo = pg.commonObjs.get(fn), real = (fo && (fo.name || fo.loadedName)) || '', wf = khzWordFont(real);
+      return { fam: wf ? 'f:' + wf : (/times|georgia|garamond|minion|serif/i.test(real) && !/sans/i.test(real) ? 'serif' : /courier|mono|consol/i.test(real) ? 'mono' : base), bold: /bold|black|heavy|semibold/i.test(real) || undefined, italic: /italic|oblique/i.test(real) || undefined }; } } catch (e) {}
+    return null;
+  };
+  const fix = async (n, data, from) => {
+    try {
+      const tc = await getTextContent(n);
+      // fonts are only known once the page has been read for drawing
+      try { const pg = state.pages[n] && (state.pages[n].origPage || state.pages[n].page); const fn0 = tc.items.find(it => it.fontName) ; if (pg && fn0 && !pg.commonObjs.has(fn0.fontName)) await pg.getOperatorList(); } catch (e) {}
+      const vp = state.pages[n].page.getViewport({ scale: 1, rotation: effRot(n) });
+      // the same words at (about) the same place on the page: text the editor lifted may sit a few points off
+      const byText = new Map(); tc.items.forEach(it => { const t = (it.str || '').trim(); if (!t) return; const tx = pdfjsLib.Util.transform(vp.transform, it.transform); if (!byText.has(t)) byText.set(t, []); byText.get(t).push({ x: tx[4], y: tx[5], fn: it.fontName, t }); });
+      const all = [].concat(...byText.values());
+      data.runs.forEach((r, i) => {
+        if (i < from && r.fam && String(r.fam).startsWith('f:')) return;   // a font picked in the editor stays
+        const c = byText.get(String(r.text).trim()) || all.filter(q => String(r.text).trim().startsWith(q.t.slice(0, 6)));   // lines joined from several pieces
+        if (!c || !c.length) return;
+        const m = c.filter(q => Math.abs(q.y - r.base) < Math.max(4, r.size * 0.6) && Math.abs(q.x - r.x) < Math.max(30, r.w)).sort((a, b) => Math.abs(a.x - r.x) - Math.abs(b.x - r.x))[0]; if (!m) return;
+        const f = famFor(n, tc, m.fn, r.fam); if (!f) return; r.fam = f.fam; if (f.bold) r.bold = true; if (f.italic) r.italic = true;
+      });
+    } catch (e) {}
+  };
+  const _f = expTextRunsFallback;
+  expTextRunsFallback = async function (n, data) { const from = data.runs.length; const r = await _f.apply(this, arguments); await fix(n, r, from); return r; };
 }
 // ================================================================
 //  Pages sit exactly on the screen's pixel grid.
