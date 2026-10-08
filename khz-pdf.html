@@ -13595,7 +13595,8 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = '2026.10.06.9';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.7';
+const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
 function accountEmail() { return getPref('email', '') || getBrand().email || ''; }
@@ -13706,10 +13707,10 @@ function showHelpCenter(tab) {
 function showAboutApp() {
   esDialog('about-ov', 'About', `<div class="ab">
     <div class="ab-ic"><span class="khz-mark"></span></div>
-    <div><div class="ab-name">KHZ PDF</div><div class="ab-ver">Version ${APP_BUILD} · runs in your web browser</div>
+    <div><div class="ab-name">KHZ PDF</div><div class="ab-ver">Version ${APP_BUILD} · ${APP_WHERE}</div>
     <p>KHZ PDF by Brandon Keilholz — a single-file PDF editor with a familiar layout: edit text and images, comment, fill and sign, organize pages, forms, digital signatures, OCR, compare and more.</p>
     <p class="ab-note">This is an independent app. It is not made by, endorsed by, or affiliated with Adobe Inc. Adobe and Acrobat are trademarks of Adobe Inc.</p>
-    <p class="ab-note">Your documents stay on your computer — files are opened and saved in the browser and are not uploaded.</p></div></div>`,
+    <p class="ab-note">Your documents stay on your computer — files are opened and saved ${window.khzDesktop && window.khzDesktop.isDesktop ? 'by the app' : 'in the browser'} and are not uploaded.</p></div></div>`,
     [{ label: 'Components…', run: () => { setTimeout(showPlugins, 0); } }, { label: 'OK', primary: true }], 520);
 }
 function showPlugins() {
@@ -15406,19 +15407,38 @@ document.addEventListener('click', e => {
 //  (where the printer is chosen) or "Save as PDF"
 // ================================================================
 const IN = v => v * 72, MMP = v => v / 25.4 * 72;
+// paper sizes as the printer's Page Setup lists them (portrait width x height); "User-Defined" lets you type any size
 const PAPERS = {
-  '11 x 17 in': [IN(11), IN(17)], '17 x 22 in': [IN(17), IN(22)], '3.5 x 5 in': [IN(3.5), IN(5)], '4 x 6 in': [IN(4), IN(6)], '5 x 7 in': [IN(5), IN(7)], '8 x 10 in': [IN(8), IN(10)], '8.5 x 13 in': [IN(8.5), IN(13)],
-  'A2 (16.5 x 23.4 in; 420 x 594 mm)': [MMP(420), MMP(594)], 'A3 (11.7 x 16.5 in; 297 x 420 mm)': [MMP(297), MMP(420)], 'A4 (8.2 x 11.7 in; 210 x 297 mm)': [MMP(210), MMP(297)], 'A6 (4.1 x 5.8 in; 105 x 148 mm)': [MMP(105), MMP(148)],
-  'Envelope #10 (4.125 x 9.5 in)': [IN(4.125), IN(9.5)], 'Executive (7.25 x 10.5 in)': [IN(7.25), IN(10.5)], 'Half Letter (5.5 x 8.5 in)': [IN(5.5), IN(8.5)], 'Legal (8.5 x 14 in)': [IN(8.5), IN(14)],
-  'Letter (8.5 x 11 in)': [IN(8.5), IN(11)], 'Mexico-Oficio (8.5 x 13.4 in)': [IN(8.5), IN(13.4)], 'Oficio 9 (8.46 x 12.4 in)': [IN(8.46), IN(12.4)], 'Super B (13 x 19 in)': [IN(13), IN(19)],
-  'Arch C (18 x 24 in)': [IN(18), IN(24)], 'Arch D (24 x 36 in)': [IN(24), IN(36)], 'Arch E (36 x 48 in)': [IN(36), IN(48)],
+  'A2': [MMP(420), MMP(594)], 'A3': [MMP(297), MMP(420)], 'A4': [MMP(210), MMP(297)], 'A5': [MMP(148), MMP(210)], 'A6': [MMP(105), MMP(148)],
+  'Architecture ASheet': [IN(9), IN(12)], 'Architecture BSheet': [IN(12), IN(18)], 'Architecture CSheet': [IN(18), IN(24)], 'Architecture DSheet': [IN(24), IN(36)],
+  'Architecture E1Sheet': [IN(30), IN(42)], 'Architecture ESheet': [IN(36), IN(48)], 'ASMEFSheet': [IN(28), IN(40)],
+  'B4 (JIS)': [MMP(257), MMP(364)], 'B5 (JIS)': [MMP(182), MMP(257)],
+  'Business Card 2x 3 5': [IN(2), IN(3.5)], 'Business Card 55x 85mm': [MMP(55), MMP(85)], 'Business Card 55x 91mm': [MMP(55), MMP(91)],
+  'C size sheet': [IN(17), IN(22)], 'Credit Card': [MMP(54), MMP(86)], 'D size sheet': [IN(22), IN(34)], 'E size sheet': [IN(34), IN(44)],
+  'English 14x 17': [IN(14), IN(17)], 'English Photo L': [IN(3.5), IN(5)],
+  'Envelope #10': [IN(4.125), IN(9.5)], 'Envelope #9': [IN(3.875), IN(8.875)], 'Envelope B5': [MMP(176), MMP(250)], 'Envelope C4': [MMP(229), MMP(324)],
+  'Envelope C5': [MMP(162), MMP(229)], 'Envelope DL': [MMP(110), MMP(220)], 'Envelope Monarch': [IN(3.875), IN(7.5)],
+  'Executive': [IN(7.25), IN(10.5)], 'ISOA0': [MMP(841), MMP(1189)], 'ISOA1': [MMP(594), MMP(841)],
+  'Japan Chou 40 Envelope': [MMP(90), MMP(225)], 'Japan Envelope You #4': [MMP(105), MMP(235)], 'Japanese Envelope Chou #3': [MMP(120), MMP(235)],
+  'Japanese Envelope Chou #4': [MMP(90), MMP(205)], 'Japanese Envelope Kaku #2': [MMP(240), MMP(332)], 'Japanese Postcard': [MMP(100), MMP(148)],
+  'Legal': [IN(8.5), IN(14)], 'Letter': [IN(8.5), IN(11)], 'Metric Photo L': [MMP(89), MMP(127)],
+  'North America 3x 5': [IN(3), IN(5)], 'North America 4x 6': [IN(4), IN(6)], 'North America 5x 7': [IN(5), IN(7)], 'North America 5x 8': [IN(5), IN(8)], 'North America 8x 10': [IN(8), IN(10)],
+  'Photo 10x 12': [IN(10), IN(12)], 'Photo 4x 4': [IN(4), IN(4)], 'Photo 5x 5': [IN(5), IN(5)], 'Photo 89x 89mm': [MMP(89), MMP(89)],
+  'Statement': [IN(5.5), IN(8.5)], 'Super B': [IN(13), IN(19)], 'Tabloid': [IN(11), IN(17)],
 };
-const PAPER_ALIAS = { Letter: 'Letter (8.5 x 11 in)', Legal: 'Legal (8.5 x 14 in)', Tabloid: '11 x 17 in', A4: 'A4 (8.2 x 11.7 in; 210 x 297 mm)', A3: 'A3 (11.7 x 16.5 in; 297 x 420 mm)' };
-function paperSize(P) { if (P.paper === 'User-Defined') return [IN(P.userW || 8.5), IN(P.userH || 11)]; return PAPERS[PAPER_ALIAS[P.paper] || P.paper] || PAPERS['Letter (8.5 x 11 in)']; }
+// names used before (saved settings, scripts) still find their paper
+const PAPER_ALIAS = { 'Letter (8.5 x 11 in)': 'Letter', 'Legal (8.5 x 14 in)': 'Legal', '11 x 17 in': 'Tabloid', 'A4 (8.2 x 11.7 in; 210 x 297 mm)': 'A4', 'A3 (11.7 x 16.5 in; 297 x 420 mm)': 'A3',
+  'A2 (16.5 x 23.4 in; 420 x 594 mm)': 'A2', 'A6 (4.1 x 5.8 in; 105 x 148 mm)': 'A6', '17 x 22 in': 'C size sheet', '3.5 x 5 in': 'English Photo L', '4 x 6 in': 'North America 4x 6', '5 x 7 in': 'North America 5x 7',
+  '8 x 10 in': 'North America 8x 10', 'Envelope #10 (4.125 x 9.5 in)': 'Envelope #10', 'Executive (7.25 x 10.5 in)': 'Executive', 'Half Letter (5.5 x 8.5 in)': 'Statement', 'Super B (13 x 19 in)': 'Super B',
+  'Arch C (18 x 24 in)': 'Architecture CSheet', 'Arch D (24 x 36 in)': 'Architecture DSheet', 'Arch E (36 x 48 in)': 'Architecture ESheet' };
+// sizes that aren't on the list any more (8.5 x 13 and similar) are kept as their own sizes
+Object.assign(PAPERS, { '8.5 x 13 in': [IN(8.5), IN(13)], 'Mexico-Oficio (8.5 x 13.4 in)': [IN(8.5), IN(13.4)], 'Oficio 9 (8.46 x 12.4 in)': [IN(8.46), IN(12.4)] });
+const PAPER_LIST = Object.keys(PAPERS).filter(k => !['8.5 x 13 in', 'Mexico-Oficio (8.5 x 13.4 in)', 'Oficio 9 (8.46 x 12.4 in)'].includes(k)).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+function paperSize(P) { if (P.paper === 'User-Defined') return [IN(P.userW || 8.5), IN(P.userH || 11)]; return PAPERS[PAPER_ALIAS[P.paper] || P.paper] || PAPERS['Letter']; }
 function prMargins(P) { const m = P.margins || { l: P.margin || 0.25, r: P.margin || 0.25, t: P.margin || 0.25, b: P.margin || 0.25 }; return { ml: IN(m.l), mr: IN(m.r), mt: IN(m.t), mb: IN(m.b) }; }
 function prDefaults() {
   return { dest: 'printer', copies: 1, collate: true, gray: false, saveInk: false, which: 'all', range: '1', subset: 'all', reverse: false,
-    mode: 'size', fit: 'fit', custom: 100, paper: PAPER_ALIAS[getPref('prPaper', 'Letter')] || getPref('prPaper', 'Letter (8.5 x 11 in)'), margins: getPref('prMargins', null) || { l: 0.25, r: 0.25, t: 0.25, b: 0.25 }, userW: getPref('prUserW', 8.5), userH: getPref('prUserH', 11), orient: 'auto', comments: 'markups',
+    mode: 'size', fit: 'fit', custom: 100, paper: PAPER_ALIAS[getPref('prPaper', 'Letter')] || getPref('prPaper', 'Letter'), margins: getPref('prMargins', null) || { l: 0.25, r: 0.25, t: 0.25, b: 0.25 }, userW: getPref('prUserW', 8.5), userH: getPref('prUserH', 11), orient: 'auto', comments: 'markups',
     perSheet: 4, order: 'horiz', border: true, posterScale: 100, overlap: 0, cutMarks: true, labels: false, bookletSides: 'both',
     // two-sided printing, paper by page size, Advanced › Print As Image, booklet / multiple / poster extras, Current view
     duplex: !!getPref('prDuplex', false), flip: getPref('prFlip', 'long') === 'short' ? 'short' : 'long', paperBySize: false,
@@ -15895,7 +15915,7 @@ function prPageSetup() {
   const ov = esDialog('prs-ov', 'Page Setup', `
     <div class="ps-prev"><div class="ps-sheet"><div class="ps-area"></div></div></div>
     <fieldset class="pr-box ps-box"><legend>Paper</legend>
-      <div class="ps-row"><label>Size:</label><select class="pr-sel ps-paper">${[...Object.keys(PAPERS), 'User-Defined'].map(k => `<option ${k === cur ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+      <div class="ps-row"><label>Size:</label><select class="pr-sel ps-paper">${[...PAPER_LIST, ...(PAPERS[cur] && !PAPER_LIST.includes(cur) ? [cur] : []), 'User-Defined'].map(k => `<option ${k === cur ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
       <div class="ps-row ps-user"><label>Width:</label><input type="text" class="pr-in ps-uw" value="${P.userW || 8.5}"> in <label style="min-width:0;margin-left:14px">Height:</label><input type="text" class="pr-in ps-uh" value="${P.userH || 11}"> in</div>
       <div class="ps-row"><label>Source:</label><select class="pr-sel ps-src" disabled title="The paper tray is chosen in the print window"><option>Chosen in the print window</option></select></div>
     </fieldset>
@@ -15927,7 +15947,7 @@ function prPageSetup() {
   const draw = () => {
     const paper = esq(ov, '.ps-paper').value, user = paper === 'User-Defined';
     esq(ov, '.ps-user').style.display = user ? '' : 'none';
-    let [w, h] = user ? [IN(+esq(ov, '.ps-uw').value || 8.5), IN(+esq(ov, '.ps-uh').value || 11)] : PAPERS[paper];
+    let [w, h] = user ? [IN(+esq(ov, '.ps-uw').value || 8.5), IN(+esq(ov, '.ps-uh').value || 11)] : PAPERS[PAPER_ALIAS[paper] || paper];
     const land = ov.querySelector('input[name=ps-o]:checked').value === 'landscape';
     if (land !== (w > h)) [w, h] = [h, w];
     const k = 96 / Math.max(w, h), sh = esq(ov, '.ps-sheet'), ar = esq(ov, '.ps-area');
@@ -37956,7 +37976,7 @@ if (window.khzDesktop && window.khzDesktop.isDesktop) (() => {
     const si = revive(opts.startIn); if (si && si.__khzPath) dir = dirOf(si.__khzPath);
     else if (state && state.saveHandle && state.saveHandle.__khzPath) dir = dirOf(state.saveHandle.__khzPath);
     const name = opts.suggestedName || 'document.pdf';
-    const p = await D.saveDialog({ defaultPath: dir ? dir + '\\' + name : name, filters: filtersOf(opts.types) });
+    const p = await D.saveDialog({ defaultPath: dir ? dir + (dir.includes('\\') ? '\\' : '/') + name : name, filters: filtersOf(opts.types) });
     if (!p) throw abort();
     return new KhzFileHandle(p);
   };
@@ -38039,7 +38059,7 @@ if (window.khzDesktop && window.khzDesktop.isDesktop) (() => {
         sel.innerHTML = list.map(p => `<option value="${escapeHtml('dev:' + p.name)}">${escapeHtml(p.displayName)}</option>`).join('') + '<option value="pdf">Save as PDF</option>';
         sel.value = want; P.dest = want;
         const go = ov.querySelector('.pr-go'); if (go) go.textContent = want === 'pdf' ? 'Save' : 'Print';
-        const props = [...ov.querySelectorAll('.pr-top .ap-btn')].find(b => /Properties/.test(b.textContent)); if (props) props.title = 'Printer settings (trays, quality) are set in Windows › Printers & scanners';
+        const props = [...ov.querySelectorAll('.pr-top .ap-btn')].find(b => /Properties/.test(b.textContent)); if (props) props.title = (/Mac/.test(navigator.platform) ? 'Printer settings (trays, quality) are set in System Settings › Printers & Scanners' : 'Printer settings (trays, quality) are set in Windows › Printers & scanners');
       });
       return r;
     };
