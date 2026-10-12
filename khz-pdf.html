@@ -7812,8 +7812,7 @@ function handleWriteError(e) {
 
 async function savePDF(nameOverride) {
   if (!requireDoc()) return;
-  const pending = state.annotations.filter(a => a.type === 'redact-area').length;
-  if (pending && !await khzConfirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return;
+  if (!await khzUnappliedRedactionsOk()) return;   // (app104)
   const name = nameOverride || state.fileName || 'document.pdf';
   showLoading(true, 'Saving...');
   try {
@@ -14654,7 +14653,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1122';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1201';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -14907,6 +14906,7 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1201', ['Saving with redaction marks not applied asks like Acrobat: \u201cThere are unapplied redactions in this file\u2026\u201d \u2014 Apply & Save / Save / Cancel.', 'Right-click a redaction mark \u203a Apply Redactions.']],
   ['2026.10.1122', ['Edit PDF: replacing selected text hides the old text at once (it showed for a moment), and moved text no longer shows twice at some zoom levels.', 'Text boxes from Acrobat keep their line breaks (\u201c200A MB\u201d no longer wraps as \u201c200 / A / MB\u201d).', 'Letters a file gives no character for (Word\u2019s \u201cti\u201d, \u201ctt\u201d ligatures) are read from the font\u2019s shapes instead of guessed.', 'Greek, Cyrillic, symbols and Asian text are saved with a font that has them (edited text, form fields, OCR), instead of \u201c?\u201d.', 'Reduce File Size and Preflight fixes keep Ctrl+S, Undo and the pictures\u2019 colour type.', 'Tagging a signed document asks first and saves the tags as an update.', 'Remove Hidden Information reads the pages properly (inside form objects too).', 'Signatures: the exact signer certificate, per-signature certification, certificate-authority rules and dates are checked.', 'Redact: inline pictures, pictures inside form objects and fonts with their own code maps no longer turn the page into a picture.']],
   ['2026.10.1121', ['Edit PDF: changing or deleting text that shares its drawing with other text now takes out only its own letters, like Acrobat (it used to be hidden under a white box and stayed searchable).', 'Redact: Apply Redactions no longer turns pages into pictures for text inside form objects or in the standard fonts; letters are cut out using the fonts\u2019 real widths.', 'Saving no longer rewrites radio buttons that came in the file.']],
   ['2026.10.1120', ['Closing the window with several tabs open asks, like Acrobat: Close all tabs / Close current tab / Cancel, with “Always close all tabs”. Each unsaved document is then asked about (Yes / No / Cancel), starting with the one on screen.', 'Every “Do you want to save changes … before closing?” is now the same box.']],
@@ -23289,8 +23289,7 @@ async function svRemember(handle) {
 
 // ---- the PDF bytes, the same way the old Save made them ----
 async function svBytes() {
-  const pending = state.annotations.filter(a => a.type === 'redact-area').length;
-  if (pending && !await khzConfirm(`${pending} area(s) are marked for redaction but not applied yet.\nThe content underneath will be covered, but it will still be in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply All Redactions to remove it permanently.)`)) return null;
+  if (!await khzUnappliedRedactionsOk()) return null;   // (app104)
   let bytes = await buildOutputBytes();
   if (state.security) { showLoading(true, 'Encrypting (AES-256)…'); bytes = await encryptPdfBytes(bytes, state.security); }
   return bytes;
@@ -23704,6 +23703,8 @@ objectContextMenu = function (e, a, n, vx, vy) {
     { icon: '', label: 'Make Current Properties Default', action: () => cmMakeDefault(a) }];
   if (props >= 0) items.splice(props, 0, ...extra); else items.push(...extra);
   if (['line', 'arrow'].includes(a.type) || (a.type === 'measure' && a.mtype === 'dist')) items.push('-', { icon: '', label: 'Flip Line', action: () => cmFlipLine(a) });
+  // a redaction mark: Apply Redactions, like Acrobat's right-click (applies the marks, app104)
+  if (a.type === 'redact-area') items.unshift({ icon: '', label: 'Apply Redactions', action: () => applyAllRedactions() }, '-');
   realOpen(e.clientX, e.clientY, items);
   // Set Status ▸ submenu
   const m = ctxMenuEl; if (!m) return;
@@ -31009,12 +31010,23 @@ async function rdLeftovers(bytes, byPage) {
 
 // replace the old "turn the page into a picture" apply with the content-level one (old way kept as the fallback)
 const _applyAllRedactionsRaster = applyAllRedactions;
-applyAllRedactions = async function () {
+// saving with redaction marks not applied yet, like Acrobat: "There are unapplied redactions in this file…"
+// Apply & Save / Save / Cancel. true = go on saving (after applying them, for Apply & Save)
+async function khzUnappliedRedactionsOk() {
+  if (!state.annotations.some(a => a.type === 'redact-area')) return true;
+  const icon = '<svg viewBox="0 0 32 32" width="32" height="32" style="flex:none"><circle cx="16" cy="16" r="14" fill="#2a64c5"/><path d="M12 12.5a4 4 0 1 1 5.6 3.7c-1 .5-1.6 1.2-1.6 2.3v.8" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/><circle cx="16" cy="23" r="1.6" fill="#fff"/></svg>';
+  const r = await khzMsgBox('KHZ PDF', `<div style="display:flex;gap:12px;align-items:flex-start">${icon}<div style="line-height:1.45">There are unapplied redactions in this file. Any content associated with them will not be redacted until applied.</div></div>`, ['Apply & Save', 'Save', 'Cancel'], { width: 520 });
+  if (r === 1) return true;
+  if (r !== 0) return false;
+  await applyAllRedactions({ noConfirm: true });
+  return !state.annotations.some(a => a.type === 'redact-area');   // (applied: now save)
+}
+applyAllRedactions = async function (o = {}) {
   if (!requireDoc()) return;
   const marks = state.annotations.filter(a => a.type === 'redact-area');
   if (!marks.length) return _applyAllRedactionsRaster.apply(this, arguments);
   const pages = [...new Set(marks.map(a => a.page))].sort((a, b) => a - b);
-  if (!await khzConfirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Everything else on the page stays as it is.`)) return;
+  if (!o.noConfirm && !await khzConfirm(`Apply ${marks.length} redaction(s) on ${pages.length} page(s)?\n\nThe marked content will be permanently removed. Everything else on the page stays as it is.`)) return;
   closeModal('modal-redact');
   showLoading(true, 'Applying redactions...');
   try {
@@ -34117,7 +34129,8 @@ showFindRedact = function () {
     };
     try { await _apply.apply(this, arguments); }
     finally { if (loadBytes !== lb) loadBytes = lb; }
-    if (!state.annotations.some(a => a.type === 'redact-area') && typeof showSanitize === 'function') {
+    // (not when applying from the save question, Apply & Save: the save goes straight on)
+    if (!(arguments[0] && arguments[0].noConfirm) && !state.annotations.some(a => a.type === 'redact-area') && typeof showSanitize === 'function') {
       if (await khzConfirm('Redactions were applied.\n\nDo you also want to find and remove hidden information in this document (metadata, attachments, hidden text, comments and more)?', { title: 'Remove Hidden Information', ok: 'Yes', cancel: 'No' })) showSanitize();
     }
   };
@@ -40121,18 +40134,6 @@ async function khzImportRedactMarks() {
   });
   if (made) { syncNativeVisibility(); renderAllAnnots(); }
 }
-// the "not applied yet" warning on save: the marks are kept as redaction marks, the content is still there
-if (typeof khzConfirm === 'function') {
-  const _kc = khzConfirm;
-  khzConfirm = function (msg, opts) {
-    if (typeof msg === 'string' && /marked for redaction but not applied/.test(msg)) {
-      const n = (/(\d+) area/.exec(msg) || [])[1] || state.annotations.filter(a => a.type === 'redact-area').length;
-      msg = `${n} area(s) are marked for redaction but not applied yet.\nThey are saved as redaction marks that you (or Acrobat) can apply later, but the content underneath is still in the file.\n\nSave anyway?\n(Cancel, then use Redact → Apply to remove it permanently.)`;
-    }
-    return _kc.call(this, msg, opts);
-  };
-}
-
 // ---- Comments: Import Comments reads XFDF, FDF or another PDF; duplicates are skipped; Export Selected Comments ----
 // one annotation dictionary (from a PDF or FDF) → an XFDF element, so the XFDF importer does the rest
 function khzAnnotToXfdf(d, page, lk, nameOf) {
