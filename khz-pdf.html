@@ -3425,7 +3425,7 @@ async function renderCanvas(ps, key) {
   if (ps.canvasHidden !== hidAtStart) { ps.canvasHidden = hidAtStart; renderPageAnnots(ps.n); }   // markups now drawn only by the app
   khzPageDrawn(ps);
   renderTextLayer(ps);
-  ps.wrapper.querySelectorAll('.page-tile').forEach(t => { if (t.dataset.key !== key || !ps.capped) t.remove(); });
+  ps.wrapper.querySelectorAll('.page-tile').forEach(t => { if (t.dataset.key !== key || t._khzPage !== ps.page || !ps.capped) t.remove(); });
   if (ps.capped) scheduleTiles(0);
 }
 
@@ -3444,14 +3444,16 @@ async function renderPageTile(ps, forKey) {
   const rx = Math.max(0, x0 - wr.left - mx), ry = Math.max(0, y0 - wr.top - my);
   const rw = Math.min(wr.width - rx, x1 - x0 + 2 * mx), rh = Math.min(wr.height - ry, y1 - y0 + 2 * my);
   const key = forKey || ps.renderedKey;
-  const have = [...ps.wrapper.querySelectorAll('.page-tile')].find(t => t.dataset.key === key && +t.dataset.x <= x0 - wr.left && +t.dataset.y <= y0 - wr.top && +t.dataset.x + +t.dataset.w >= x1 - wr.left && +t.dataset.y + +t.dataset.h >= y1 - wr.top);
+  // (a tile belongs to the page copy it was drawn from: after an edit the page copy is new, so is the tile —
+  //  the old tile would keep showing the text or picture where it was before)
+  const have = [...ps.wrapper.querySelectorAll('.page-tile')].find(t => t.dataset.key === key && t._khzPage === ps.page && +t.dataset.x <= x0 - wr.left && +t.dataset.y <= y0 - wr.top && +t.dataset.x + +t.dataset.w >= x1 - wr.left && +t.dataset.y + +t.dataset.h >= y1 - wr.top);
   if (have) return;
   const dpr = window.devicePixelRatio || 1;
   const c = document.createElement('canvas');
   c.className = 'page-tile';
   c.width = Math.ceil(rw * dpr); c.height = Math.ceil(rh * dpr);
   Object.assign(c.style, { position: 'absolute', left: rx + 'px', top: ry + 'px', width: rw + 'px', height: rh + 'px', pointerEvents: 'none' });
-  Object.assign(c.dataset, { key, x: rx, y: ry, w: rw, h: rh, scale: state.scale });
+  Object.assign(c.dataset, { key, x: rx, y: ry, w: rw, h: rh, scale: state.scale }); c._khzPage = ps.page;
   if (ps.tileTask) { try { ps.tileTask.cancel(); } catch (e) {} }
   const params = { canvasContext: c.getContext('2d'), viewport: ps.vp, transform: [dpr, 0, 0, dpr, -rx * dpr, -ry * dpr], annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE };
   if (state.background) params.background = state.background;
@@ -3459,7 +3461,7 @@ async function renderPageTile(ps, forKey) {
   const task = ps.page.render(params);
   ps.tileTask = task;
   try { await task.promise; } catch (e) { return; } finally { if (ps.tileTask === task) ps.tileTask = null; }
-  if ((ps.renderedKey !== key && ps.renderingKey !== key) || !ps.capped) return;
+  if ((ps.renderedKey !== key && ps.renderingKey !== key) || !ps.capped || c._khzPage !== ps.page) return;
   ps.wrapper.querySelectorAll('.page-tile').forEach(t => t.remove());
   ps.canvas.after(c);
 }
@@ -3474,7 +3476,7 @@ function getTextContent(n) {
   if (!state.textCache[n]) {
     const pg = state.pages[n].origPage;
     let p = khzPageTextCache.get(pg);
-    if (!p) { p = Promise.resolve(khzFetchPageText(n, pg)).then(tc => khzCleanPageText(n, tc)); khzPageTextCache.set(pg, p); p.catch(() => khzPageTextCache.delete(pg)); }
+    if (!p) { p = Promise.resolve(khzFetchPageText(n, pg)).then(tc => khzCleanPageText(n, tc, pg)); khzPageTextCache.set(pg, p); p.catch(() => khzPageTextCache.delete(pg)); }
     state.textCache[n] = p;
     khzTextArrived(n, p);
   }
@@ -4890,7 +4892,7 @@ async function importNativeAnnots() {
         case 'FreeText': {
           const da = d.defaultAppearanceData || {};
           a = { ...base, type: 'textbox', pts: rectPtsPdf, fontSize: da.fontSize || 12, color: rgbHex(da.fontColor) || '#000000',
-                fill: rgbHex(d.color), borderW: raw.width, borderColor: raw.strokeColor || raw.apStroke || rgbHex(da.fontColor) || '#000000', pad: raw.width > 0 ? 2 : 0,
+                fill: rgbHex(d.color), borderW: raw.width, borderColor: raw.strokeColor || raw.apStroke || rgbHex(da.fontColor) || '#000000', pad: raw.width > 0 ? 1 : 0,   // (+ the border itself, app2: Acrobat's text sits 2 pt in with a 1 pt border)
                 family: /calibri/i.test(raw.font + ' ' + (da.fontName || '')) ? 'calibri' : 'sans' };
           // keep the text where the file's own appearance puts it (Bluebeam etc. place it lower than Acrobat's top margin)
           // (a box turned with a rotated page has its appearance drawn turned too: its line positions don't apply)
@@ -5054,7 +5056,8 @@ function touchNative(a) {
     syncContent();
     return true;
   }
-  if (a.type === 'text-block' && a.untouched) { a.untouched = false; syncContent(); return true; }
+  // (the white-out over the old letters is drawn at once; the page copy is rebuilt after the screen shows it)
+  if (a.type === 'text-block' && a.untouched) { a.untouched = false; renderPageAnnots(a.page); syncContent(); return true; }
   if (!a.native || !a.untouched) return true;
   if (a.type === 'native-image' && !a.dataUrl) { toast('This stamp is still being prepared — try again in a second.'); return false; }
   a.untouched = false;   // the app already draws it, nothing to swap → no flicker
@@ -5563,7 +5566,7 @@ async function getTextBlocks(n) {
     const tx = pdfjsLib.Util.transform(vp1.transform, it.transform);
     if (Math.abs(tx[1]) > 0.01 || Math.abs(tx[2]) > 0.01 || tx[0] <= 0) return;
     const fh = Math.abs(tx[3]);
-    const str = it.str.replace(/(\w)\uFFFD(\w)/g, '$1ti$2').replace(/\uFFFD/g, 'ti');   // unmapped "ti" ligature
+    const str = it.str;   // (letters without a character were identified when the page text was read, app134)
     items.push({ x: tx[4], base: tx[5], fh, w: it.width, str, fontName: it.fontName, idx, sig: fontStyle(it.fontName).sig });
   });
   // which content operator draws each piece (pieces of ONE operator split apart by a run of spaces
@@ -6294,8 +6297,13 @@ function wantedHidden() {
   });
   return { images, texts, cuts };
 }
+// the screen is updated first (the typing box's letters, the white-out over the old ones), then the page copy is
+// rebuilt: rebuilding is heavy work that would otherwise hold back that update and leave the old text showing
+function khzAfterPaint() { return new Promise(r => { let done = false; const go = () => { if (!done) { done = true; setTimeout(r, 0); } }; requestAnimationFrame(go); setTimeout(go, 50); }); }
 async function syncContent() {
   if (!state.pageImages || !state.pdfDoc || typeof PDFLib === 'undefined') return;
+  await khzAfterPaint();
+  if (!state.pageImages || !state.pdfDoc) return;
   const want = wantedHidden();
   const key = [...want.images].sort().join(',') + '|' + [...want.texts].sort().join(',') + '|' + [...(want.cuts || [])].sort().join(',') + '|' + [...(want.paths || [])].sort().join(',') + (want.scans && want.scans.size ? '|' + [...want.scans].sort().join(',') : '');
   if (key === state.contentKey) return;
@@ -6544,11 +6552,14 @@ function pendingMasks(n) {
     c.imgKey = im.key; c.ctm = im.ctm;   // lets the white-out follow the picture's own shape (see renderPageAnnots)
     out.push(c);
   });
-  (state.textBlockIndex || []).filter(t => t.page === n && t.ops && !ap.texts.has(t.id)).forEach(t => {
+  // text not yet taken out of the page copy (by its commands, or by cutting its letters): whited out along its own
+  // lines (not its whole box, so text close by stays visible)
+  (state.textBlockIndex || []).filter(t => t.page === n && (t.ops ? !ap.texts.has(t.id) : !(ap.cuts && ap.cuts.has(t.id)))).forEach(t => {
     const a = khzAnnId(t.id);
     if (a && a.untouched) return;
     if (a && a.invisible) return;   // recognized text is invisible: nothing to hide (the scan itself is cleaned, see app158)
-    out.push(t.origPts);
+    if (t.lineBoxes && t.lineBoxes.length) t.lineBoxes.forEach(b => out.push([[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]]));
+    else out.push(t.origPts);
   });
   return out;
 }
@@ -7671,18 +7682,19 @@ async function drawPrimPDF(doc, lp, p, vp1, rot, ctx) {
     const fam = p.family && ctx.fonts[p.family] ? p.family : 'sans';
     const realI = p.italic && ctx.fonts[fam + (p.bold ? 'B' : '') + 'I'];
     const font = realI || ctx.fonts[fam + (p.bold ? 'B' : '')];
-    p.lines.forEach((line, i) => {
-      if (!line) return;
+    // (letters this font doesn't have are drawn with one that does: khzTextRuns, app187)
+    for (let i = 0; i < p.lines.length; i++) {
+      const line = p.lines[i]; if (!line) continue;
+      const runs = await khzTextRuns(doc, ctx, line, font, p.bold);
       let ax = textAnchorX(p);
-      if (p.align === 'right' || p.align === 'center') { const lw = font.widthOfTextAtSize(winAnsi(font, line), p.size) + (p.ls || 0) * [...line].length; ax -= p.align === 'right' ? lw : lw / 2; }
+      if (p.align === 'right' || p.align === 'center') { const lw = khzRunsWidth(runs, p.size, p.ls || 0); ax -= p.align === 'right' ? lw : lw / 2; }
       const [x, y] = map([ax, p.y + p.pad + p.size * (p.base || 0.85) + i * (p.lh || p.size * 1.2)]);
-      const t = winAnsi(font, line);
       let size = p.size;
-      if (p.fitW) { const avail = p.w - 2 * p.pad, tw = font.widthOfTextAtSize(t, size); if (tw > avail && avail > 0) size = Math.max(size * 0.75, size * avail / tw); }
+      if (p.fitW) { const avail = p.w - 2 * p.pad, tw = khzRunsWidth(runs, size); if (tw > avail && avail > 0) size = Math.max(size * 0.75, size * avail / tw); }
       if (p.ls) lp.pushOperators(PDFLib.setCharacterSpacing(p.ls));
-      lp.drawText(t, { x, y, size, font, color: pdfColor(p.color), rotate: D(rot), ...(p.italic && !realI && !rot ? { ySkew: D(12) } : {}) });
+      khzDrawRuns(lp, runs, { x, y, size, ls: p.ls || 0, color: pdfColor(p.color), rotate: D(rot), ...(p.italic && !realI && !rot ? { ySkew: D(12) } : {}) });
       if (p.ls) lp.pushOperators(PDFLib.setCharacterSpacing(0));
-    });
+    }
   } else if (p.k === 'rich') {
     if (p.bg || p.border) {
       const o = { x: 0, y: 0 };
@@ -7697,7 +7709,7 @@ async function drawPrimPDF(doc, lp, p, vp1, rot, ctx) {
       const font = realI || ctx.fonts[fam + (f.bold ? 'B' : '')] || ctx.fonts[fam];
       const [x, y] = map([p.ox + f.x * p.s, p.oy + f.y * p.s]);
       if (f.ls) lp.pushOperators(PDFLib.setCharacterSpacing(f.ls * p.s));
-      lp.drawText(winAnsi(font, f.t), { x, y, size: f.size * p.s, font, color: pdfColor(f.color), rotate: D(rot), ...(f.italic && !realI && !rot ? { ySkew: D(12) } : {}) });
+      khzDrawRuns(lp, await khzTextRuns(doc, ctx, f.t, font, f.bold), { x, y, size: f.size * p.s, ls: (f.ls || 0) * p.s, color: pdfColor(f.color), rotate: D(rot), ...(f.italic && !realI && !rot ? { ySkew: D(12) } : {}) });
       if (f.ls) lp.pushOperators(PDFLib.setCharacterSpacing(0));
     }
   } else if (p.k === 'rtext') {
@@ -7705,7 +7717,7 @@ async function drawPrimPDF(doc, lp, p, vp1, rot, ctx) {
     const sx = p.cx + dx * Math.cos(A) - dy * Math.sin(A), sy = p.cy + dx * Math.sin(A) + dy * Math.cos(A);
     const [x, y] = map([sx, sy]);
     const rf = p.weight === 'normal' ? ctx.font : ctx.bold;
-    lp.drawText(winAnsi(rf, p.text), { x, y, size: p.size, font: rf, color: pdfColor(p.color), opacity: p.opacity, rotate: D(rot - p.angle) });
+    khzDrawRuns(lp, await khzTextRuns(doc, ctx, p.text, rf, p.weight !== 'normal'), { x, y, size: p.size, color: pdfColor(p.color), opacity: p.opacity, rotate: D(rot - p.angle) });
   } else if (p.k === 'image') {
     // PNG, JPEG or an SVG drawing (all are drawn into the unit square)
     if (!ctx.images[p.href]) ctx.images[p.href] = await embedReplacement(doc, p.href);
@@ -7785,6 +7797,7 @@ async function buildOutputBytes(opts = {}) {
   }
   if (state.metaEdited || state.stripMetadata) khzXmpSyncInfo(doc);   // XMP keeps the same values (app164)
   doc.setModificationDate(new Date());
+  khzMissingGlyphNote(ctx);   // letters no font had (app187)
   if (state.digitalSigs && state.digitalSigs.length && !state.security && !opts.fullSave && getPref('saveIncremental', true) !== false && typeof saveIncremental === 'function') {
     try { return await saveIncremental(doc); } catch (e) { console.warn('incremental save failed, writing a full copy', e); }
   }
@@ -9826,7 +9839,7 @@ function labelFor(texts, r, rightSide) {
   const above = texts.filter(t => t.base <= r.y + 2 && r.y - t.base < 22 && t.x < r.x + r.w && t.x + t.w > r.x).sort((a, b) => b.base - a.base)[0];
   return above ? above.str : '';
 }
-function cleanLabel(s) { return String(s || '').replace(/(\w)\uFFFD(\w)/g, '$1ti$2').replace(/\uFFFD/g, 'ti').replace(/[\uE000-\uF8FF]/g, '').replace(/[_:*#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40); }
+function cleanLabel(s) { return String(s || '').replace(/\uFFFD/g, '').replace(/[\uE000-\uF8FF]/g, '').replace(/[_:*#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40); }
 function uniqueFieldName(base) {
   const used = new Set(state.annotations.filter(a => a.type === 'form-field').map(a => a.name));
   Object.values(state.formFields || {}).flat().forEach(f => used.add(f.name));
@@ -11955,8 +11968,9 @@ function ocrWriteLine(doc, lp, font, ws, vp, k, basePx, size, rot) {
   });
   // where the line starts, in page units (the page's rotation turns the text with it)
   const [x, y] = vp.convertToPdfPoint(ws[0].x0 * k, basePx), r = (rot || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
-  if (!lp._ocrFk) { lp.setFont(font); lp._ocrFk = lp.fontKey; }   // one font entry per page
-  const fk = lp._ocrFk;
+  lp._ocrFk = lp._ocrFk || new Map();   // one font entry per font per page
+  if (!lp._ocrFk.has(font)) { lp.setFont(font); lp._ocrFk.set(font, lp.fontKey); }
+  const fk = lp._ocrFk.get(font);
   lp.pushOperators(
     L.pushGraphicsState(), L.beginText(), L.setFontAndSize(fk, size), L.setTextRenderingMode(L.TextRenderingMode.Invisible), L.setCharacterSqueeze(+tz.toFixed(2)), L.setCharacterSpacing(+tc.toFixed(4)),
     L.PDFOperator.of(L.PDFOperatorNames.SetTextMatrix, [c, s, -s, c, x, y].map(num)),
@@ -12014,7 +12028,7 @@ async function runOCR() {
     const bytes = await buildOutputBytes({ commitOnly: true });
     const out = await PDFLib.PDFDocument.load(bytes);
     const view = await pdfjsLib.getDocument({ data: bytes.slice(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
-    const font = await out.embedFont(PDFLib.StandardFonts.Helvetica);
+    const font = await out.embedFont(PDFLib.StandardFonts.Helvetica), ocrFb = {};
     let done = 0, skipped = [], words = 0;
     for (const n of pages) {
       if (ocrCancel) { view.destroy(); return; }
@@ -12063,9 +12077,12 @@ async function runOCR() {
         // the baseline where this word is (a line's baseline can slope across the page)
         const bl = w.baseline, blY = bl && bl.y0 !== undefined ? (bl.x1 !== bl.x0 ? bl.y0 + (bl.y1 - bl.y0) * (((b.x0 + b.x1) / 2 - bl.x0) / (bl.x1 - bl.x0)) : (bl.y0 + bl.y1) / 2) : NaN;
         const basePx = Math.abs(blY - (b.y1 - desc)) < sizePx * 0.25 ? blY : b.y1 - desc;
-        const t = winAnsi(font, txt);
+        // a word with letters Helvetica doesn't have (Greek, Cyrillic…) is written in a font that has them (app187)
+        let wf = font;
+        if (winAnsi(font, txt) !== txt) { const bad = [...txt].find(ch => !khzCanEncode(font, ch)); const f2 = bad && await khzFallbackFont(out, ocrFb, bad, false, txt); if (f2 && [...txt].every(ch => khzCanEncode(f2, ch))) wf = f2; }
+        const t = wf === font ? winAnsi(font, txt) : txt;
         if (!t.trim()) continue;
-        placed.push({ w, b, t, sizePx, basePx, letters: own > 0 });
+        placed.push({ w, b, t, font: wf, sizePx, basePx, letters: own > 0 });
       }
       // one line of the scan = one line of text in the page (like Acrobat): the same size and baseline for all its
       // words, so a heading with dashes and dots in it ("SIZING — COPPER · NEC") stays one line when edited
@@ -12080,21 +12097,23 @@ async function runOCR() {
         if (mode === 'editable') {
           for (const p of list) {
             const b = p.b, [x, y] = vp.convertToPdfPoint(b.x0, basePx);
-            const natural = font.widthOfTextAtSize(p.t, size), target = (b.x1 - b.x0) / k;
+            const natural = p.font.widthOfTextAtSize(p.t, size), target = (b.x1 - b.x0) / k;
             const squeeze = natural > 0 ? Math.max(20, Math.min(400, target / natural * 100)) : 100;
             // cover the scanned word and draw it as real text (like Acrobat's "Editable Text and Images")
             const [ax, ay] = vp.convertToPdfPoint(b.x0 - 2.5, b.y0 - 2.5), [bx, by] = vp.convertToPdfPoint(b.x1 + 2.5, b.y1 + 2.5);
             const { bg, fg } = wordColors(cx, b);
             lp.drawRectangle({ x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay), color: PDFLib.rgb(...bg) });
             lp.pushOperators(PDFLib.setCharacterSqueeze(squeeze));
-            lp.drawText(p.t, { x, y, size, font, color: PDFLib.rgb(...fg), rotate: PDFLib.degrees(rot) });
+            lp.drawText(p.t, { x, y, size, font: p.font, color: PDFLib.rgb(...fg), rotate: PDFLib.degrees(rot) });
             lp.pushOperators(PDFLib.setCharacterSqueeze(100));
             words++;
           }
         } else {
           // invisible text over the picture: selectable, searchable, copyable. One text run per line; each word
           // starts exactly where it is on the scan (the run's own spacing moves it there)
-          ocrWriteLine(out, lp, font, list.map(p => ({ t: p.t, x0: p.b.x0 / k, x1: p.b.x1 / k })), vp, k, basePx, size, rot);
+          // (words in another font go in a run of their own, at their own place)
+          const groups = []; list.forEach(p => { const g = groups[groups.length - 1]; if (g && g.font === p.font) g.list.push(p); else groups.push({ font: p.font, list: [p] }); });
+          groups.forEach(g => ocrWriteLine(out, lp, g.font, g.list.map(p => ({ t: p.t, x0: p.b.x0 / k, x1: p.b.x1 / k })), vp, k, basePx, size, rot));
           words += list.length;
         }
       }
@@ -12161,6 +12180,34 @@ function asnName(nameAsn) {
   return out;
 }
 function asnTime(t) { try { return t.type === forge.asn1.Type.UTCTIME ? forge.asn1.utcTimeToDate(t.value) : forge.asn1.generalizedTimeToDate(t.value); } catch (e) { return null; } }
+// the certificate a signature's SignerIdentifier names: issuerAndSerialNumber (serial AND issuer name) or
+// subjectKeyIdentifier ([0], matched with the certificate's own key identifier)
+function sigFindSigner(certList, sid) {
+  if (!sid) return null;
+  const F = forge.asn1;
+  try {
+    if (sid.tagClass === F.Class.CONTEXT_SPECIFIC && sid.type === 0) {
+      const ski = typeof sid.value === 'string' ? sid.value : (sid.value[0] && sid.value[0].value) || '';
+      return certList.find(ci => certSki(ci) === ski) || null;
+    }
+    const serial = forge.util.bytesToHex(sid.value[1].value).replace(/^0+/, ''), issuerDer = F.toDer(sid.value[0]).getBytes();
+    return certList.find(ci => {
+      if (ci.serial.replace(/^0+/, '') !== serial) return false;
+      const f = ci.asn.value[0].value, i = f[0].tagClass === F.Class.CONTEXT_SPECIFIC ? 1 : 0;
+      return F.toDer(f[i + 2]).getBytes() === issuerDer;
+    }) || null;
+  } catch (e) { return null; }
+}
+// a certificate's extensions by OID ('2.5.29.14' key identifier, '2.5.29.19' basic constraints, '2.5.29.15' key usage)
+function certExt(ci, oid) {
+  try {
+    const F = forge.asn1, f = ci.asn.value[0].value, ext = f.find(x => x.tagClass === F.Class.CONTEXT_SPECIFIC && x.type === 3);
+    if (!ext) return null;
+    const e = ext.value[0].value.find(x => F.derToOid(x.value[0].value) === oid); if (!e) return null;
+    return F.fromDer(e.value[e.value.length - 1].value);
+  } catch (e) { return null; }
+}
+function certSki(ci) { const e = certExt(ci, '2.5.29.14'); return e ? e.value : null; }
 function certInfo(certAsn) {
   const tbs = certAsn.value[0], f = tbs.value;
   let i = 0;
@@ -12237,7 +12284,14 @@ async function analyzeSignatures(bytes) {
     const sf = v.lookupMaybe(N('SubFilter'), PDFLib.PDFName); info.subFilter = sf ? sf.asString().slice(1) : '';
     const br = v.lookupMaybe(N('ByteRange'), PDFLib.PDFArray); info.byteRange = br ? br.asArray().map(x => x.asNumber()) : null;
     const cont = v.lookupMaybe(N('Contents'), PDFLib.PDFHexString, PDFLib.PDFString);
-    info.certify = !!lib.catalog.lookupMaybe(N('Perms'), PDFLib.PDFDict);
+    // a certifying signature is the one the document's certification (Perms › DocMDP) points to, or one carrying
+    // DocMDP rules itself — not every signature in a certified document
+    info.certify = (() => {
+      const perms = lib.catalog.lookupMaybe(N('Perms'), PDFLib.PDFDict), dm = perms && perms.get(N('DocMDP'));
+      if (dm && (lib.context.lookup(dm) === v)) return true;
+      const ref = v.lookupMaybe(N('Reference'), PDFLib.PDFArray);
+      return !!(ref && ref.asArray().some(x => { const d = lib.context.lookup(x); return d && d.get && String(d.get(N('TransformMethod')) || '') === '/DocMDP'; }));
+    })();
     try {
       if (!info.byteRange || info.byteRange.length !== 4 || !cont) throw new Error('signature data is missing');
       const [a, b, c, d] = info.byteRange;
@@ -12255,7 +12309,7 @@ async function analyzeSignatures(bytes) {
       const certs = (msg.rawCapture.certificates && msg.rawCapture.certificates.value) || [];
       const si = msg.rawCapture.signerInfos[0];
       const fs = si.value;
-      const sid = fs[1], sidSerial = sid.value && sid.value[1] ? forge.util.bytesToHex(sid.value[1].value) : '';
+      const sid = fs[1];
       const digestOid = F.derToOid(fs[2].value[0].value);
       let k = 3, signedAttrs = null;
       if (fs[k].tagClass === F.Class.CONTEXT_SPECIFIC && fs[k].type === 0) { signedAttrs = fs[k]; k++; }
@@ -12268,7 +12322,10 @@ async function analyzeSignatures(bytes) {
       const docHash = new Uint8Array(await crypto.subtle.digest(hashName, signed));
       const certList = certs.map(certInfo);
       info.p7der = der.slice();
-      const signer = certList.find(ci => ci.serial.replace(/^0+/, '') === sidSerial.replace(/^0+/, '')) || certList[0];
+      // the signer's certificate is the one the signature names (issuer + serial number, or key identifier) — never
+      // a guess: without it the signature can't be checked
+      const signer = sigFindSigner(certList, sid);
+      if (!signer) info.noSigner = true;
       info.cert = signer ? { subject: signer.subject, issuer: signer.issuer, notBefore: signer.notBefore, notAfter: signer.notAfter, serial: signer.serial } : null;
       info.chain = certList.map(ci => ci.subject.CN || ci.subject.dn);
       // signer first, then the rest of the chain (for certificate export)
@@ -12307,7 +12364,9 @@ async function analyzeSignatures(bytes) {
     } catch (e) { info.error = e && e.message || String(e); info.digestOk = false; }
     info.signer = (info.cert && (info.cert.subject.CN || info.cert.subject.dn)) || info.name || 'Unknown signer';
     info.email = info.cert && info.cert.subject.E || '';
-    info.valid = info.digestOk === true && info.sigOk !== false && !info.error;
+    if (!info.error && info.noSigner) info.error = 'The signer\u2019s certificate is not in the signature, so it can\u2019t be checked.';
+    else if (!info.error && info.sigOk == null && info.digestOk) info.error = 'The signature uses a method KHZ PDF can\u2019t check.';
+    info.valid = info.digestOk === true && info.sigOk === true && !info.error;
     found.splice(found.indexOf(f), 1, info);
   }
   found.sort((x, y) => (x.revisionEnd || 0) - (y.revisionEnd || 0));
@@ -14595,7 +14654,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1121';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1122';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -14848,6 +14907,7 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1122', ['Edit PDF: replacing selected text hides the old text at once (it showed for a moment), and moved text no longer shows twice at some zoom levels.', 'Text boxes from Acrobat keep their line breaks (\u201c200A MB\u201d no longer wraps as \u201c200 / A / MB\u201d).', 'Letters a file gives no character for (Word\u2019s \u201cti\u201d, \u201ctt\u201d ligatures) are read from the font\u2019s shapes instead of guessed.', 'Greek, Cyrillic, symbols and Asian text are saved with a font that has them (edited text, form fields, OCR), instead of \u201c?\u201d.', 'Reduce File Size and Preflight fixes keep Ctrl+S, Undo and the pictures\u2019 colour type.', 'Tagging a signed document asks first and saves the tags as an update.', 'Remove Hidden Information reads the pages properly (inside form objects too).', 'Signatures: the exact signer certificate, per-signature certification, certificate-authority rules and dates are checked.', 'Redact: inline pictures, pictures inside form objects and fonts with their own code maps no longer turn the page into a picture.']],
   ['2026.10.1121', ['Edit PDF: changing or deleting text that shares its drawing with other text now takes out only its own letters, like Acrobat (it used to be hidden under a white box and stayed searchable).', 'Redact: Apply Redactions no longer turns pages into pictures for text inside form objects or in the standard fonts; letters are cut out using the fonts\u2019 real widths.', 'Saving no longer rewrites radio buttons that came in the file.']],
   ['2026.10.1120', ['Closing the window with several tabs open asks, like Acrobat: Close all tabs / Close current tab / Cancel, with “Always close all tabs”. Each unsaved document is then asked about (Yes / No / Cancel), starting with the one on screen.', 'Every “Do you want to save changes … before closing?” is now the same box.']],
   ['2026.10.1119', ['Saving a recovered document works again (it said “handle.createWritable is not a function”).', 'Web version: Help › Download the KHZ PDF Desktop App (Windows / Mac)… links to the installers on GitHub, with a note about antivirus warnings.']],
@@ -20911,10 +20971,11 @@ async function removeHiddenInfo() {
   if (comments.length) items.push(['comments', 'Comments and markups', `${comments.length} comment(s)`]);
   const fields = state.annotations.filter(a => a.type === 'form-field');
   if (fields.length) items.push(['fields', 'Form fields', `${fields.length} field(s) — values are kept as plain page content`]);
-  let hiddenText = 0;
-  for (let n = 1; n <= state.totalPages; n++) { try { hiddenText += (pageContentString(doc, doc.getPage(n - 1)).match(/\b3\s+Tr\b/g) || []).length; } catch (e) {} }
-  if (hiddenText) items.push(['hiddentext', 'Hidden text', `${hiddenText} block(s) of invisible text (for example an OCR text layer)`]);
-  if (cat.lookup(N('OCProperties'))) items.push(['layers', 'Hidden layers', 'Layers: what is on hidden layers is deleted, visible layers become part of the page']);
+  // (found by reading the pages' drawing commands, form objects included: app187)
+  let hiddenText = 0, hiddenLayer = 0; const lay = khzOffLayers(doc);
+  for (let n = 1; n <= state.totalPages; n++) { try { hiddenText += khzSanitizePage(doc, doc.getPage(n - 1), { hiddentext: true }, false); if (lay) hiddenLayer += khzSanitizePage(doc, doc.getPage(n - 1), { layers: lay }, false); } catch (e) {} }
+  if (hiddenText) items.push(['hiddentext', 'Hidden text', `${hiddenText} piece(s) of invisible text (for example an OCR text layer)`]);
+  if (lay) items.push(['layers', 'Hidden layers', `Layers: ${hiddenLayer ? hiddenLayer + ' item(s) on hidden layers are deleted, ' : ''}visible layers become part of the page`]);
   if (cat.lookup(N('Outlines'))) items.push(['bookmarks', 'Bookmarks', 'The bookmarks panel entries']);
   const names = cat.lookupMaybe(N('Names'), PDFLib.PDFDict);
   if (names && names.lookup(N('JavaScript')) || cat.lookup(N('AA')) || (cat.lookup(N('OpenAction')) && !(cat.lookup(N('OpenAction')).asArray))) items.push(['js', 'Links, actions and JavaScripts', 'Document JavaScripts and open actions']);
@@ -20949,40 +21010,19 @@ dpApply = function (doc) {
   if (S.bookmarks) { cat.delete(N('Outlines')); if (String(cat.get(N('PageMode'))) === '/UseOutlines') cat.delete(N('PageMode')); }
   if (S.js) { const nm = cat.lookupMaybe(N('Names'), PDFLib.PDFDict); if (nm) nm.delete(N('JavaScript')); cat.delete(N('AA')); const oa = cat.lookup(N('OpenAction')); if (oa && !oa.asArray) cat.delete(N('OpenAction')); doc.getPages().forEach(p => p.node.delete(N('AA'))); }
   if (S.index) cat.delete(N('Search'));
-  if (S.layers) {   // drop what's on hidden (OFF) layers, then merge the rest into the page
+  // hidden text and what's on hidden layers come out of the pages (and their form objects); visible layers stay as
+  // part of the page
+  if (S.layers || S.hiddentext) {
     try {
-      const ocp = cat.lookupMaybe(N('OCProperties'), PDFLib.PDFDict), D = ocp && ocp.lookupMaybe(N('D'), PDFLib.PDFDict), off = D && D.lookup(N('OFF'));
-      const offSet = new Set(off && off.asArray ? off.asArray().map(r => r.toString()) : []);
-      if (offSet.size) doc.getPages().forEach(p => {
-        const res = p.node.Resources(), props = res && res.lookupMaybe(N('Properties'), PDFLib.PDFDict); if (!props) return;
-        const hidden = new Set(); for (const [k, v] of props.entries()) if (offSet.has(v.toString())) hidden.add(k.asString());
-        if (!hidden.size) return;
-        const src = pageContentString(doc, p), re = /\/OC\s*(\/[^\s\/\[<(]+)\s+BDC|\bBDC\b|\bBMC\b|\bEMC\b/g;
-        let out = '', last = 0, depth = 0, skipStart = -1, m;
-        while ((m = re.exec(src))) {
-          if (skipStart < 0) {
-            if (m[1] && hidden.has(m[1])) { out += src.slice(last, m.index); skipStart = m.index; depth = 1; }
-          } else if (/BDC|BMC/.test(m[0])) depth++;
-          else if (m[0] === 'EMC' && --depth === 0) { last = m.index + 3; skipStart = -1; }
-        }
-        out += skipStart < 0 ? src.slice(last) : '';
-        p.node.set(N('Contents'), ctx.register(ctx.flateStream(latin1ToBytes(out))));
-      });
-    } catch (e) { console.warn('layer removal failed', e); }
-    cat.delete(N('OCProperties'));
+      const lay = S.layers ? khzOffLayers(doc) : null;
+      doc.getPages().forEach(p => khzSanitizePage(doc, p, { hiddentext: !!S.hiddentext, layers: lay }, true));
+    } catch (e) { console.warn('hidden content removal failed', e); }
+    if (S.layers) cat.delete(N('OCProperties'));
   }
   if (S.private) { cat.delete(N('PieceInfo')); doc.getPages().forEach(p => { p.node.delete(N('Thumb')); p.node.delete(N('PieceInfo')); }); }
   if (S.attach) { const nm = cat.lookupMaybe(N('Names'), PDFLib.PDFDict); if (nm) nm.delete(N('EmbeddedFiles')); }
   doc.getPages().forEach(p => {
     if (S.links || S.js) { const an = p.node.lookup(N('Annots')); if (an && an.asArray) { const keep = an.asArray().filter(ref => { const d = ctx.lookup(ref); if (!d || !d.get) return true; const st = String(d.get(N('Subtype'))); if (S.links && st === '/Link') return false; if (S.js && d.get(N('AA'))) d.delete(N('AA')); return true; }); p.node.set(N('Annots'), ctx.obj(keep)); } }
-    if (S.hiddentext) {
-      const s = pageContentString(doc, p);
-      if (/\b3\s+Tr\b/.test(s)) {
-        // drop text objects drawn in "invisible" mode (Tr 3)
-        const out = s.replace(/(^|[\s\]>)}])BT(?=[\s\/\[(<])([\s\S]*?)[\s\])>]ET(?=\s|$)/g, (m, pre, body) => /\b3\s+Tr\b/.test(body) && !/\b[0-2]\s+Tr\b/.test(body) ? pre : m);
-        p.node.set(N('Contents'), ctx.register(ctx.flateStream(latin1ToBytes(out))));
-      }
-    }
   });
   return r;
 };
@@ -24758,10 +24798,30 @@ async function sigBuildChain(s) {
   s.leafNotAfter = leaf.ci.notAfter;
   s.missingIssuer = missing;
   const top = chain[chain.length - 1];
-  const userHit = chain.find(c => user.has(c.fp));
+  // the chain's rules, like Acrobat: every certificate above the signer must be a certificate authority (basic
+  // constraints cA, allowed to sign certificates, path length kept), and every one must be in date when it was used
+  // (the time stamp's time when there is a trusted one, otherwise now — like Acrobat's default)
+  s.chainProblem = sigChainProblem(chain, s.tsOk && s.tsTime ? s.tsTime : new Date());
+  const userHit = s.chainProblem ? null : chain.find(c => user.has(c.fp));
   if (userHit) { s.trusted = user.get(userHit.fp).name || userHit.ci.subject.CN; s.trustSource = 'user'; }
-  else if (top.self && roots.has(top.fp) && await chSignedBy(top, top)) { s.trusted = top.ci.subject.CN || top.ci.subject.dn; s.trustSource = 'builtin'; s.trustRoot = s.trusted; }
+  else if (!s.chainProblem && top.self && roots.has(top.fp) && await chSignedBy(top, top)) { s.trusted = top.ci.subject.CN || top.ci.subject.dn; s.trustSource = 'builtin'; s.trustRoot = s.trusted; }
   else { s.trustSource = ''; }
+}
+function sigChainProblem(chain, when) {
+  const t = when instanceof Date ? when : new Date(when);
+  for (let i = 0; i < chain.length; i++) {
+    const ci = chain[i].ci, who = ci.subject.CN || ci.subject.dn;
+    if ((ci.notBefore && t < ci.notBefore) || (ci.notAfter && t > ci.notAfter)) return `The certificate of ${who} was not valid at the time it was used.`;
+    if (i === 0) continue;
+    const bc = certExt(ci, '2.5.29.19');
+    const isCA = !!(bc && bc.value && bc.value[0] && bc.value[0].type === forge.asn1.Type.BOOLEAN && bc.value[0].value.charCodeAt(0));
+    if (!isCA && !(chain[i].self && i === chain.length - 1 && !bc)) return `${who} is not a certificate authority, so it can\u2019t vouch for other certificates.`;   // (very old roots carry no constraints)
+    const pl = bc && bc.value && bc.value.find(x => x.type === forge.asn1.Type.INTEGER);
+    if (pl) { const max = forge.util.bytesToHex(pl.value) ? parseInt(forge.util.bytesToHex(pl.value), 16) : 0; if (i - 1 > max) return `${who} allows fewer certificate authorities below it than this chain has.`; }
+    const ku = certExt(ci, '2.5.29.15');
+    if (ku && typeof ku.value === 'string' && ku.value.length >= 2) { const bits = ku.value.charCodeAt(1); if (!(bits & 0x04)) return `${who} is not allowed to sign certificates.`; }
+  }
+  return '';
 }
 // document facts the panel needs: DSS certificates, layers, field locks
 async function sigDocFacts(bytes) {
@@ -24808,7 +24868,7 @@ async function sigFixSigner(s) {
   s.signer = right.subject.CN || right.subject.dn || s.signer; s.email = right.subject.E || '';
   const path = []; for (let c = right; c && !path.includes(c) && path.length < 10; c = certs.find(x => x !== c && x.subject.dn === c.issuer.dn)) path.push(c);
   s.certDers = path.map(c => binToBytes(F.toDer(c.asn).getBytes()));
-  s.valid = s.digestOk === true && s.sigOk !== false && !s.error && !s.alteredAfter;
+  s.valid = s.digestOk === true && s.sigOk === true && !s.error && !s.alteredAfter;
 }
 const _analyzeSignaturesCH = analyzeSignatures;
 analyzeSignatures = async function (bytes) {
@@ -24879,6 +24939,7 @@ loadLeftPanel = function (mode) {
       reasons.querySelectorAll('.spt-leaf').forEach(l => { l.textContent = l.textContent.replace(/^The signer’s identity is valid\.$/, 'Signer’s identity is valid').replace(/^Document has not been modified since this signature was applied\.$/, 'Document has not been modified since this signature was applied'); });
       if (ok && s.leafNotAfter) reasons.appendChild(leaf(state.hasDSS ? 'Signature is LTV enabled' : `Signature is not LTV enabled and will expire after ${escapeHtml(dt(s.leafNotAfter))}`));
     }
+    if (!s.trusted && s.chainProblem && reasons) reasons.appendChild(leaf(`${SP_WARN}${escapeHtml(s.chainProblem)}`));
     if (!s.trusted && s.missingIssuer && reasons) {
       const m = s.missingIssuer;
       reasons.appendChild(leaf(`<span>The issuer’s certificate (${escapeHtml(m.cn)}) isn’t included in the signature${m.aia ? ' and couldn’t be downloaded automatically' : ''}. ${m.aia ? `<a href="${escapeHtml(m.aia)}" target="_blank" rel="noopener" class="spt-ext">Download it</a>, then ` : ''}<a href="#" class="spt-addca">Add issuer certificate…</a></span>`));
@@ -30500,8 +30561,7 @@ formFieldGeometry = function (a, vp, V, box) {
 //  Letters under a mark are cut out of the text (the rest stays real, searchable text in its own font),
 //  drawings completely inside a mark are removed (on the page and inside form objects), pictures under a mark get
 //  the area blacked out in the picture itself, then the mark boxes are painted. Only what can't be handled exactly
-//  (text in a font whose codes can't be told apart, inline pictures, pictures inside form objects) makes that page
-//  fall back to the picture method,
+//  (text in a font whose codes can't be told apart) makes that page fall back to the picture method,
 //  and a final check makes sure no text is left under any mark.
 // ================================================================
 function rdFontInfo(doc, res, name, cache) {
@@ -30515,8 +30575,11 @@ function rdFontInfo(doc, res, name, cache) {
     const sub = f.get(N('Subtype')); const st = sub ? sub.asString() : '';
     if (st === '/Type0') {
       info.cid = true;
-      const enc = f.get(N('Encoding')); const es = enc && enc.asString ? enc.asString() : '';
-      if (!/Identity-[HV]/.test(es)) info.ok = false;   // other CMaps can mix 1- and 2-byte codes
+      const enc = ctx.lookup(f.get(N('Encoding'))); const es = enc && enc.asString ? enc.asString() : '';
+      if (enc && enc.dict) {   // a CMap in the file: its code lengths (1–4 bytes) and code → character id
+        try { info.cmap = rdParseCMap(bytesToLatin1(enc instanceof L.PDFRawStream ? L.decodePDFRawStream(enc).decode() : enc.getContents())); } catch (e) {}
+        if (!info.cmap) info.ok = false;
+      } else if (!/Identity-[HV]/.test(es)) info.ok = false;   // a named CJK CMap (codes of mixed lengths): not read here
       const dArr = ctx.lookup(f.get(N('DescendantFonts')));
       const d = dArr && ctx.lookup(dArr.get(0));
       const dw = d && d.get(N('DW')) ? d.get(N('DW')).asNumber() : 1000;
@@ -30577,6 +30640,31 @@ function rdCodeNames(doc, f, sf) {
   return names;
 }
 
+// an embedded CMap (ISO 32000 9.7.6): codespace ranges give each code's length, cidrange / cidchar its character id
+function rdParseCMap(txt) {
+  const hex = h => h.replace(/[<>\s]/g, ''), toBytes = h => { const o = []; for (let i = 0; i < h.length; i += 2) o.push(parseInt(h.slice(i, i + 2), 16)); return o; };
+  const spaces = [], chars = new Map(), ranges = [];
+  for (const blk of txt.matchAll(/begincodespacerange([\s\S]*?)endcodespacerange/g)) for (const m of blk[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]+)>/g)) { const lo = toBytes(hex(m[1])), hi = toBytes(hex(m[2])); if (lo.length === hi.length && lo.length) spaces.push({ lo, hi }); }
+  for (const blk of txt.matchAll(/begincidrange([\s\S]*?)endcidrange/g)) for (const m of blk[1].matchAll(/<([0-9a-fA-F\s]+)>\s*<([0-9a-fA-F\s]+)>\s*(\d+)/g)) { const a = hex(m[1]), b = hex(m[2]); ranges.push({ len: a.length / 2, lo: parseInt(a, 16), hi: parseInt(b, 16), cid: +m[3] }); }
+  for (const blk of txt.matchAll(/begincidchar([\s\S]*?)endcidchar/g)) for (const m of blk[1].matchAll(/<([0-9a-fA-F\s]+)>\s*(\d+)/g)) { const a = hex(m[1]); chars.set(a.length / 2 + ':' + parseInt(a, 16), +m[2]); }
+  if (!spaces.length) return null;
+  const minLen = Math.min(...spaces.map(s => s.lo.length));
+  return {
+    next(bytes, k) {
+      for (let len = 1; len <= 4 && k + len <= bytes.length; len++) {
+        if (spaces.some(s => s.lo.length === len && s.lo.every((lo, j) => bytes[k + j] >= lo && bytes[k + j] <= s.hi[j]))) {
+          let code = 0; for (let j = 0; j < len; j++) code = code * 256 + bytes[k + j]; return { code, len };
+        }
+      }
+      const len = Math.min(minLen, bytes.length - k); let code = 0; for (let j = 0; j < len; j++) code = code * 256 + bytes[k + j];
+      return { code, len: Math.max(1, len) };
+    },
+    cid(code, len) {
+      const c = chars.get(len + ':' + code); if (c !== undefined) return c;
+      const r = ranges.find(r => r.len === len && code >= r.lo && code <= r.hi); return r ? r.cid + (code - r.lo) : 0;
+    },
+  };
+}
 function rdLiteralBytes(s) {   // s includes the parentheses
   const out = []; const n = s.length - 1;
   for (let i = 1; i < n; i++) {
@@ -30629,6 +30717,14 @@ function rdRewriteContent(doc, lp, str, rects, opts = {}) {
     });
     return best && !best.keep ? best : null;
   };
+  // a picture under a mark: its blacked-out version is made first (rdRedactPage, a first pass with dry:true collects
+  // them, in the page or inside form objects, inline pictures too), then put in on the second pass (opts.imgMap)
+  const imgHit = h => {
+    h.res = res; h.formRef = opts.formRef || null;
+    h.key = (opts.formRef ? opts.formRef.tag : 'page') + '|' + (h.name || 'BI@' + h.start) + '|' + h.ctm.map(v => +v.toFixed(4)).join(',');
+    const done = opts.imgMap && opts.imgMap.get(h.key);
+    if (done) reps.push({ start: h.start, end: h.end, text: done }); else imgHits.push(h);
+  };
   const pickGlyph = (b, g) => opts.pick === 'center' ? centerIn(b, g) : hit(b, 0.2);
   const boxOf = (m, pts) => { const p = pts.map(([x, y]) => mApply(m, x, y)); const xs = p.map(q => q[0]), ys = p.map(q => q[1]); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; };
   // XObject kinds
@@ -30656,11 +30752,13 @@ function rdRewriteContent(doc, lp, str, rects, opts = {}) {
     const flushKeep = () => { if (keep.length) { flush(); out.push(rdHex(keep)); keep = []; } };
     for (const it of items) {
       if (it.t === '#') { flushKeep(); pend += it.v; const tx = -it.v / 1000 * fs * Th; T.Tm = mMul([1, 0, 0, 1, tx, 0], T.Tm); continue; }
-      const bytes = it.bytes; const step = fi.cid ? 2 : 1;
-      for (let k = 0; k + step - 1 < bytes.length; k += step) {
-        const code = fi.cid ? (bytes[k] << 8) | bytes[k + 1] : bytes[k];
-        const w = fi.w(code) * fi.unit;
-        const adv = (w * fs + T.Tc + (!fi.cid && code === 32 ? T.Tw : 0)) * Th;
+      const bytes = it.bytes;
+      for (let k = 0; k < bytes.length;) {
+        let code, step;
+        if (fi.cmap) { const c = fi.cmap.next(bytes, k); code = c.code; step = c.len; }
+        else { step = fi.cid ? 2 : 1; if (k + step > bytes.length) break; code = fi.cid ? (bytes[k] << 8) | bytes[k + 1] : bytes[k]; }
+        const w = fi.w(fi.cmap ? fi.cmap.cid(code, step) : code) * fi.unit;
+        const adv = (w * fs + T.Tc + (step === 1 && code === 32 ? T.Tw : 0)) * Th;   // (word spacing: the one-byte space)
         const m = mMul(T.Tm, ctm);
         const gb = boxOf(m, [[0, T.rise - fs * 0.22], [w * fs * Th || adv, T.rise - fs * 0.22], [0, T.rise + fs * 0.88], [w * fs * Th || adv, T.rise + fs * 0.88]]);
         let r = fs ? pickGlyph(gb, { o: mApply(m, 0, T.rise), fh: Math.abs(fs) * Math.hypot(m[2], m[3]) }) : null;
@@ -30671,6 +30769,7 @@ function rdRewriteContent(doc, lp, str, rects, opts = {}) {
           pend += -(adv / Th / (fs || 1)) * 1000;   // move on by the same amount, without drawing the letter
         } else { flush(); keep.push(...bytes.slice(k, k + step)); }
         T.Tm = mMul([1, 0, 0, 1, adv, 0], T.Tm);
+        k += step;
       }
     }
     flushKeep(); flush();
@@ -30700,7 +30799,8 @@ function rdRewriteContent(doc, lp, str, rects, opts = {}) {
     if (op === 'BI') {
       const id = str.indexOf('ID', i); const j = id < 0 ? n : id + 3;
       const re = /[\s\0]EI(?=[\s\0]|$)/g; re.lastIndex = j; const mm = re.exec(str); i = mm ? mm.index + 3 : n;
-      if (opts.images !== false && hit(boxOf(ctm, [[0, 0], [1, 0], [0, 1], [1, 1]]), 0)) needRaster = needRaster || 'inline image';
+      const ib = boxOf(ctm, [[0, 0], [1, 0], [0, 1], [1, 1]]);
+      if (opts.images !== false && hit(ib, 0)) imgHit({ inline: str.slice(st, i), start: st, end: i, ctm: ctm.slice(), box: ib });
       ops = []; continue;
     }
     const opStart = ops.length ? ops[0].start : st;
@@ -30735,10 +30835,11 @@ function rdRewriteContent(doc, lp, str, rects, opts = {}) {
         if (nm && nm.t === 'n') {
           const b = boxOf(ctm, [[0, 0], [1, 0], [0, 1], [1, 1]]);
           const kind = xkind[nm.v];
-          if (kind === '/Image' && opts.images !== false && hit(b, 0)) imgHits.push({ name: nm.v, start: nm.start, end: i, ctm: ctm.slice(), box: b });
+          if (kind === '/Image' && opts.images !== false && hit(b, 0)) imgHit({ name: nm.v, start: nm.start, end: i, ctm: ctm.slice(), box: b });
           else if (kind === '/Form') {
             const sub = rdFormCut(doc, res, nm.v, ctm, rects, opts, depth);
             if (sub.needRaster) needRaster = needRaster || sub.needRaster;
+            if (sub.imgHits) imgHits.push(...sub.imgHits);   // pictures inside it that still need their new version
             else if (sub.name) { reps.push({ start: nm.start, end: i, text: `/${sub.name} Do` }); removed += sub.removed; }
           }
         }
@@ -30779,10 +30880,10 @@ function rdFormCut(doc, res, name, ctm, rects, opts, depth) {
   let fstr;
   try { fstr = bytesToLatin1(f instanceof L.PDFRawStream ? L.decodePDFRawStream(f).decode() : (f.getUnencodedContents ? f.getUnencodedContents() : f.getContents())); } catch (e) { return { needRaster: 'form object' }; }
   const fres = f.dict.lookup(N('Resources')) || res;
-  const r = rdRewriteContent(doc, null, fstr, rects, { ...opts, res: fres, ctm0: m, depth: depth + 1 });
+  const r = rdRewriteContent(doc, null, fstr, rects, { ...opts, res: fres, ctm0: m, depth: depth + 1, formRef: ref instanceof L.PDFRef ? ref : null });
   if (r.needRaster) return { needRaster: r.needRaster };
-  if (r.imgHits.length) return { needRaster: 'picture in a form object' };
-  if (!r.reps.length) return {};
+  if (r.imgHits.length) return { imgHits: r.imgHits };   // their new versions are made first, then this form is copied
+  if (!r.reps.length || opts.dry) return opts.dry && r.reps.length ? { removed: r.removed } : {};
   let content = fstr;
   const seen = new Set();
   r.reps.filter(x => { const k = x.start + ':' + x.end; if (seen.has(k)) return false; seen.add(k); return true; })
@@ -30797,22 +30898,28 @@ function rdFormCut(doc, res, name, ctm, rects, opts, depth) {
 }
 
 // a picture under a mark: draw it on its own, black out the marked part, put the new picture in its place
+// (a picture of the page, inside a form object — drawn with that form's resources — or an inline picture)
 async function rdImageReplacement(doc, lp, n, ih, rects, srcBytes) {
-  const L = PDFLib;
+  const L = PDFLib, N = L.PDFName.of;
   // render just this picture: a one-page copy whose content is only the picture
   const tmp = await L.PDFDocument.load(srcBytes, { ignoreEncryption: true });
   const tp = tmp.getPage(n - 1);
   const b = ih.box, W = b.x1 - b.x0, H = b.y1 - b.y0;
   tp.setMediaBox(b.x0, b.y0, W, H); tp.setCropBox(b.x0, b.y0, W, H); tp.setRotation(L.degrees(0));
-  const c = ih.ctm;
-  tp.node.set(L.PDFName.of('Contents'), tmp.context.register(tmp.context.flateStream(latin1ToBytes(`q ${c.map(v => +v.toFixed(6)).join(' ')} cm /${ih.name} Do Q`))));
-  tp.node.delete(L.PDFName.of('Annots'));
+  if (ih.formRef) {   // the form object's own resources (same object numbers: the copy was read from the same file)
+    const f = tmp.context.lookup(L.PDFRef.of(ih.formRef.objectNumber, ih.formRef.generationNumber));
+    const fr = f && f.dict && f.dict.get(N('Resources')); if (fr) tp.node.set(N('Resources'), fr);
+  }
+  const c = ih.ctm, cm = `${c.map(v => +v.toFixed(6)).join(' ')} cm`;
+  tp.node.set(N('Contents'), tmp.context.register(tmp.context.flateStream(latin1ToBytes(ih.inline ? `q ${cm}\n${ih.inline}\nQ` : `q ${cm} /${ih.name} Do Q`))));
+  tp.node.delete(N('Annots'));
   const one = await L.PDFDocument.create(); const [cp] = await one.copyPages(tmp, [n - 1]); one.addPage(cp);
   const bytes = await one.save();
   const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
   try {
     const pg = await pdf.getPage(1);
-    let pxW = 0; try { const xo = doc.context.lookup(lp.node.Resources().get(L.PDFName.of('XObject'))); const im = doc.context.lookup(xo.get(L.PDFName.of(ih.name))); pxW = im.dict.get(L.PDFName.of('Width')).asNumber(); } catch (e) {}
+    let pxW = 0;
+    try { if (ih.inline) { const m = /\/(?:W|Width)\s+(\d+)/.exec(ih.inline); pxW = m ? +m[1] : 0; } else { const xo = doc.context.lookup(ih.res.get(N('XObject'))); const im = doc.context.lookup(xo.get(N(ih.name))); pxW = im.dict.get(N('Width')).asNumber(); } } catch (e) {}
     const scale = Math.max(1, Math.min(4, (pxW || W * 2) / W, 4000 / Math.max(W, H)));
     const vp = pg.getViewport({ scale });
     const cv = document.createElement('canvas'); cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
@@ -30820,7 +30927,11 @@ async function rdImageReplacement(doc, lp, n, ih, rects, srcBytes) {
     await pg.render({ canvasContext: g, viewport: vp }).promise;
     rects.forEach(r => { const p0 = vp.convertToViewportPoint(r.x0, r.y0), p1 = vp.convertToViewportPoint(r.x1, r.y1); g.fillStyle = r.color === 'none' ? '#fff' : (r.color || '#000'); g.fillRect(Math.floor(Math.min(p0[0], p1[0])), Math.floor(Math.min(p0[1], p1[1])), Math.ceil(Math.abs(p1[0] - p0[0])) + 1, Math.ceil(Math.abs(p1[1] - p0[1])) + 1); });
     const img = await doc.embedJpg(cv.toDataURL('image/jpeg', 0.9));
-    const nm = lp.node.newXObject('RdImg', img.ref).asString().slice(1);
+    // its name in the resources the drawing commands use (the page's, or the form object's)
+    let xo = ih.res && ih.res.lookup(N('XObject'));
+    if (!(xo instanceof L.PDFDict)) { xo = doc.context.obj({}); ih.res.set(N('XObject'), xo); }
+    let nm = 'RdImg', k = 1; while (xo.get(N(nm))) nm = 'RdImg' + (k++);
+    xo.set(N(nm), img.ref);
     const inv = mInv(ih.ctm);
     return `q ${inv.map(v => +v.toFixed(6)).join(' ')} cm ${+W.toFixed(4)} 0 0 ${+H.toFixed(4)} ${+b.x0.toFixed(4)} ${+b.y0.toFixed(4)} cm /${nm} Do Q`;
   } finally { pdf.destroy(); }
@@ -30832,12 +30943,18 @@ async function rdRedactPage(doc, lp, n, rects, srcBytes) {
   const oldRefs = raw0 instanceof L.PDFRef && !(raw0l instanceof L.PDFArray) ? [raw0] : (raw0l instanceof L.PDFArray ? raw0l.asArray().filter(r => r instanceof L.PDFRef) : []);
   const c0 = lp.node.Contents(); const arr0 = c0 ? (c0 instanceof L.PDFArray ? c0.asArray() : [c0]) : [];
   const str = arr0.map(r => { const s = doc.context.lookup(r); try { return bytesToLatin1(s instanceof L.PDFRawStream ? L.decodePDFRawStream(s).decode() : (s.getUnencodedContents ? s.getUnencodedContents() : s.getContents())); } catch (e) { return ''; } }).join('\n');
-  const r = rdRewriteContent(doc, lp, str, rects);
-  if (r.needRaster) return { ok: false, why: r.needRaster };
-  for (const ih of r.imgHits) {
-    try { reps_push(r.reps, { start: ih.start, end: ih.end, text: await rdImageReplacement(doc, lp, n, ih, rects, srcBytes) }); }
-    catch (e) { return { ok: false, why: 'picture' }; }
+  // first pass: what's there (no changes); the pictures under marks get their blacked-out versions; second pass: the
+  // letters, drawings and pictures are changed, on the page and inside form objects
+  const first = rdRewriteContent(doc, lp, str, rects, { dry: true });
+  if (first.needRaster) return { ok: false, why: first.needRaster };
+  const imgMap = new Map();
+  for (const ih of first.imgHits) {
+    if (imgMap.has(ih.key)) continue;
+    try { imgMap.set(ih.key, await rdImageReplacement(doc, lp, n, ih, rects, srcBytes)); }
+    catch (e) { console.warn('redact picture', e); return { ok: false, why: 'picture' }; }
   }
+  const r = rdRewriteContent(doc, lp, str, rects, { imgMap });
+  if (r.needRaster || r.imgHits.length) return { ok: false, why: r.needRaster || 'picture' };
   let content = str;
   const seen = new Set();
   r.reps.filter(x => { const k = x.start + ':' + x.end; if (seen.has(k)) return false; seen.add(k); return true; })
@@ -30846,7 +30963,7 @@ async function rdRedactPage(doc, lp, n, rects, srcBytes) {
   lp.node.set(L.PDFName.of('Contents'), doc.context.register(doc.context.flateStream(latin1ToBytes(`q\n${content}\nQ\nq\n${boxes}\nQ\n`))));
   oldRefs.forEach(ref => { try { doc.context.delete(ref); } catch (e) {} });
   // pictures that were replaced: take the original out of the page (and out of the file if nothing else uses it)
-  const gone = [...new Set(r.imgHits.map(h => h.name))].filter(nm => !new RegExp('/' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*Do').test(content));
+  const gone = [...new Set(first.imgHits.filter(h => h.name && !h.formRef).map(h => h.name))].filter(nm => !new RegExp('/' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*Do').test(content));
   if (gone.length) try {
     const xo = doc.context.lookup(lp.node.Resources().get(L.PDFName.of('XObject')));
     gone.forEach(nm => {
@@ -33588,13 +33705,24 @@ function khzImageDrawnPpi(doc) {
   });
   return ppi;
 }
+// a change to the whole document (Reduce File Size, Preflight fixes): the open document becomes the changed one in
+// place, like Acrobat — same tab, Ctrl+S still saves to your file, and Undo brings the document back as it was
+// (loadBytes keep → doc-level Undo, app105). Comments the app draws itself go along unchanged.
+async function khzApplyInPlace(bytes, o = {}) {
+  const keep = o.dropComments ? [] : state.annotations.filter(a => !a.native && !isNativeWritable(a) && !(a.type === 'page-image' && !a.isNew) && a.type !== 'text-block' && a.type !== 'page-path' && a.type !== 'form-field').map(a => ({ ...a }));
+  const side = { wm: state.watermark, hf: state.headerFooter, bg: state.background, bgo: state.bgOpts, nd: state.namedDests, de: state.destsEdited }, page = state.currentPage, zoom = state.scale;
+  await loadBytes(bytes, state.fileName, { keep: true, annotations: keep, page });
+  Object.assign(state, { watermark: side.wm, headerFooter: side.hf, background: side.bg, bgOpts: side.bgo, namedDests: side.nd, destsEdited: side.de });
+  if (Math.abs(state.scale - zoom) > 0.001) setZoom(zoom);
+  markDirty();
+}
 tcDoOptimize = async function (o) {
   tabReplace++;
   showLoading(true, 'Reducing file size…');
   try {
     const Q = OPT_Q[o.q] || OPT_Q.medium, ppi = o.ppi || Q.ppi, above = o.above || Q.above, qual = o.qual || Q.qual;
     const before = state.fileBytes.length;
-    const doc = await PDFLib.PDFDocument.load(await buildOutputBytes({ fullSave: true }), { updateMetadata: false });
+    const doc = await PDFLib.PDFDocument.load(await buildOutputBytes({ commitOnly: true }), { updateMetadata: false });
     const L = PDFLib, N = L.PDFName;
     const place = khzImagePlacements(doc), drawn = khzImageDrawnPpi(doc);
     let changed = 0;
@@ -33635,9 +33763,41 @@ tcDoOptimize = async function (o) {
           const bmp = await createImageBitmap(new Blob([obj.contents], { type: 'image/jpeg' }));
           canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(w * k)); canvas.height = Math.max(1, Math.round(h * k));
           canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+          if (cs.kind === 'gray' && !o.gray) {   // a grey JPEG stays grey (the browser only writes RGB JPEGs)
+            const st = doc.context.flateStream(khzGrayOf(canvas), {});
+            for (const [kk, v] of d.entries()) { if (!['/Filter', '/DecodeParms', '/Length', '/Width', '/Height', '/BitsPerComponent', '/SMask'].includes(kk.asString())) st.dict.set(kk, v); }
+            st.dict.set(N.of('Width'), L.PDFNumber.of(canvas.width)); st.dict.set(N.of('Height'), L.PDFNumber.of(canvas.height)); st.dict.set(N.of('BitsPerComponent'), L.PDFNumber.of(8));
+            if (st.contents.length >= obj.contents.length * 0.95) continue;
+            if (smRef instanceof L.PDFRef) { if (!await khzOptSMask(doc, smRef, k, smCache)) continue; st.dict.set(N.of('SMask'), smRef); }
+            doc.context.assign(ref, st); changed++; continue;
+          }
         } else {
           if (w * h < 40000 && k >= 1) continue;
           const im = khzOptDecode(doc, obj); if (!im) continue;
+          // CMYK, grey and palette pictures keep their colour type (JPEG from the browser is always RGB, which would
+          // shift printed colours): they're scaled down in their own colours and compressed without loss
+          if (im.cs.kind !== 'rgb' && !o.gray) {
+            if (k >= 1) continue;
+            if (mask instanceof L.PDFArray && im.bpc !== 8) continue;
+            if (im.cs.kind === 'indexed' && d.get(N.of('Decode'))) continue;
+            const W2 = Math.max(1, Math.round(w * k)), H2 = Math.max(1, Math.round(h * k)), nc = im.cs.kind === 'indexed' ? 1 : im.cs.n;
+            const out8 = new Uint8Array(W2 * H2 * nc), sx = w / W2, sy = h / H2, mul = 255 / im.max;
+            for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+              const x0 = Math.floor(x * sx), y0 = Math.floor(y * sy), x1 = Math.max(x0 + 1, Math.floor((x + 1) * sx)), y1 = Math.max(y0 + 1, Math.floor((y + 1) * sy));
+              for (let c = 0; c < nc; c++) {
+                let v;
+                if (im.cs.kind === 'indexed') v = im.smp(Math.min(w - 1, Math.floor((x + 0.5) * sx)), Math.min(h - 1, Math.floor((y + 0.5) * sy)), 0);   // a palette entry, never a blend
+                else { let sum = 0, cnt = 0; for (let yy = y0; yy < y1 && yy < h; yy++) for (let xx = x0; xx < x1 && xx < w; xx++) { sum += im.smp(xx, yy, c); cnt++; } v = Math.round(sum / Math.max(1, cnt) * mul); }
+                out8[(y * W2 + x) * nc + c] = v;
+              }
+            }
+            const st = doc.context.flateStream(out8, {});
+            for (const [kk, v] of d.entries()) { if (!['/Filter', '/DecodeParms', '/Length', '/Width', '/Height', '/BitsPerComponent', '/SMask'].includes(kk.asString())) st.dict.set(kk, v); }
+            st.dict.set(N.of('Width'), L.PDFNumber.of(W2)); st.dict.set(N.of('Height'), L.PDFNumber.of(H2)); st.dict.set(N.of('BitsPerComponent'), L.PDFNumber.of(8));
+            if (st.contents.length >= obj.contents.length * 0.95) continue;
+            if (smRef instanceof L.PDFRef) { if (!await khzOptSMask(doc, smRef, k, smCache)) continue; st.dict.set(N.of('SMask'), smRef); }
+            doc.context.assign(ref, st); changed++; continue;
+          }
           // a colour-key mask (Mask [min max ...]) would not survive JPEG: it becomes a soft mask
           if (mask instanceof L.PDFArray) {
             const rng = mask.asArray().map(x => x.asNumber()), n = im.cs.n;
@@ -33677,8 +33837,8 @@ tcDoOptimize = async function (o) {
     showLoading(false);
     const after = out.length;
     if (after >= before) { toast(`This PDF is already as small as it can get here (${(before / 1048576).toFixed(2)} MB).`); return; }
-    await loadBytes(new Uint8Array(out), state.fileName); markDirty();
-    toast(`Reduced from ${(before / 1048576).toFixed(2)} MB to ${(after / 1048576).toFixed(2)} MB (${changed} picture${changed === 1 ? '' : 's'} re-compressed). Save to keep it.`);
+    await khzApplyInPlace(new Uint8Array(out), { dropComments: !!o.comments });
+    toast(`Reduced from ${(before / 1048576).toFixed(2)} MB to ${(after / 1048576).toFixed(2)} MB (${changed} picture${changed === 1 ? '' : 's'} re-compressed). Save to keep it; Ctrl+Z undoes it.`);
   } catch (e) { showLoading(false); alert('Could not reduce the file size: ' + e.message); }
   finally { tabReplace--; }
 };
@@ -34219,8 +34379,9 @@ function khzFieldDA(form, field) {
 function khzFieldAppearance(doc, form, field, cache) {
   const L = PDFLib;
   if (!(field instanceof L.PDFTextField || field instanceof L.PDFDropdown || field instanceof L.PDFOptionList)) return;
-  const info = khzFieldDA(form, field), std = khzStdFontFor(info.base); if (!std) return;
-  const font = cache[std] || (cache[std] = doc.embedStandardFont(std));
+  const info = khzFieldDA(form, field), std = khzStdFontFor(info.base), fb = doc._khzFieldFonts && doc._khzFieldFonts[field.getName()];
+  if (!std && !fb) return;
+  const font = fb || cache[std] || (cache[std] = doc.embedStandardFont(std));   // (fb: letters the standard font lacks, app187)
   const N = L.PDFName.of, keep = [];
   const remember = d => { const x = d.get(N('DA')); keep.push([d, x]); };
   remember(field.acroField.dict); try { field.acroField.getWidgets().forEach(w => remember(w.dict)); } catch (e) {}
@@ -36000,7 +36161,8 @@ async function khzPreflightRun(ov) {
   out.innerHTML = '<div class="es-note">Working…</div>';
   try {
     const L = PDFLib, N = L.PDFName.of;
-    const bytes = await buildOutputBytes({ fullSave: true });
+    // (a fix changes the open document in place, so comments the app draws stay separate: commitOnly)
+    const bytes = await buildOutputBytes(/-fix$/.test(k) ? { commitOnly: true } : { fullSave: true });
     if (k === 'pdfa' || k === 'pdfx' || k === 'colour') { const r = await khzStdCheck(bytes, k === 'colour' ? 'print' : k); out.innerHTML = `<div class="tcs-h">${r.every(x => x.ok) ? 'No problems found' : r.filter(x => !x.ok).length + ' problem(s) found'}</div>` + khzReportHtml(r) + (k === 'pdfa' && !r.every(x => x.ok) ? '<div class="es-note">Pick "Convert to PDF/A-2b" and click Analyze to fix these.</div>' : ''); return; }
     if (k === 'fonts') { const doc = await L.PDFDocument.load(bytes, { updateMetadata: false }); const list = []; for (const [, o] of khzLiveObjects(doc.context)) if (o instanceof L.PDFDict && String(o.get(N('Type'))) === '/Font' && !['/Type3', '/CIDFontType0', '/CIDFontType2'].includes(String(o.get(N('Subtype')))) && khzFontNeedsEmbed(o)) list.push(String(o.get(N('BaseFont')) || '?').slice(1)); out.innerHTML = list.length ? khzReportHtml([...new Set(list)].map(f => ({ ok: false, text: f + ' is not embedded' }))) : khzReportHtml([{ ok: true, text: 'All fonts are embedded' }]); return; }
     if (k === 'images') {
@@ -36027,7 +36189,7 @@ async function khzPreflightRun(ov) {
       report.push({ ok: true, text: n ? `Removed ${n} script(s), action(s) or attachment list(s)` : 'Nothing to remove' }); outBytes = await doc.save();
     }
     tabReplace++;
-    try { await loadBytes(outBytes, state.fileName); markDirty(); } finally { tabReplace--; }
+    try { await khzApplyInPlace(outBytes); } finally { tabReplace--; }
     out.innerHTML = '<div class="tcs-h">Fixed</div>' + khzReportHtml(report) + '<div class="es-note">Save the file to keep the changes (Ctrl+Z undoes them).</div>';
   } catch (e) { console.error(e); out.innerHTML = '<div class="es-note">Preflight could not finish: ' + escapeHtml(e.message || String(e)) + '</div>'; }
 }
@@ -36133,6 +36295,7 @@ async function khzAutotag(opts = {}) {
     const key = (e, n) => (e.type === 'P' || e.type === 'Artifact') && e.text && band(e, n) ? e.text.replace(/\d+/g, '#') + '@' + Math.round(e.bbox[1] / 6) : null, cnt = {};
     Object.entries(pages).forEach(([n, l]) => l.forEach(e => { const k = key(e, n); if (k) cnt[k] = (cnt[k] || 0) + 1; }));
     if (state.totalPages >= 2) Object.entries(pages).forEach(([n, l]) => l.forEach(e => { const k = key(e, n); if (k && cnt[k] >= Math.max(2, state.totalPages * 0.5) && e.text.length < 100) e.type = 'Artifact'; }));
+    if (!await khzTagSignedOk()) { showLoading(false); return; }
     state.khzTags = { pages, med, at: Date.now() };
     if (!state.docProps || !state.docProps.lang) state.docProps = { ...(state.docProps || {}), lang: (state.docProps && state.docProps.lang) || navigator.language || 'en-US', displayTitle: true };
     markDirty();
@@ -36239,7 +36402,11 @@ function khzTagContent(content, pageEls, mcBase) {
 async function khzApplyTags(bytes) {
   const T = state.khzTags; if (!T) return bytes;
   const L = PDFLib, N = L.PDFName.of;
-  if (bytesToLatin1(bytes).indexOf('/ByteRange') >= 0) return bytes;   // never rewrite a signed file
+  // a signed file (real signatures, not just the word "/ByteRange" somewhere in it): you agreed to tag it
+  // (khzTagSignedOk), and the tags are added as an update after the signatures, so the signed version stays in the file
+  // as it was; a document certified to allow no changes keeps no tags
+  const signed = (state.digitalSigs || []).length > 0;
+  if (signed && state.certInfo && state.certInfo.P === 1) return bytes;
   const doc = await L.PDFDocument.load(bytes, { updateMetadata: false }), ctx = doc.context, cat = doc.catalog;
   // drop any old structure
   ['StructTreeRoot'].forEach(k => cat.delete(N(k)));
@@ -36321,7 +36488,16 @@ async function khzApplyTags(bytes) {
   const lang = (state.docProps && state.docProps.lang) || navigator.language || 'en-US';
   if (!cat.get(N('Lang'))) cat.set(N('Lang'), L.PDFString.of(lang));
   const vpref = cat.lookup(N('ViewerPreferences')); if (vpref instanceof L.PDFDict) vpref.set(N('DisplayDocTitle'), L.PDFBool.True); else cat.set(N('ViewerPreferences'), ctx.obj({ DisplayDocTitle: true }));
-  return doc.save();
+  return signed ? khzIncrementalFrom(bytes, doc) : doc.save();
+}
+// tagging a signed document, like Acrobat: tags change the pages, which isn't one of the changes a signature allows,
+// so the signatures will show as changed after signing. Ask first; a document certified to allow no changes can't
+// take tags at all.
+async function khzTagSignedOk() {
+  if (!(state.digitalSigs || []).length) return true;
+  if (state.certInfo && state.certInfo.P === 1) { alert('This document is certified to allow no changes, so it can\u2019t be tagged.'); return false; }
+  showLoading(false);
+  return await khzConfirm('This document is signed. Adding tags changes its pages, so the signatures will show that the document was changed after signing (the signed version stays in the file).\n\nTag it anyway?');
 }
 {
   const _b = buildOutputBytes;
@@ -43025,33 +43201,95 @@ function khzDedupeOverprint(tc) {
   tc.items = out;
   return tc;
 }
-// bullets and ticks set in Wingdings / Symbol fonts have no letters behind them: keep the font's own character code
-// (Word shows them in the same symbol font, like Acrobat's export), instead of an unknown character
-async function khzSymbolChars(n, tc) {
-  if (!tc.items.some(it => it.str && it.str.includes('\uFFFD'))) return tc;
-  const ps = state.pages[n], pg = ps && ps.origPage; if (!pg) return tc;
-  const sym = fn => { try { const o = pg.commonObjs.has(fn) && pg.commonObjs.get(fn); return o && /wingding|webding|dingbat|symbol/i.test(o.name || ''); } catch (e) { return false; } };
-  const ol = await pg.getOperatorList(), O = pdfjsLib.OPS, codes = {};
+// Letters the file gives no character for (the PDF engine reports "�"). Like reading the page: each such letter
+// is identified from the font itself, never guessed:
+//  • symbol fonts (Wingdings, Symbol…): bullets and ticks keep the font's own character code (Word shows them in the
+//    same symbol font, like Acrobat's export)
+//  • other fonts: the letter's shape is compared with the letters of the same font that are known on the page,
+//    alone and joined as the usual ligatures (fi, fl, ff, ffi, ffl, ft, tt, ti, Th…): a match with the same shape and
+//    width names it. A file's "Residen?al" is Word's "ti" ligature with its character left out, found this way.
+//  • no match: the letter stays unknown ("�"), so nothing wrong is written into the page if it's edited.
+const KHZ_LIGS = ['fi', 'fl', 'ff', 'ffi', 'ffl', 'ft', 'fj', 'fb', 'fh', 'fk', 'ffj', 'ffb', 'ffh', 'ffk', 'fft', 'tt', 'ti', 'tti', 'tf', 'tz', 'Th', 'st', 'ct', 'sp'];
+async function khzUnknownChars(n, tc, pg) {
+  const FFFD = '�';
+  if (!tc.items.some(it => it.str && it.str.includes(FFFD))) return tc;
+  pg = pg || (state.pages[n] && state.pages[n].origPage); if (!pg) return tc;
+  const fontObj = fn => { try { return pg.commonObjs.has(fn) ? pg.commonObjs.get(fn) : null; } catch (e) { return null; } };
+  const sym = fn => { const o = fontObj(fn); return !!(o && /wingding|webding|dingbat|symbol/i.test(o.name || '')); };
+  const ol = await pg.getOperatorList(), O = pdfjsLib.OPS;
+  const unknown = {}, known = {};   // per font: the unknown letters in order; the known letters' drawing codes and widths
   let font = null;
   for (let i = 0; i < ol.fnArray.length; i++) {
     const f = ol.fnArray[i], a = ol.argsArray[i];
     if (f === O.setFont) font = a[0];
-    else if ((f === O.showText || f === O.showSpacedText) && font) (a[0] || []).forEach(g => { if (g && typeof g === 'object' && !g.isSpace && g.originalCharCode !== undefined) (codes[font] = codes[font] || []).push(g); });
+    else if ((f === O.showText || f === O.showSpacedText) && font) (a[0] || []).forEach(g => {
+      if (!g || typeof g !== 'object' || g.isSpace) return;
+      if (String(g.unicode).includes(FFFD)) (unknown[font] = unknown[font] || []).push(g);
+      else if (g.unicode && g.unicode.length === 1 && g.fontChar) { const k = known[font] = known[font] || {}; if (!k[g.unicode]) k[g.unicode] = { ch: g.fontChar, w: g.width }; }
+    });
   }
+  // what each unknown letter is (one answer per font and code)
+  const answer = {};
+  const cv = khzUnknownChars.cv || (khzUnknownChars.cv = document.createElement('canvas'));
+  // a letter's shape: its ink, cropped to its own box and scaled to a fixed grid (so the small spacing differences
+  // inside a ligature don't count), plus its proportions
+  const ink = (family, text) => {
+    const S = 64; cv.width = S * 4; cv.height = S * 2;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, cv.width, cv.height);
+    g.font = `${S}px "${family}"`; g.fillStyle = '#000'; g.textBaseline = 'alphabetic'; g.fillText(text, 4, S * 1.4);
+    const d = g.getImageData(0, 0, cv.width, cv.height).data, W = cv.width, H = cv.height;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3] > 100) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const G = 40, on = new Uint8Array(G * G);
+    if (x1 < 0) return { on, ar: 0, top: 0, bot: 0 };
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) { const x = x0 + Math.floor((gx + 0.5) * bw / G), y = y0 + Math.floor((gy + 0.5) * bh / G); on[gy * G + gx] = d[(y * W + x) * 4 + 3] > 100 ? 1 : 0; }
+    return { on, ar: bw / bh, top: y0, bot: y1 };
+  };
+  const iou = (A, B) => {
+    if (!A.ar || !B.ar) return 0;
+    let i = 0, u = 0; for (let p = 0; p < A.on.length; p++) { if (A.on[p] || B.on[p]) u++; if (A.on[p] && B.on[p]) i++; }
+    // proportions and height on the line must agree too
+    const ar = Math.min(A.ar, B.ar) / Math.max(A.ar, B.ar), v = Math.abs(A.top - B.top) + Math.abs(A.bot - B.bot) <= 4 ? 1 : 0.5;
+    return u ? (i / u) * Math.sqrt(ar) * v : 0;
+  };
+  for (const fn of Object.keys(unknown)) {
+    const fo = fontObj(fn), fam = fo && fo.loadedName, isSym = sym(fn);
+    for (const g of unknown[fn]) {
+      const key = fn + ':' + g.originalCharCode; if (key in answer) continue;
+      if (isSym) { answer[key] = String.fromCharCode(0xF000 + (g.originalCharCode & 0xFF)); continue; }
+      answer[key] = FFFD;
+      if (!fam || !g.fontChar || !document.fonts || !document.fonts.check(`12px "${fam}"`)) continue;
+      const k = known[fn] || {};
+      const cands = [...Object.keys(k), ...KHZ_LIGS.filter(l => [...l].every(c => k[c]))];
+      const target = ink(fam, g.fontChar);
+      let best = null, bs = 0, second = 0;
+      for (const c of cands) {
+        const w = [...c].reduce((s, ch) => s + (k[ch].w || 0), 0);
+        if (g.width && w && Math.abs(w / g.width - 1) > 0.25) continue;   // a ligature is about as wide as its letters
+        const sc = iou(target, ink(fam, [...c].map(ch => k[ch].ch).join('')));
+        if (sc > bs) { second = bs; bs = sc; best = c; } else if (sc > second) second = sc;
+      }
+      // a close match, or a fair one that is clearly better than anything else (a ligature's joined strokes, like
+      // the shared bar of "tt", never match its letters exactly)
+      if (best && (bs >= 0.8 || (bs >= 0.65 && bs - second >= 0.1))) answer[key] = best;
+    }
+  }
+  // put the answers into the text, in drawing order per font
   const pos = {};
   tc.items.forEach(it => {
-    if (!it.str || !it.str.includes('\uFFFD') || !sym(it.fontName)) return;
-    const list = codes[it.fontName] || []; let k = pos[it.fontName] || 0;
-    it.str = it.str.replace(/\uFFFD/g, () => { const g = list[k++]; if (!g) return '\u2022'; return String.fromCharCode(0xF000 + (g.originalCharCode & 0xFF)); });
+    if (!it.str || !it.str.includes(FFFD)) return;
+    const list = unknown[it.fontName] || []; let k = pos[it.fontName] || 0;
+    it.str = it.str.replace(/�/g, () => { const g = list[k++]; return g ? answer[it.fontName + ':' + g.originalCharCode] || FFFD : FFFD; });
     pos[it.fontName] = k;
   });
   return tc;
 }
-// a page's text as read from the PDF, cleaned: overprinted "fake bold" read once, symbol-font bullets kept
+// a page's text as read from the PDF, cleaned: overprinted "fake bold" read once, letters without characters identified
 // (used by the one page-text reader, getTextContent in app1)
-async function khzCleanPageText(n, tc) {
+async function khzCleanPageText(n, tc, pg) {
   try { tc = khzDedupeOverprint(tc); } catch (e) {}
-  try { return await khzSymbolChars(n, tc); } catch (e) { return tc; }
+  try { return await khzUnknownChars(n, tc, pg); } catch (e) { return tc; }
 }
 
 // justified paragraphs: every line but the last starts and ends at the same place
@@ -44100,19 +44338,21 @@ function khzBackdropPx(vp, dpr) {
   };
 }
 // pictures of earlier zoom levels
-const khzZc = [];   // [{ ps, key, c, capped, px }]
+const khzZc = [];   // [{ ps, page, key, c, capped, px }] — page: the page copy it was drawn from (an edit makes a new one)
 let khzZcPx = 0;
 const KHZ_ZC_MAX = 80e6;
 function khzZcPut(ps, key, c, capped) {
   if (!c || !(c.width > 1)) return;
   const i = khzZc.findIndex(e => e.ps === ps && e.key === key); if (i >= 0) { khzZcPx -= khzZc[i].px; khzZc.splice(i, 1); }
-  const px = c.width * c.height; khzZc.push({ ps, key, c, capped, px }); khzZcPx += px;
+  // pictures of this page drawn before an edit show the page as it was: they go
+  for (let j = khzZc.length - 1; j >= 0; j--) { const e = khzZc[j]; if (e.ps === ps && e.page !== ps.page) { khzZcPx -= e.px; khzZc.splice(j, 1); if (e.c !== ps.canvas) e.c.width = e.c.height = 0; } }
+  const px = c.width * c.height; khzZc.push({ ps, page: ps.page, key, c, capped, px }); khzZcPx += px;
   while (khzZcPx > KHZ_ZC_MAX && khzZc.length > 1) {
     const e = khzZc.shift(); khzZcPx -= e.px;
     if (e.c !== e.ps.canvas) { e.c.width = e.c.height = 0; }   // never blank the picture on screen
   }
 }
-function khzZcGet(ps, key) { const e = khzZc.find(x => x.ps === ps && x.key === key && x.c.width > 1); return e || null; }
+function khzZcGet(ps, key) { const e = khzZc.find(x => x.ps === ps && x.page === ps.page && x.key === key && x.c.width > 1); return e || null; }
 {
   const _rc = renderCanvas;
   renderCanvas = async function (ps, key) {
@@ -44129,7 +44369,7 @@ function khzZcGet(ps, key) { const e = khzZc.find(x => x.ps === ps && x.key === 
         if (e && e.c !== ps.canvas) {
           if (ps.task) { try { ps.task.cancel(); } catch (err) {} ps.task = null; }
           ps.wrapper.replaceChild(e.c, ps.canvas); ps.canvas = e.c; ps.renderedKey = key; ps.renderingKey = null; ps.capped = e.capped; ps._khzPvShown = false; khzPageDrawn(ps);
-          ps.wrapper.querySelectorAll('.page-tile').forEach(t => { if (t.dataset.key !== key) t.remove(); });
+          ps.wrapper.querySelectorAll('.page-tile').forEach(t => { if (t.dataset.key !== key || t._khzPage !== ps.page) t.remove(); });
           if (typeof renderTextLayer === 'function') renderTextLayer(ps);
           if (ps.capped) scheduleTiles(0);
           khzZcPut(ps, key, e.c, e.capped);   // most recently used
@@ -50826,6 +51066,241 @@ drawPrimSVG = (prev => function (p, g) {
   }
   return prev.apply(this, arguments);
 })(drawPrimSVG);
+// ================================================================
+//  REMOVE HIDDEN INFORMATION reads the page's drawing commands properly (like Acrobat), instead of searching the
+//  text of the page for patterns:
+//  • hidden text = text drawn in "invisible" mode (Tr 3). The mode is followed as the page sets it — it carries on
+//    across text blocks and is restored by Q — so text made invisible before its block, or in a block that also
+//    draws visible text, is found too; only the invisible letters go.
+//  • hidden layers = everything marked as belonging to a layer that is off (BDC /OC …, nested marks counted), and
+//    pictures / drawings whose own /OC is a layer that is off. Layer groups (OCMD) are worked out by their rule.
+//  • both are followed into form objects (drawings used inside the page), at any depth: a copy of the form object
+//    is changed, the original may be used elsewhere.
+// ================================================================
+function khzTokOps(str) {
+  // the page's commands, each with where its operands start and where it ends
+  const out = []; let i = 0; const n = str.length; let operands = [], opStart = -1, arrDepth = 0, dictDepth = 0;
+  const ws = c => c === 32 || c === 10 || c === 13 || c === 9 || c === 12 || c === 0;
+  const delim = c => c === 40 || c === 41 || c === 60 || c === 62 || c === 91 || c === 93 || c === 123 || c === 125 || c === 47 || c === 37;
+  const operand = (o, st) => { if (opStart < 0) opStart = st; if (!arrDepth && !dictDepth) operands.push(o); };
+  while (i < n) {
+    const c = str.charCodeAt(i);
+    if (ws(c)) { i++; continue; }
+    if (c === 37) { while (i < n && str[i] !== '\n' && str[i] !== '\r') i++; continue; }
+    const st = i;
+    if (c === 40) { let d = 0; for (; i < n; i++) { const ch = str[i]; if (ch === '\\') { i++; continue; } if (ch === '(') d++; else if (ch === ')') { d--; if (!d) { i++; break; } } } operand({ t: 's', v: str.slice(st, i) }, st); continue; }
+    if (c === 60 && str[i + 1] === '<') { dictDepth++; if (opStart < 0) opStart = st; i += 2; continue; }
+    if (c === 62 && str[i + 1] === '>') { dictDepth = Math.max(0, dictDepth - 1); i += 2; if (!dictDepth && !arrDepth) operands.push({ t: 'd', v: str.slice(st, i) }); continue; }
+    if (c === 60) { const e = str.indexOf('>', i); i = e < 0 ? n : e + 1; operand({ t: 's', v: str.slice(st, i) }, st); continue; }
+    if (c === 91) { if (opStart < 0) opStart = st; if (!arrDepth && !dictDepth) operands.push({ t: 'a', start: st }); arrDepth++; i++; continue; }
+    if (c === 93) { arrDepth = Math.max(0, arrDepth - 1); i++; continue; }
+    if (c === 123 || c === 125) { i++; continue; }
+    if (c === 47) { i++; while (i < n && !ws(str.charCodeAt(i)) && !delim(str.charCodeAt(i))) i++; operand({ t: 'n', v: str.slice(st + 1, i) }, st); continue; }
+    if ((c >= 48 && c <= 57) || c === 43 || c === 45 || c === 46) { i++; while (i < n && /[0-9.]/.test(str[i])) i++; operand({ t: '#', v: parseFloat(str.slice(st, i)) }, st); continue; }
+    while (i < n && !ws(str.charCodeAt(i)) && !delim(str.charCodeAt(i))) i++;
+    const op = str.slice(st, i); if (!op) { i++; continue; }
+    if (arrDepth || dictDepth) continue;   // (a keyword inside an array or dictionary, like true / null)
+    if (op === 'true' || op === 'false' || op === 'null') { operand({ t: 'k', v: op }, st); continue; }
+    if (op === 'BI') {   // inline picture: up to EI
+      const id = str.indexOf('ID', i); const j = id < 0 ? n : id + 3;
+      const re = /[\s\0]EI(?=[\s\0]|$)/g; re.lastIndex = j; const mm = re.exec(str); i = mm ? mm.index + 3 : n;
+      out.push({ op: 'BI', start: st, end: i, operands: [] }); operands = []; opStart = -1; continue;
+    }
+    out.push({ op, start: opStart < 0 ? st : opStart, end: i, operands }); operands = []; opStart = -1;
+  }
+  return out;
+}
+
+// which layers are off in the document's default view, and a test for a layer or layer group (OCMD)
+function khzOffLayers(doc) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context;
+  const ocp = doc.catalog.lookupMaybe(N('OCProperties'), L.PDFDict); if (!ocp) return null;
+  const all = ocp.lookup(N('OCGs')), D = ocp.lookupMaybe(N('D'), L.PDFDict);
+  const tag = r => r instanceof L.PDFRef ? r.tag : null;
+  const off = new Set();
+  const base = D && D.get(N('BaseState')) ? String(D.get(N('BaseState'))) : '/ON';
+  const list = k => { const a = D && D.lookup(N(k)); return a && a.asArray ? a.asArray().map(tag).filter(Boolean) : []; };
+  if (base === '/OFF') { const on = new Set(list('ON')); (all && all.asArray ? all.asArray() : []).forEach(r => { if (tag(r) && !on.has(tag(r))) off.add(tag(r)); }); }
+  else list('OFF').forEach(t => off.add(t));
+  const hidden = (ref, depth = 0) => {
+    const o = ref instanceof L.PDFRef ? ctx.lookup(ref) : ref;
+    if (!(o instanceof L.PDFDict) || depth > 8) return false;
+    const type = String(o.get(N('Type')) || '');
+    if (type === '/OCMD') {   // a group: visible by its rule (AnyOn unless said otherwise)
+      let ocgs = o.get(N('OCGs')); ocgs = ocgs instanceof L.PDFArray ? ocgs.asArray() : ocgs ? [ocgs] : [];
+      if (!ocgs.length) return false;
+      const vis = ocgs.map(r => !(r instanceof L.PDFRef && off.has(r.tag)));
+      const P = String(o.get(N('P')) || '/AnyOn');
+      const shown = P === '/AllOn' ? vis.every(Boolean) : P === '/AnyOff' ? vis.some(v => !v) : P === '/AllOff' ? vis.every(v => !v) : vis.some(Boolean);
+      return !shown;
+    }
+    return ref instanceof L.PDFRef && off.has(ref.tag);
+  };
+  return { off, hidden };
+}
+
+// one stream's commands with hidden things taken out; recurses into form objects. Returns { str, changed, removed }
+function khzSanitizeStream(doc, str, res, opts, state0, depth = 0) {
+  const L = PDFLib, N = k => L.PDFName.of(k), ctx = doc.context;
+  const ops = khzTokOps(str), reps = [];
+  let Tr = state0.Tr; const stack = [];
+  let skipDepth = 0, skipFrom = -1, removed = 0;
+  const props = res && res.lookupMaybe ? res.lookupMaybe(N('Properties'), L.PDFDict) : null;
+  const xobjs = res && res.lookupMaybe ? res.lookupMaybe(N('XObject'), L.PDFDict) : null;
+  const ocHidden = nm => { if (!opts.layers || !props) return false; const r = props.get(N(nm)); return !!r && opts.layers.hidden(r); };
+  for (const o of ops) {
+    if (skipDepth) {   // inside a hidden layer: everything goes, up to its matching EMC
+      if (o.op === 'BDC' || o.op === 'BMC') skipDepth++;
+      else if (o.op === 'EMC' && --skipDepth === 0) { reps.push({ start: skipFrom, end: o.end, text: '' }); removed++; }
+      // (graphics state still has to be followed inside, for what comes after)
+      if (o.op === 'q') stack.push(Tr); else if (o.op === 'Q') Tr = stack.length ? stack.pop() : Tr; else if (o.op === 'Tr') Tr = o.operands[0] ? o.operands[0].v : Tr;
+      continue;
+    }
+    switch (o.op) {
+      case 'q': stack.push(Tr); break;
+      case 'Q': if (stack.length) Tr = stack.pop(); break;
+      case 'Tr': if (o.operands[0] && o.operands[0].t === '#') Tr = o.operands[0].v; break;
+      case 'BDC': {
+        const a = o.operands;
+        if (a[0] && a[0].t === 'n' && a[0].v === 'OC' && a[1] && a[1].t === 'n' && ocHidden(a[1].v)) { skipDepth = 1; skipFrom = o.start; }
+        break;
+      }
+      case 'Tj': case 'TJ': case "'": case '"':
+        if (opts.hiddentext && Tr === 3) {   // invisible letters: gone (the line moves of ' and " are kept)
+          const keep = o.op === "'" ? 'T*' : o.op === '"' ? `${o.operands[0] ? o.operands[0].v : 0} Tw ${o.operands[1] ? o.operands[1].v : 0} Tc T*` : '';
+          reps.push({ start: o.start, end: o.end, text: keep }); removed++;
+        }
+        break;
+      case 'Do': {
+        const nm = o.operands[0] && o.operands[0].t === 'n' ? o.operands[0].v : null; if (!nm || !xobjs) break;
+        const ref = xobjs.get(N(nm)), x = ref && ctx.lookup(ref); if (!x || !x.dict) break;
+        const oc = x.dict.get(N('OC'));
+        if (opts.layers && oc && opts.layers.hidden(oc)) { reps.push({ start: o.start, end: o.end, text: '' }); removed++; break; }
+        if (String(x.dict.get(N('Subtype'))) !== '/Form' || depth > 12) break;
+        let fstr; try { fstr = bytesToLatin1(x instanceof L.PDFRawStream ? L.decodePDFRawStream(x).decode() : (x.getUnencodedContents ? x.getUnencodedContents() : x.getContents())); } catch (e) { break; }
+        const fres = x.dict.lookup(N('Resources')) || res;
+        const r = khzSanitizeStream(doc, fstr, fres, opts, { Tr }, depth + 1);
+        if (!r.changed) break;
+        if (opts.dry) { removed += r.removed; break; }
+        const dict = {}; for (const [k, v] of x.dict.entries()) { const kn = k.asString(); if (!['/Length', '/Filter', '/DecodeParms'].includes(kn)) dict[kn.slice(1)] = v; }
+        if (!x.dict.get(N('Resources')) && fres) dict.Resources = fres;
+        const nref = ctx.register(ctx.flateStream(latin1ToBytes(r.str), dict));
+        let nn = nm + 'H', k = 1; while (xobjs.get(N(nn))) nn = nm + 'H' + (k++);
+        xobjs.set(N(nn), nref);
+        reps.push({ start: o.start, end: o.end, text: `/${nn} Do` }); removed += r.removed;
+        break;
+      }
+    }
+  }
+  if (skipDepth && skipFrom >= 0) { reps.push({ start: skipFrom, end: str.length, text: '' }); removed++; }   // (unclosed mark)
+  if (!reps.length) return { str, changed: false, removed: 0 };
+  let s = str;
+  reps.sort((a, b) => b.start - a.start).forEach(r => { s = s.slice(0, r.start) + r.text + s.slice(r.end); });
+  return { str: s, changed: true, removed };
+}
+// a page: count (dry run) or take out hidden text / hidden layers. Returns how many things were found
+function khzSanitizePage(doc, lp, opts, write) {
+  const str = pageContentString(doc, lp);
+  const r = khzSanitizeStream(doc, str, lp.node.Resources(), write ? opts : { ...opts, dry: true }, { Tr: 0 });
+  if (write && r.changed) lp.node.set(PDFLib.PDFName.of('Contents'), doc.context.register(doc.context.flateStream(latin1ToBytes(r.str))));
+  return r.removed;
+}
+
+// ================================================================
+//  LETTERS THE CHOSEN FONT DOESN'T HAVE (Greek, Cyrillic, symbols…) are saved with a font that has them, like Acrobat,
+//  instead of "?": first the bundled Carlito (Latin, Greek, Cyrillic), then a font on this computer that has the
+//  letter (common Unicode fonts, when the browser may read the computer's fonts). Only when no font has it does it
+//  stay "?" — and you're told.
+// ================================================================
+const KHZ_FB_FAMILIES = ['Segoe UI', 'Segoe UI Symbol', 'Segoe UI Emoji', 'Arial Unicode MS', 'Arial', 'Calibri', 'Cambria Math', 'Microsoft YaHei', 'Yu Gothic', 'MS Gothic', 'Malgun Gothic', 'Nirmala UI', 'Ebrima', 'Gadugi', 'Leelawadee UI',
+  'Noto Sans', 'Noto Sans Symbols', 'Noto Sans Symbols 2', 'Noto Sans Math', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans CJK JP', 'DejaVu Sans', 'Liberation Sans', 'FreeSans', 'Symbola', 'Lucida Grande', 'Apple Symbols', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans'];
+// (an embedded font accepts anything and would draw an empty box, so its own glyph table is asked)
+const khzCanEncode = (font, ch) => {
+  const kit = font && font.embedder && font.embedder.font;
+  if (kit && kit.hasGlyphForCodePoint) { if (/\s/.test(ch)) return true; return kit.hasGlyphForCodePoint(ch.codePointAt(0)); }
+  // (a standard font: its encoding says; the pdf-lib in use writes "?" for a letter it can't encode instead of refusing)
+  const enc = font && font.embedder && font.embedder.encoding;
+  if (enc && enc.canEncodeUnicodeCodePoint) return enc.canEncodeUnicodeCodePoint(ch.codePointAt(0));
+  try { font.encodeText(ch); return true; } catch (e) { return false; }
+};
+async function khzFallbackFont(doc, ctx, ch, bold, all) {   // all: a whole text the font must have (optional)
+  ctx._fb = ctx._fb || { list: null, miss: new Set() };
+  const F = ctx._fb, key = bold ? 'B' : '';
+  if (!F.list) {
+    F.list = [];
+    const fk = await loadFontkit(); if (!fk) return null;
+    try { doc.registerFontkit(fk); } catch (e) {}
+    F.fk = fk;
+    if (typeof CARLITO_400 !== 'undefined') F.list.push({ name: 'Carlito', bytes: { '': b64ToBytes(CARLITO_400), B: b64ToBytes(CARLITO_700) } });
+    try { if (typeof sysFonts !== 'undefined' && !sysFonts.granted && typeof requestLocalFonts === 'function') await requestLocalFonts(true); } catch (e) {}
+    if (typeof sysFonts !== 'undefined' && sysFonts.local) KHZ_FB_FAMILIES.forEach(n => { if (sysFonts.local.has(n)) F.list.push({ name: n, sys: true, bytes: {} }); });
+  }
+  for (const f of F.list) {
+    if (!f.bytes[key] && f.sys && !(key in f.bytes)) f.bytes[key] = await fontFileFor(f.name, key, F.fk) || (key ? await fontFileFor(f.name, '', F.fk) : null);
+    const bytes = f.bytes[key] || f.bytes['']; if (!bytes) continue;
+    f.kit = f.kit || {}; if (!f.kit[key]) { try { f.kit[key] = F.fk.create(bytes); } catch (e) { f.kit[key] = null; } }
+    const kit = f.kit[key]; if (!kit) continue;
+    const want = all ? [...new Set([...all].filter(c => !/\s/.test(c)))] : [ch];
+    if (!kit.hasGlyphForCodePoint || !want.every(c => kit.hasGlyphForCodePoint(c.codePointAt(0)))) continue;
+    f.emb = f.emb || {};
+    if (!f.emb[key]) { try { f.emb[key] = await khzEmbedFace(doc, bytes, F.fk, ch); } catch (e) { console.warn('fallback font', f.name, e); f.emb[key] = null; continue; } }
+    return f.emb[key];
+  }
+  if (!all) F.miss.add(ch);   // (no font has this letter: said after saving)
+  return null;
+}
+// the text split into pieces, each with a font that has its letters
+async function khzTextRuns(doc, ctx, text, font, bold) {
+  const runs = [];
+  const push = (f, t) => { const last = runs[runs.length - 1]; if (last && last.font === f) last.t += t; else runs.push({ font: f, t }); };
+  for (const w of String(text).split(/(\s+)/)) {
+    if (!w) continue;
+    const bad = [...w].filter(ch => !khzCanEncode(font, ch));
+    if (!bad.length) { push(font, w); continue; }
+    // a word with a letter this font lacks is drawn wholly in one font that has all its letters, when there is one
+    const whole = await khzFallbackFont(doc, ctx, bad[0], bold, w);
+    if (whole) { push(whole, w); continue; }
+    for (const ch of w) {
+      if (khzCanEncode(font, ch)) { push(font, ch); continue; }
+      const f = await khzFallbackFont(doc, ctx, ch, bold);
+      if (f) push(f, ch); else push(font, khzCanEncode(font, '?') ? '?' : ' ');
+    }
+  }
+  return runs;
+}
+const khzRunsWidth = (runs, size, ls = 0) => runs.reduce((w, r) => w + r.font.widthOfTextAtSize(r.t, size) + ls * [...r.t].length, 0);
+// draw the pieces one after another along the line (turned with the text)
+function khzDrawRuns(lp, runs, o) {
+  const A = (o.rotate ? o.rotate.angle || 0 : 0) * Math.PI / 180, ls = o.ls || 0;
+  let x = o.x, y = o.y;
+  for (const r of runs) {
+    if (r.t) lp.drawText(r.t, { ...o, x, y, font: r.font });
+    const w = r.font.widthOfTextAtSize(r.t, o.size) + ls * [...r.t].length;
+    x += w * Math.cos(A); y += w * Math.sin(A);
+  }
+}
+// after a save: letters no font had
+function khzMissingGlyphNote(ctx) {
+  const m = ctx && ctx._fb && ctx._fb.miss; if (!m || !m.size) return;
+  toast(`Some characters (${[...m].slice(0, 8).join(' ')}) aren’t in any font KHZ PDF could find, so they were saved as "?".`);
+}
+// form field values with letters the field's standard font doesn't have get their look drawn with a font that has them
+// (worked out before the fields are written, since that part can't wait for a font: khzFieldAppearance, app107)
+addCalibriFonts = (prev => async function (doc, ctx) {
+  const r = await prev.apply(this, arguments);
+  doc._khzFieldFonts = {};
+  try {
+    const names = state.formChanged ? [...state.formChanged] : [];
+    const helv = ctx.fonts.sans;
+    for (const nm of names) {
+      const v = String((state.formValues || {})[nm] ?? ''); if (!v) continue;
+      const bad = [...v].find(ch => ch !== '\n' && ch !== '\r' && !khzCanEncode(helv, ch)); if (!bad) continue;
+      const f = await khzFallbackFont(doc, ctx, bad, false, v.replace(/[\r\n]/g, ''));
+      if (f && [...v].every(ch => ch === '\n' || ch === '\r' || khzCanEncode(f, ch))) doc._khzFieldFonts[nm] = f;
+    }
+  } catch (e) { console.warn('field fonts', e); }
+  return r;
+})(addCalibriFonts);
 </script>
 </body>
 </html>
