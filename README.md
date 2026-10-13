@@ -5,8 +5,8 @@
 <h1 align="center">KHZ PDF</h1>
 
 <p align="center">
-  A full-featured PDF editor that runs entirely in your web browser — no sign-up, no uploads, no install required.<br>
-  <b><a href="https://brandonaog.github.io/PDF/">Open KHZ PDF →</a></b>
+  A full-featured PDF editor for your web browser, Windows and Mac — no sign-up, no uploads.<br>
+  <b><a href="https://brandonaog.github.io/PDF/">Open KHZ PDF →</a></b> · <b><a href="https://github.com/BrandonAOG/PDF/releases/latest">Download for Windows or Mac →</a></b>
 </p>
 
 ---
@@ -14,22 +14,25 @@
 ## Why KHZ PDF
 
 - **Private by design** – your PDFs are opened and edited on your own computer. Nothing is uploaded to a server.
-- **One file** – the whole app is a single `khz-pdf.html`. Run it from the web, or double-click it from your computer.
-- **Installs like a real app** – add it to your Start menu, taskbar, Dock or home screen, and it works offline.
+- **Web or desktop** – use it straight from the web (the whole web app is a single `khz-pdf.html`), or install the desktop app for Windows or Mac.
+- **Installs like a real app** – the desktop app opens PDFs from File Explorer and Finder and keeps itself up to date. The web version can also be added to your Start menu, taskbar, Dock or home screen, and works offline.
+- **Fast page drawing** – KHZ Overclock draws pages with PDFium (natively in the desktop app), so deep zoom stays sharp while you scroll.
 - **Real PDF output** – comments, form fields, signatures, crops and page boxes are saved as standard PDF features, so they look and behave the same in other PDF readers.
 
 ## Features
 
 | Area | What you can do |
 |---|---|
-| **View** | Zoom, fit page / width, rotate, page thumbnails, bookmarks, search, full screen |
+| **View** | Zoom, fit page / width, rotate, page thumbnails, bookmarks, search, full screen; KHZ Overclock page engine |
 | **Edit PDF** | Edit existing text and images, add text and images, crop pages (Crop/Art/Trim/Bleed boxes), header & footer, watermark, background, links |
 | **Comment** | Sticky notes, highlight, underline, strikethrough, text boxes, callouts, drawing, shapes, stamps (built-in and custom), file attachments, comment list with replies |
 | **Fill & Sign** | Type into any form, checkmarks / crosses / dots, comb text, saved signatures and initials |
 | **Prepare Form** | Create and edit text fields, checkboxes, radio buttons, dropdowns and signature fields |
 | **Measure** | Distance, perimeter and area with scale, snapping, leader lines and Acrobat-style dimension properties |
 | **Organize Pages** | Insert, delete, extract, split, reorder and rotate pages; combine multiple files into one PDF |
+| **Create** | PDFs from Word and Excel files, images and scans |
 | **Export** | Word (.docx), Excel (.xlsx), PowerPoint (.pptx), images (JPEG / PNG / TIFF), HTML, RTF, text — with OCR for scanned pages |
+| **PDF Standards** | Save as PDF/A and check it (verified with veraPDF in the desktop app) |
 | **Protect** | Password protection, remove hidden information, security envelopes, security policies |
 | **More tools** | Document properties, optimize, accessibility check, print production marks, compare, redact, and more |
 
@@ -46,7 +49,15 @@ Go to **https://brandonaog.github.io/PDF/** in Chrome, Edge, Safari or Firefox a
 > **iPhone / iPad:** open the link in Safari, tap **Share**, then **Add to Home Screen**.
 > **Safari on Mac:** choose **File › Add to Dock…**
 
-### Run it from your computer
+### Desktop app (Windows and Mac)
+Download the installer from the [latest release](https://github.com/BrandonAOG/PDF/releases/latest).
+
+- **Windows:** run `KHZ-PDF-Setup-<version>.exe`. If Windows says "Windows protected your PC", click **More info**, then **Run anyway**. The Windows app checks for updates and installs them itself.
+- **Mac:** pick the file for your Mac (Apple menu › About This Mac): **arm64** for Apple M chips, **intel** for Intel. Unzip it and move **KHZ PDF** to Applications. The first time, **right-click KHZ PDF › Open**, then **Open** again (it isn't from the App Store). To update, download the new zip from the latest release.
+
+The desktop app adds a few things the web version can't do: faster native page drawing, a stronger text-recognition engine, PDF/A checking with veraPDF, ruled-table reading for Export to Excel, and sending email from the app. Everything still runs on your own computer.
+
+### Run the web version from your computer
 Download `khz-pdf.html` and open it in your browser. (An internet connection is needed the first time so the PDF libraries can load.)
 
 ## Files in this repository
@@ -59,21 +70,48 @@ Download `khz-pdf.html` and open it in your browser. (An internet connection is 
 | `sw.js` | Lets the app work offline and load faster |
 | `icons/` | App icons for every platform |
 
+### Releases
+
+Each [release](https://github.com/BrandonAOG/PDF/releases) holds the desktop app:
+
+| File | Purpose |
+|---|---|
+| `KHZ-PDF-Setup-<version>.exe` | Windows installer |
+| `latest.yml`, `KHZ-PDF-Setup-<version>.exe.blockmap` | Tell installed Windows copies a new version is out, and let them download only what changed |
+| `KHZ PDF for Mac (arm64).zip`, `KHZ PDF for Mac (intel).zip` | Mac app for Apple M chips and for Intel Macs |
+
 ## Updating
 
-Upload a new `khz-pdf.html` over the old one. Installed copies pick up the new version the next time they're opened while online.
+- **Web:** upload a new `khz-pdf.html` over the old one. Installed web copies pick up the new version the next time they're opened while online.
+- **Desktop:** publish a new release with the new installer, `latest.yml` and `.blockmap`. Installed Windows copies update themselves.
 
 ## Privacy
 
-KHZ PDF has no server, no account and no tracking. Files you open stay in your browser. Your preferences, saved signatures and stamps are kept in your browser's local storage on your own device.
+KHZ PDF has no server, no account and no tracking. Files you open stay on your device — in your browser, or in the desktop app and its helpers, which run on your own computer. Your preferences, saved signatures and stamps are kept on your own device. The desktop app only goes online to check GitHub for updates, and to send email when you ask it to.
 
 ## Built with
 
-- [PDF.js](https://mozilla.github.io/pdf.js/) – rendering (Apache 2.0)
-- [pdf-lib](https://pdf-lib.js.org/) and [fontkit](https://github.com/Hopding/fontkit) – writing PDFs (MIT)
-- [node-forge](https://github.com/digitalbazaar/forge) – digital signatures and encryption (BSD / GPL)
-- [Tesseract.js](https://tesseract.projectnaptha.com/) – text recognition / OCR (Apache 2.0)
-- [JSZip](https://stuk.github.io/jszip/), [PptxGenJS](https://gitbrent.github.io/PptxGenJS/), [SheetJS](https://sheetjs.com/) – exporting (MIT / Apache 2.0)
+**Web and desktop**
+- [PDF.js](https://mozilla.github.io/pdf.js/) – displays pages, text, forms and comments (Apache-2.0)
+- [pdf-lib](https://github.com/cantoo-scribe/pdf-lib) (Cantoo fork) and [fontkit](https://github.com/foliojs/fontkit) – writing PDFs and embedding fonts (MIT)
+- [PDFium](https://pdfium.googlesource.com/pdfium/) (WebAssembly build [@embedpdf/pdfium](https://github.com/embedpdf/embed-pdf-viewer)) with [Little CMS](https://www.littlecms.com/) – KHZ Overclock page drawing and colour profiles (BSD-3 / Apache-2.0; MIT)
+- [qpdf](https://github.com/qpdf/qpdf) (qpdf-wasm) – password-protected PDFs (Apache-2.0)
+- [node-forge](https://github.com/digitalbazaar/forge) – digital IDs, signing and certificates (BSD-3 / GPL-2)
+- [Tesseract.js](https://tesseract.projectnaptha.com/) – text recognition / OCR (Apache-2.0)
+- [SheetJS](https://sheetjs.com/), [mammoth](https://github.com/mwilliamson/mammoth.js), [PptxGenJS](https://gitbrent.github.io/PptxGenJS/), [JSZip](https://stuk.github.io/jszip/) – Excel, Word and PowerPoint files, and zips (Apache-2.0 / BSD-2 / MIT / MIT)
+- [Typo.js](https://github.com/cfinke/Typo.js) – spell check (BSD / MIT); [bwip-js](https://github.com/metafloor/bwip-js) – barcodes (MIT)
+- Arimo, Tinos, Cousine (Apache-2.0) and Carlito (SIL OFL 1.1) – stand-in fonts
+
+**Desktop app only**
+- [Electron](https://www.electronjs.org/) and [electron-updater](https://www.electron.build/) – the desktop app and its updates (MIT)
+- [PDFium native builds](https://github.com/bblanchon/pdfium-binaries) via [Koffi](https://koffi.dev/) – faster page drawing (BSD-3 / Apache-2.0; MIT)
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) with Leptonica and tessdata_best – Recognize Text (Apache-2.0 / BSD-2)
+- [veraPDF](https://verapdf.org/) – PDF/A checking (MPL-2.0 / GPL-3)
+- [Tabula](https://github.com/tabulapdf/tabula-java) with [Apache PDFBox](https://pdfbox.apache.org/) – ruled tables for Export to Excel (MIT / Apache-2.0)
+- [Eclipse Temurin](https://adoptium.net/) – Java runtime for veraPDF and Tabula (GPL-2.0 with Classpath Exception)
+- [Nodemailer](https://nodemailer.com/) – sending email (MIT-0)
+
+The full list with versions is in **Help › About Plug-Ins**.
 
 ## License
 
