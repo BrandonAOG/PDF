@@ -282,7 +282,8 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   .annotation-layer svg { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
   .annotation-cover-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:3; }
   .annotation-cover-layer svg { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
-  .annotation-blend-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:3; mix-blend-mode:multiply; }
+  .annotation-blend-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:3; }
+  .annotation-blend-layer:has(> svg > *) { mix-blend-mode:multiply; }   /* blended with the page only when it holds a mark: an empty blend layer still cost a full-page blend on every scroll frame */
   .annotation-blend-layer svg { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
   .annotation-content-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:3; }
   .annotation-content-layer svg { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
@@ -1050,7 +1051,7 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   body.show-coords #coords-box { display:block; }
   body.no-menubar #menu-bar { display:none; }
   body.read-mode #tab-bar, body.read-mode #main-toolbar, body.read-mode #context-toolbar, body.read-mode #left-sidebar, body.read-mode #left-panel,
-  body.read-mode #right-panel, body.read-mode #right-icon-sidebar, body.read-mode #comment-panel, body.read-mode #sig-bar { display:none !important; }
+  body.read-mode #right-panel, body.read-mode #right-icon-sidebar, body.read-mode #comment-panel, body.read-mode #sig-bar, body.center-view #sig-bar { display:none !important; }
   #read-bar { display:none; }
   body.read-mode #read-bar { display:flex; position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:9000; background:rgba(40,40,40,.88); border-radius:22px; padding:5px 10px; gap:4px; align-items:center; box-shadow:0 4px 14px rgba(0,0,0,.45); opacity:.35; transition:opacity .2s; }
   body.read-mode #read-bar:hover { opacity:1; }
@@ -1412,13 +1413,27 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   .cmb-cell.off .cmb-thumb { opacity:.3; }
   .cmb-cell.page { width:calc(var(--cw) * .8 + 20px); } .cmb-cell.page .cmb-tw { width:calc(var(--cw) * .8); height:calc(var(--cw) * .8); }
   .cmb-cell.page .cmb-thumb img { max-width:calc(var(--cw) * .8); max-height:calc(var(--cw) * .8); }
-  .cmb-hov { position:absolute; bottom:4px; left:50%; transform:translateX(-50%); display:none; gap:2px; background:rgba(40,40,40,.92); border-radius:4px; padding:2px; }
-  .cmb-cell:hover .cmb-hov { display:flex; }
-  .cmb-hov button { background:none; border:0; color:#eee; width:28px; height:26px; border-radius:3px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
-  .cmb-hov button:hover { background:#1473e6; } .cmb-hov .ic { width:17px; height:17px; }
+  .cmb-hov { position:absolute; left:calc(100% + 6px); top:0; display:none; flex-direction:column; gap:4px; background:#1e1e1e; border-radius:4px; padding:5px 4px; z-index:3; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+  .cmb-cell:hover .cmb-hov { display:flex; } .cmb-cell:hover { z-index:2; }
+  .cmb-hov button { background:none; border:0; color:#eee; width:30px; height:30px; border-radius:3px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+  .cmb-hov button:hover { background:#3a3a3a; } .cmb-hov .ic { width:22px; height:22px; }
+  .cmb-grp { display:flex; flex-wrap:wrap; gap:22px 18px; background:#3a3a3a; border-radius:2px; padding:10px 12px; }
+  body.cmb-pv-on #ctx-content, body.cmb-pv-on #cmb-go { opacity:.45; pointer-events:none; }
+  .cmb-pv { position:fixed; z-index:900; display:flex; flex-direction:column; }
+  .cmb-pv-bar { flex:0 0 36px; display:flex; align-items:center; gap:4px; background:#000; color:#ddd; padding:0 8px; font:14px 'Segoe UI',Arial,sans-serif; }
+  .cmb-pv-bar button { background:none; border:0; color:#eee; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; border-radius:3px; padding:0; }
+  .cmb-pv-bar button:hover:not(:disabled) { background:#333; } .cmb-pv-bar button:disabled { opacity:.35; cursor:default; } .cmb-pv-bar .ic { width:22px; height:22px; }
+  .cmb-pv-sep { width:1px; height:24px; background:#666; margin:0 6px; }
+  .cmb-pv-t { flex:1; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmb-pv-body { flex:1; min-height:0; background:rgba(0,0,0,.55); display:flex; justify-content:center; align-items:flex-start; overflow:hidden; }
+  .cmb-pv-body canvas { display:block; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.6); }
   .cmb-name { margin-top:10px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:#f0f0f0; }
   .cmb-sub { font-size:11.5px; color:#aaa; margin-top:2px; }
   .cmb-hint { text-align:center; color:#9a9a9a; font-size:12px; padding:6px 0 16px; }
+  .cmb-sigbar { position:sticky; bottom:0; margin-top:auto; display:flex; align-items:center; gap:6px; padding:9px 12px; background:#3c3c3c; border-top:1px solid #2c2c2c; color:#eee; font-weight:600; font-size:13px; }
+  .cmb-sigbar svg { flex:0 0 auto; }
+  .cmb-thumb { position:relative; } .cmb-warn { position:absolute; left:-7px; top:-7px; width:20px; height:20px; pointer-events:none; }
+  #cmb-tip { position:fixed; z-index:2000; display:none; background:#ffffe1; color:#000; border:1px solid #767676; padding:3px 6px; font:12px "Segoe UI",Tahoma,Arial,sans-serif; line-height:1.35; white-space:pre; max-width:520px; overflow:hidden; text-overflow:ellipsis; box-shadow:1px 2px 4px rgba(0,0,0,.35); pointer-events:none; }
   .cmb-listwrap { padding:20px 28px; flex:1; }
   .cmb-table { width:100%; border-collapse:collapse; font-size:13px; }
   .cmb-table th { text-align:left; font-weight:600; color:#bbb; border-bottom:1px solid #5a5a5a; padding:7px 8px; }
@@ -1426,6 +1441,7 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   .cmb-table tr.sel td { background:#4f5866; } .cmb-table tbody tr:hover td { background:#535353; } .cmb-table tr.sel:hover td { background:#56627a; }
   .cmb-table tr.ins-t td { box-shadow:inset 0 3px 0 #4b9cf5; } .cmb-table tr.ins-b td { box-shadow:inset 0 -3px 0 #4b9cf5; }
   .cmb-li { display:inline-flex; width:28px; height:28px; align-items:center; justify-content:center; margin-right:10px; vertical-align:middle; } .cmb-li img { max-width:28px; max-height:28px; background:#fff; }
+  .cmb-li { position:relative; } .cmb-li .cmb-warn { left:-6px; top:-6px; width:15px; height:15px; }
   .cmb-range { width:110px; background:#2b2b2b; border:1px solid #666; color:#eee; padding:3px 6px; border-radius:2px; } .cmb-range:disabled { color:#888; }
   .cmb-rowbtns button { background:none; border:1px solid #666; color:#ddd; border-radius:3px; width:24px; height:22px; cursor:pointer; margin-left:3px; font-size:10px; } .cmb-rowbtns button:disabled { opacity:.35; cursor:default; }
   .cmb-opt label { display:block; margin:6px 0; } .cmb-opt-h { font-weight:700; margin-bottom:4px; }
@@ -1936,7 +1952,7 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   ::spelling-error { text-decoration:wavy underline var(--spell-color, red); }
   body.fields-highlight .form-layer.active .ff { background:var(--ff-hl, rgba(204,215,255,.75)); }
   /* like Acrobat: the blue sits behind the field's text (multiply), so filled-in text stays crisp black, not washed out */
-  body.fields-highlight .form-layer.active { mix-blend-mode:multiply; }
+  body.fields-highlight .form-layer.active:has(.ff) { mix-blend-mode:multiply; }   /* (only a page with fields: blending an empty layer slowed scrolling) */
   body.khz-fs #canvas-area { background:var(--fs-bg, #000) !important; }
   body.show-grid .page-wrapper::after { background-image:linear-gradient(to right, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-color, rgba(0,110,255,.38)) 1px, transparent 1px), linear-gradient(to right, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-sub-color, rgba(0,110,255,.13)) 1px, transparent 1px) !important;
     background-size:var(--grid-w,72px) var(--grid-h,72px), var(--grid-w,72px) var(--grid-h,72px), var(--grid-sw,24px) var(--grid-sh,24px), var(--grid-sw,24px) var(--grid-sh,24px) !important;
@@ -3317,6 +3333,7 @@ async function layoutPages() {
     wrapper.dataset.page = n;
     const canvas = document.createElement('canvas');
     canvas.className = 'page-canvas';
+    canvas._khzBlank = true;   // nothing drawn yet (see renderCanvas: the first drawing shows as it goes)
     const textLayer = document.createElement('div');
     textLayer.className = 'textLayer';
     const findLayer = document.createElement('div');
@@ -3385,6 +3402,7 @@ function khzPageDrawn(ps) { ps.wrapper.querySelectorAll('.ff.pending').forEach(e
 function renderKey(ps) { return `${state.scale}|${effRot(ps.n)}|${state.background || ''}|${state.ocVersion}|${(state.nativeHidden || {})[ps.n] || ''}|${state.formVersion || 0}`; }
 
 function ensureRendered(ps) {
+  if (state._khzZoomHold) return;   // a file is opening: its pages are drawn once its opening zoom is set (app10)
   const key = renderKey(ps);
   if (ps.renderedKey === key || ps.renderingKey === key) return;
   renderCanvas(ps, key);
@@ -3414,11 +3432,14 @@ async function renderCanvas(ps, key) {
   params.annotationMode = pdfjsLib.AnnotationMode.ENABLE_STORAGE; // lets us hide markups that are being edited
   const task = ps.page.render(params);
   ps.task = task;
+  // a page with nothing on screen yet shows its drawing as it goes (text and lines first, pictures as they're
+  // ready), like Acrobat. A page already showing a picture keeps it until the new one is finished (zooming).
+  if (ps.canvas && ps.canvas._khzBlank && ps.canvas.parentNode === ps.wrapper) { c._khzDrawing = true; ps.wrapper.replaceChild(c, ps.canvas); ps.canvas = c; }
   try { await task.promise; }
-  catch (e) { if (!(e && e.name === 'RenderingCancelledException')) console.error(e); return; }
-  finally { if (ps.task === task) ps.task = null; }
-  if (ps.renderingKey !== key || state.pages[ps.n] !== ps) return;
-  ps.wrapper.replaceChild(c, ps.canvas);
+  catch (e) { if (c._khzDrawing) c._khzBlank = true; if (!(e && e.name === 'RenderingCancelledException')) console.error(e); return; }   // (half drawn: the next drawing shows as it goes too)
+  finally { if (ps.task === task) ps.task = null; c._khzDrawing = false; }
+  if (ps.renderingKey !== key || state.pages[ps.n] !== ps) { if (ps.canvas === c) c._khzBlank = true; return; }
+  if (ps.canvas !== c) ps.wrapper.replaceChild(c, ps.canvas);
   ps.canvas = c;
   ps.renderedKey = key;
   ps.renderingKey = null;
@@ -3448,6 +3469,10 @@ async function renderPageTile(ps, forKey) {
   //  the old tile would keep showing the text or picture where it was before)
   const have = [...ps.wrapper.querySelectorAll('.page-tile')].find(t => t.dataset.key === key && t._khzPage === ps.page && +t.dataset.x <= x0 - wr.left && +t.dataset.y <= y0 - wr.top && +t.dataset.x + +t.dataset.w >= x1 - wr.left && +t.dataset.y + +t.dataset.h >= y1 - wr.top);
   if (have) return;
+  // one already being drawn that covers what's on screen: let it finish (zooming moves the scroll position, and the
+  // scroll asked for the same tile again, which cancelled the one being drawn and started it over)
+  const w0 = ps.tileTask && ps.tileWant;
+  if (w0 && w0.key === key && w0.page === ps.page && w0.x <= x0 - wr.left && w0.y <= y0 - wr.top && w0.x + w0.w >= x1 - wr.left && w0.y + w0.h >= y1 - wr.top) return;
   const dpr = window.devicePixelRatio || 1;
   const c = document.createElement('canvas');
   c.className = 'page-tile';
@@ -3459,10 +3484,12 @@ async function renderPageTile(ps, forKey) {
   if (state.background) params.background = state.background;
   if (state.ocConfig) params.optionalContentConfigPromise = Promise.resolve(state.ocConfig);
   const task = ps.page.render(params);
-  ps.tileTask = task;
-  try { await task.promise; } catch (e) { return; } finally { if (ps.tileTask === task) ps.tileTask = null; }
-  if ((ps.renderedKey !== key && ps.renderingKey !== key) || !ps.capped || c._khzPage !== ps.page) return;
-  ps.wrapper.querySelectorAll('.page-tile').forEach(t => t.remove());
+  ps.tileTask = task; ps.tileWant = { key, page: ps.page, x: rx, y: ry, w: rw, h: rh };
+  // nothing finished on screen for this page yet: the sharp part shows as it's drawn too
+  if ((ps.canvas._khzBlank || ps.canvas._khzDrawing) && !ps.wrapper.querySelector('.page-tile')) ps.canvas.after(c);
+  try { await task.promise; } catch (e) { c.remove(); return; } finally { if (ps.tileTask === task) { ps.tileTask = null; ps.tileWant = null; } }
+  if ((ps.renderedKey !== key && ps.renderingKey !== key) || !ps.capped || c._khzPage !== ps.page) { c.remove(); return; }
+  ps.wrapper.querySelectorAll('.page-tile').forEach(t => { if (t !== c) t.remove(); });
   ps.canvas.after(c);
 }
 
@@ -3741,7 +3768,7 @@ function setActiveTool(tool) {
   if (tool !== 'select') selectAnnot(null);
   if (tool === 'edit-text' && !wasEdit) prepareEditMode();
   if (typeof updateFormLayerMode === 'function') updateFormLayerMode();
-  if (wasEdit !== (tool === 'edit-text') && state.pdfDoc) renderAllAnnots();
+  if (wasEdit !== (tool === 'edit-text') && state.pdfDoc) { renderAllAnnots(); syncContent(); }   // (pictures come off the page only in Edit PDF)
 }
 
 function toolName(t) {
@@ -5016,11 +5043,12 @@ async function importNativeAnnots() {
 
 // Stamps (logos, "Approved" etc.) are turned into images so they can be moved/resized like in Acrobat.
 async function rasterizeNativeStamps(gen) {
-  if (typeof PDFLib === 'undefined') return;
   const stamps = state.annotations.filter(a => a.type === 'native-image' && !a.dataUrl);
+  const fail = a => { state.annotations.filter(x => x.native === a.native).forEach(x => x.rasterFailed = true); syncNativeVisibility(); };   // (drawn by the page then)
+  if (typeof PDFLib === 'undefined') { stamps.forEach(fail); return; }
   for (const a of stamps) {
     try {
-      const m = /^(\d+)R(\d*)$/.exec(a.native); if (!m) continue;
+      const m = /^(\d+)R(\d*)$/.exec(a.native); if (!m) { fail(a); continue; }
       const lib = await PDFLib.PDFDocument.load(state.fileBytes);
       if (gen !== state.docGen) return;
       const pg = lib.getPage(a.page - 1);
@@ -5044,7 +5072,7 @@ async function rasterizeNativeStamps(gen) {
       state.history = state.history.map(h => { const arr = JSON.parse(h); arr.forEach(x => { if (x.native === a.native) x.dataUrl = dataUrl; }); return JSON.stringify(arr); });
       renderPageAnnots(a.page);
       syncNativeVisibility();
-    } catch (e) { console.warn('stamp rasterize failed', e); }
+    } catch (e) { console.warn('stamp rasterize failed', e); fail(a); }
   }
 }
 
@@ -5069,8 +5097,11 @@ function syncNativeVisibility(skipRender) {
   if (!store || !state.nativeIds) return;
   Object.entries(state.nativeIds).forEach(([n, ids]) => {
     n = +n;
-    // every markup the app can draw is drawn by the app (so moving it never leaves a ghost)
-    const hidden = ids.filter(id => { const a = state.annotations.find(x => x.native === id); return !(a && a.untouched && a.type === 'native-image' && !a.dataUrl); }).sort();
+    // every markup the app can draw is drawn by the app (so moving it never leaves a ghost). A stamp still being
+    // prepared is left out of the page drawing too and shows when it's ready, like Acrobat (page first, markups a
+    // moment later): drawn by the page meanwhile, finishing it redrew the whole page. One that couldn't be prepared
+    // is drawn by the page.
+    const hidden = ids.filter(id => { const a = state.annotations.find(x => x.native === id); return !(a && a.untouched && a.type === 'native-image' && !a.dataUrl && a.rasterFailed); }).sort();
     const key = hidden.join(',');
     if ((state.nativeHidden[n] || '') === key) return;
     ids.forEach(id => store.setValue(id, { noView: hidden.includes(id) }));
@@ -5289,6 +5320,8 @@ function apTextLines(d, lk) {
 //  EDIT PDF MODE: whole text blocks + page images (like Acrobat)
 // ================================================================
 const IDM = [1, 0, 0, 1, 0, 0];
+// a line that starts a list item: 1. / 2) / a. / (b) / • / - …
+const KHZ_LIST_START = /^\s*(\(?\d{1,3}[.)]|\(?[A-Za-z][.)]|[•●▪◦‣∙\-–—*])\s/;
 function mMul(m, n) { // PDF row-vector convention: m then n
   return [m[0] * n[0] + m[1] * n[2], m[0] * n[1] + m[1] * n[3], m[2] * n[0] + m[3] * n[2], m[2] * n[1] + m[3] * n[3],
     m[4] * n[0] + m[5] * n[2] + n[4], m[4] * n[1] + m[5] * n[3] + n[5]];
@@ -5650,14 +5683,21 @@ async function getTextBlocks(n) {
   const blocks = [];
   for (const L of lines) {
     let target = null;
-    for (const B of blocks) {
+    const fits = (B, loose) => {
       const last = B.lines[B.lines.length - 1];
       const dy = L.base - last.base;
       const sameSize = Math.abs(L.fh - last.fh) <= 0.15 * Math.max(L.fh, last.fh);   // a 18 pt title over a 14 pt subtitle are two boxes, like Acrobat
       const atol = Math.max(1.5, 0.15 * L.fh);
-      const aligned = Math.abs(L.x - last.x) <= atol || Math.abs(L.right - last.right) <= atol || Math.abs((L.x + L.right) / 2 - (last.x + last.right) / 2) <= atol;
-      if (L.sig === last.sig && dy > 0.5 * L.fh && dy < 1.75 * Math.max(L.fh, last.fh) && sameSize && aligned) { target = B; break; }
-    }
+      const aligned = loose
+        // a paragraph whose first line is indented a little: its second line still belongs to it, like Acrobat —
+        // "500 gallon LP tank with / Fisher R122H …" indented 3.7 pt is one box. Only the second line, only when it
+        // lines up with nothing else, only a small indent (under half the letter height), and never a line that
+        // starts a new list item.
+        ? B.lines.length === 1 && last.x > L.x && last.x - L.x <= 0.5 * L.fh && !KHZ_LIST_START.test(L.text)
+        : Math.abs(L.x - last.x) <= atol || Math.abs(L.right - last.right) <= atol || Math.abs((L.x + L.right) / 2 - (last.x + last.right) / 2) <= atol;
+      return L.sig === last.sig && dy > 0.5 * L.fh && dy < 1.75 * Math.max(L.fh, last.fh) && sameSize && aligned;
+    };
+    target = blocks.find(B => fits(B, false)) || blocks.find(B => fits(B, true)) || null;
     if (target) { target.lines.push(L); target.x = Math.min(target.x, L.x); target.right = Math.max(target.right, L.right); }
     else blocks.push({ lines: [L], x: L.x, right: L.right });
   }
@@ -6294,8 +6334,10 @@ function wantedHidden() {
   const images = new Set(), texts = new Set();
   Object.values(state.pageImages || {}).flat().forEach(im => {
     const a = khzAnnImg(im.key);
-    // all pictures whose pixels we have are drawn by the app (no flicker when they move)
-    if (!a || !a.untouched || state.imgCache[im.key]) images.add(im.key);
+    // pictures whose pixels we have are drawn by the app while Edit PDF is open (no flicker when they move); when
+    // just viewing they stay on the page, like Acrobat. (Taking them off at open meant a second copy of the document
+    // right after opening: the page was drawn again from scratch, and zooming waited behind it.)
+    if (!a || !a.untouched || (state.imgCache[im.key] && state.activeTool === 'edit-text')) images.add(im.key);
   });
   (state.textBlockIndex || []).forEach(t => {
     const a = khzAnnId(t.id);
@@ -6338,8 +6380,12 @@ async function syncContent() {
       bytes = await doc.save({ useObjectStreams: false });
     }
     if (gen !== state.docGen) return;
-    const pdf = await pdfjsLib.getDocument({ data: bytes.slice(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
-    if (gen !== state.docGen) { pdf.destroy(); return; }
+    // nothing taken out of the page: the document already open (made from these same bytes) is shown as it is,
+    // so what the PDF engine has already worked out (decoded pictures, page contents) is kept. Opening a fresh
+    // copy here made the next drawing, e.g. the first zoom, start from scratch: seconds on a page with a big scan.
+    const pdf = bytes === state.fileBytes && state.origDoc ? state.origDoc : await pdfjsLib.getDocument({ data: bytes.slice(), cMapUrl: PDFJS_BASE + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_BASE + 'standard_fonts/' }).promise;
+    const drop = () => { if (pdf !== state.origDoc) pdf.destroy(); };
+    if (gen !== state.docGen) { drop(); return; }
     const changed = new Set();
     const pageOfImg = k => +k.split(':')[0];
     const pageOfTxt = id => { const t = (state.textBlockIndex || []).find(x => x.id === id); return t ? t.page : 0; };
@@ -6383,7 +6429,8 @@ async function syncContent() {
         else if (leaks && !was) { an.leak = true; newLeak = true; }
       } catch (e) {}
     }
-    if (gen !== state.docGen) { pdf.destroy(); return; }
+    if (gen !== state.docGen) { drop(); return; }
+    if (pdf === state.pdfDoc && !changed.size) { state.displayApplied = want; return; }   // already showing exactly this
     // swap in the new display document, render changed pages, then switch drawing over in one go
     state.pdfDoc = pdf;
     state.nativeHidden = {};
@@ -6796,10 +6843,11 @@ function textInner(p) {
   const al = p.align === 'right' || p.align === 'center' || p.align === 'justify' ? p.align : null;
   return { x: p.x + pad + ix, w: p.w - 2 * pad - (al ? 2 * ix : ix), al };
 }
-// turn a plain text primitive into a styled one when the object has styled runs
+// turn a plain text primitive into a styled one when the object has styled runs (or per-line indents from the page,
+// which only the styled layout keeps)
 function richPrim(p, a, s) {
   if (!RICH_TYPES.includes(a.type)) return p;
-  const runs = a.runs || ((a.underline || a.strike || a.script || a.align === 'justify' || a.paraSp || (a.hScale && a.hScale !== 100)) && a.text ? [{ t: String(a.text), s: {} }] : null);
+  const runs = a.runs || ((a.underline || a.strike || a.script || a.align === 'justify' || a.paraSp || (a.hScale && a.hScale !== 100) || (a.indents && a.indents.some(v => v > 0.3))) && a.text ? [{ t: String(a.text), s: {} }] : null);
   if (!runs) return p;
   const wrap = a.type === 'textbox' || (a.type === 'text-block' && !!a.wrap);
   const inner = textInner(p);
@@ -10593,11 +10641,18 @@ filterTools = function (query) {
 // open-then-edit from the home card
 const _loadBytes = loadBytes;
 loadBytes = async function (...args) {
-  const r = await _loadBytes.apply(this, args);
+  // a file being opened is drawn once, at its opening zoom: drawn at the zoom it happened to have and then again at
+  // Fit Page, the first drawing was thrown away (seconds on a big drawing, and the page went blank in between)
+  const fresh = !state.keepZoom && !(args[2] && args[2].keep);
+  if (fresh) state._khzZoomHold = true;
+  let r;
+  try { r = await _loadBytes.apply(this, args); }
+  finally { if (fresh) state._khzZoomHold = false; }
   syncDocTabs();
   showDocView();
   // Acrobat opens at "Fit Page"; a rebuild of the open document (keep) leaves the zoom as it is
-  if (!state.keepZoom && !(args[2] && args[2].keep)) { try { fitPage(); } catch (e) {} }
+  if (fresh) { try { fitPage(); } catch (e) {} }
+  if (state.pdfDoc && typeof renderVisiblePages === 'function') renderVisiblePages();   // (the same zoom as before: fitPage draws nothing new)
   // like Acrobat: say the file has fillable fields when it's opened (not on every rebuild of the open file)
   if (!(args[2] && args[2].keep) && state.hasForm && Object.values(state.formFields || {}).flat().some(f => f.type !== 'signature')) toast('This document contains fillable form fields — click a field to type, Tab to move to the next one.');
   if (state.openThenEdit) { state.openThenEdit = false; setTimeout(startEditMode, 300); }
@@ -12307,6 +12362,10 @@ async function analyzeSignatures(bytes) {
     try {
       if (!info.byteRange || info.byteRange.length !== 4 || !cont) throw new Error('signature data is missing');
       const [a, b, c, d] = info.byteRange;
+      // the signature's own /Contents must sit in the gap the byte range leaves. A signature copied into another file
+      // (Combine Files, Insert Pages) keeps the old file's byte range, which points at nothing in this one: it isn't a
+      // signature of this file, and Acrobat doesn't list it either
+      if (!(b > 0 && c > b && c <= bytes.length && bytes[a + b] === 0x3C && bytes[c - 1] === 0x3E)) { info.notHere = true; throw new Error('not a signature of this file'); }
       info.coversWhole = c + d === bytes.length;
       info.revisionEnd = c + d;
       const signed = new Uint8Array(b + d); signed.set(bytes.subarray(a, a + b)); signed.set(bytes.subarray(c, c + d), b);
@@ -12381,6 +12440,7 @@ async function analyzeSignatures(bytes) {
     info.valid = info.digestOk === true && info.sigOk === true && !info.error;
     found.splice(found.indexOf(f), 1, info);
   }
+  for (let i = found.length - 1; i >= 0; i--) if (found[i].notHere) found.splice(i, 1);   // (copied from another file)
   found.sort((x, y) => (x.revisionEnd || 0) - (y.revisionEnd || 0));
   found.forEach((s, i) => { s.rev = i + 1; s.changedAfter = !s.coversWhole; });
   state.digitalSigs = found;
@@ -14666,7 +14726,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1202';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1211';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -14687,6 +14747,7 @@ function buildHelpMenu() {
     + ((window.khzDesktop && window.khzDesktop.isDesktop) || matchMedia('(display-mode: standalone)').matches ? '' : fmItem('', '&Install KHZ PDF as an App...', 'khzInstall()'))   // (not in the installed app)
     + fmItem('', '&About KHZ PDF...', 'showAboutApp()')
     + fmItem('', 'About &Plug-Ins...', 'showPlugins()')
+    + fmItem('', `KHZ &Overclock Engine (test)${getPref('engineOC', false) === true ? ' — On' : ''}...`, 'khzOcAbout()')
     + SEP
     + fmItem('', 'Manage My Account...', "showPreferences('Identity')")
     + (em || name ? fmItem('', `Sign Out... (${em || name})`, 'signOutLocal()') : fmItem('', 'Sign In...', "showPreferences('Identity')"))
@@ -14919,6 +14980,15 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1211', ['New (test): the KHZ Overclock page engine, created by K1LLAH0EZ, built on PDFium. Turn it on in Help \u203a KHZ Overclock Engine. Off by default.']],
+  ['2026.10.1210', ['A page shows while it\u2019s being drawn, like Acrobat: the plan first, markups a moment later (it used to stay white until it was finished).', 'Opening a file: the page is drawn once, at its opening zoom (it was drawn at the previous zoom first, then again at Fit Page). Stamps no longer make the page draw a second time.']],
+  ['2026.10.1209', ['Smoother scrolling, most of all on a Mac and with large drawings: the layer for highlight-type markups and the form-field layer blend with the page only when the page has those (an empty layer was still blended on every scroll step).']],
+  ['2026.10.1208', ['Zooming right after opening a file is much faster: the page is no longer drawn a second time from scratch in the background (pictures stay on the page until you open Edit PDF, like Acrobat).', 'Zooming: the sharp view of what\u2019s on screen is no longer started over while it\u2019s being drawn, so it appears sooner (about twice as fast on large drawings).']],
+  ['2026.10.1207', ['Combine Files: you can drop a file anywhere in the empty space, like Acrobat \u2014 after the last file puts it at the end (you no longer have to drop exactly on the last file).', 'Combine Files: pointing at a file shows its details in Acrobat\u2019s yellow box, one line each.', 'Combine Files no longer says the open document will be closed (it stays open in its tab).', 'Opening a file with a very large picture: the Home thumbnail is drawn after the page, so the page shows sooner.', 'Windows: the \u201cnot your default PDF application\u201d question no longer shows when KHZ PDF is the default (newer Windows 11 keeps the choice in a different place).']],
+  ['2026.10.1206', ['Combine Files: pointing at a file shows Acrobat\u2019s buttons beside it: Expand (files with more than one page), Delete and Zoom.', 'Expanded pages show in a shaded group, numbered; Delete takes a page out.', 'Zoom shows the page large over the window, with previous/next page and close.', 'Files open faster in the desktop app, most of all one-page files (a page\u2019s markups and form scripts are read once, before the page is drawn).']],
+  ['2026.10.1205', ['Combine Files: a signed file shows a note at the bottom of the window, like Acrobat (no extra pop-up when you click Combine).', 'Combine Files: a signed file has a yellow warning triangle, and pointing at a file shows its name, pages, size, date and any warning, like Acrobat.']],
+  ['2026.10.1204', ['Combine Files: signatures copied from the original files no longer show \u201cAt least one signature is invalid\u201d (Acrobat drops them too; the originals stay valid).', 'The signature bar no longer shows on the Home screen.']],
+  ['2026.10.1203', ['Edit PDF: a paragraph whose first line is indented is one text box, like Acrobat (it was split in two).', 'Edited text keeps its lines\u2019 indents from the page (a first-line indent, numbered notes).']],
   ['2026.10.1202', ['Pictures no longer change to the wrong ones a moment after a file opens (files with a picture inside a drawing group, like a logo watermark).']],
   ['2026.10.1201', ['Saving with redaction marks not applied asks like Acrobat: \u201cThere are unapplied redactions in this file\u2026\u201d \u2014 Apply & Save / Save / Cancel.', 'Right-click a redaction mark \u203a Apply Redactions.']],
   ['2026.10.1122', ['Edit PDF: replacing selected text hides the old text at once (it showed for a moment), and moved text no longer shows twice at some zoom levels.', 'Text boxes from Acrobat keep their line breaks (\u201c200A MB\u201d no longer wraps as \u201c200 / A / MB\u201d).', 'Letters a file gives no character for (Word\u2019s \u201cti\u201d, \u201ctt\u201d ligatures) are read from the font\u2019s shapes instead of guessed.', 'Greek, Cyrillic, symbols and Asian text are saved with a font that has them (edited text, form fields, OCR), instead of \u201c?\u201d.', 'Reduce File Size and Preflight fixes keep Ctrl+S, Undo and the pictures\u2019 colour type.', 'Tagging a signed document asks first and saves the tags as an update.', 'Remove Hidden Information reads the pages properly (inside form objects too).', 'Signatures: the exact signer certificate, per-signature certification, certificate-authority rules and dates are checked.', 'Redact: inline pictures, pictures inside form objects and fonts with their own code maps no longer turn the page into a picture.']],
@@ -18448,6 +18518,13 @@ Object.assign(ICONS, {
   cmb_expand: 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5',
   cmb_collapse: 'M9 4v5H4 M15 4v5h5 M9 20v-5H4 M15 20v-5h5',
   cmb_rot: 'M20 12a8 8 0 1 1-2.3-5.7 M20 4v5h-5',
+  // Acrobat's hover buttons: expand (arrows out) / collapse (arrows in) in a circle, and zoom (magnifier with +)
+  cmb_exp2: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M7 12h10 M9.5 9.5 7 12l2.5 2.5 M14.5 9.5 17 12l-2.5 2.5',
+  cmb_col2: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M5.5 12h4 M14.5 12h4 M7.5 9.5 10 12l-2.5 2.5 M16.5 9.5 14 12l2.5 2.5',
+  cmb_prev: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M16.5 12h-9 M11 8l-4 4 4 4',
+  cmb_next: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M7.5 12h9 M13 8l4 4-4 4',
+  cmb_x: 'M6 6l12 12 M18 6 6 18',
+  cmb_zoom: 'M10.5 3.5a7 7 0 1 0 0 14a7 7 0 1 0 0-14 M15.5 15.5 21 21 M10.5 7.5v6 M7.5 10.5h6',
 });
 const CMB_THUMB = { small: 120, medium: 170, large: 240 };
 let cmbSeq = 0;
@@ -18482,9 +18559,20 @@ function cmbOpen() {
     v = document.createElement('div'); v.id = 'cmb-view';
     const area = $('canvas-area');
     (($('view-stack')) || area).parentNode.insertBefore(v, $('view-stack') || area);
-    v.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); e.stopPropagation(); v.classList.add('drop'); } });
+    // a drop anywhere in the workspace counts, like Acrobat: in the empty space after the last file it goes at the end
+    // (of that row: before the first file of the next row); over a file, before or after it (the file's own handler)
+    v.addEventListener('dragover', e => {
+      const files = [...e.dataTransfer.types].includes('Files');
+      if (!files && !(state.cmb && state.cmb.drag)) return;
+      e.preventDefault();
+      if (files) { e.stopPropagation(); v.classList.add('drop'); }
+      if (!e.target.closest('.cmb-cell, tbody tr')) cmbDropAt = cmbDropIndex(v, e.clientX, e.clientY);
+    });
     v.addEventListener('dragleave', e => { if (e.target === v) v.classList.remove('drop'); });
-    v.addEventListener('drop', e => { if (!e.dataTransfer.files.length) return; e.preventDefault(); e.stopPropagation(); v.classList.remove('drop'); cmbAddFiles([...e.dataTransfer.files], cmbDropAt); });
+    v.addEventListener('drop', e => {
+      if (e.dataTransfer.files.length) { e.preventDefault(); e.stopPropagation(); v.classList.remove('drop'); cmbAddFiles([...e.dataTransfer.files], cmbDropAt); return; }
+      if (state.cmb && state.cmb.drag) { e.preventDefault(); cmbDropMove(cmbDropAt); }
+    });
     v.addEventListener('mousedown', e => { if (e.target === v || e.target.classList.contains('cmb-grid') || e.target.classList.contains('cmb-listwrap')) { state.cmb.sel.clear(); cmbRender(); } });
   }
   v.classList.remove('hidden');
@@ -18498,7 +18586,7 @@ function cmbOpen() {
 }
 function cmbClose() {
   if (!state.cmb) return;
-  state.cmb.open = false;
+  state.cmb.open = false; cmbPreviewClose(); cmbTipHide();
   document.body.classList.remove('cmb-mode');
   const v = $('cmb-view'); if (v) v.classList.add('hidden');
   const g = $('cmb-go'); if (g) g.style.display = 'none';
@@ -18670,28 +18758,90 @@ function cmbRender() {
     cmbSync(); return;
   }
   if (S.view === 'list') cmbRenderList(v); else cmbRenderGrid(v);
+  // like Acrobat: a note at the bottom of the workspace while a signed file is in the list (combining makes a new
+  // file, so a signature can't come along: it covers the exact bytes of the file it was made on)
+  if (S.files.some(f => f.signed)) v.insertAdjacentHTML('beforeend', `<div class="cmb-sigbar"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 1.5 15.2 14.5H.8z" fill="#f5b400"/><path d="M8 6v4.3M8 11.8v1" stroke="#222" stroke-width="1.6" stroke-linecap="round"/></svg><span>One or more of your files contains digital signatures. The combined PDF won\u2019t keep them; the original files keep theirs.</span></div>`);
   cmbSync();
 }
+// like Acrobat: a yellow warning triangle on a signed file, and its hover tip lists name, pages, size, date and the warning
+const CMB_WARN = '<svg class="cmb-warn" viewBox="0 0 16 16"><path d="M8 1.5 15.2 14.5H.8z" fill="#f5b400" stroke="#8a6400" stroke-width=".6"/><path d="M8 6v4.3M8 11.8v1" stroke="#222" stroke-width="1.6" stroke-linecap="round"/></svg>';
+function cmbTip(f, n) {
+  const t = [`Name: ${f.name}`, `Page Range: ${n} page${n === 1 ? '' : 's'}`];
+  if (f.size != null) t.push(`Size: ${cmbFmtSize(f.size)}`);
+  if (f.mtime) t.push(`Modified: ${cmbFmtDate(f.mtime)}`);
+  if (f.signed) t.push('Warnings/Errors: Digital signatures will be removed during merge');
+  return t.join('\n');
+}
+// where a drop at (x, y) puts the files: before the first file (in reading order) that is below the pointer's row,
+// or in its row to the right of the pointer; none → at the end. List view: before the first row below the pointer.
+function cmbDropIndex(v, x, y) {
+  const S = state.cmb, list = S.view === 'list';
+  const els = [...v.querySelectorAll(list ? 'tbody tr' : '.cmb-cell')];
+  const g = v.querySelector('.cmb-grid');
+  if (g) g.querySelectorAll('.cmb-cell').forEach(c => c.classList.remove('ins-l', 'ins-r'));
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    const after = list ? y < r.top + r.height / 2 : y < r.top || (y <= r.bottom && x < r.left + r.width / 2);
+    if (after) {
+      const i = S.files.findIndex(f => f.id === el.dataset.f);
+      if (!list) { const prev = els[els.indexOf(el) - 1]; if (prev && prev.getBoundingClientRect().top === r.top) prev.classList.add('ins-r'); else el.classList.add('ins-l'); }
+      return i < 0 ? S.files.length : i;
+    }
+  }
+  if (!list && els.length) els[els.length - 1].classList.add('ins-r');
+  return S.files.length;
+}
+// move the dragged file (or the selected files, when it is one of them) to position `at`
+function cmbDropMove(at) {
+  const S = state.cmb; if (!S.drag || at == null) return;
+  const moving = S.sel.has(S.drag) ? S.files.filter(x => S.sel.has(x.id)) : [S.files.find(x => x.id === S.drag)];
+  moving.forEach(m => { const i = S.files.indexOf(m); if (i < at) at--; S.files.splice(i, 1); });
+  S.files.splice(at, 0, ...moving);
+  S.drag = null; cmbRender();
+}
+// the file's details on hover: Acrobat's pale yellow box with one line each (Name, Page Range, Size, Modified,
+// Warnings/Errors). The system tooltip can't show it that way (on Windows it's one plain grey line), so it's drawn here.
+let cmbTipT = 0;
+function cmbTipHide() { clearTimeout(cmbTipT); const t = $('cmb-tip'); if (t) t.style.display = 'none'; }
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest && e.target.closest('#cmb-view [data-ftip]');
+  if (!el) { if (!e.target.closest || !e.target.closest('#cmb-tip')) cmbTipHide(); return; }
+  if (el.contains(e.relatedTarget)) return;
+  cmbTipHide();
+  cmbTipT = setTimeout(() => {
+    if (!el.isConnected || !el.matches(':hover')) return;
+    let t = $('cmb-tip'); if (!t) { t = document.createElement('div'); t.id = 'cmb-tip'; document.body.appendChild(t); }
+    t.textContent = el.dataset.ftip; t.style.display = 'block';
+    const x = cmbTipXY.x + 12, y = cmbTipXY.y + 20, r = t.getBoundingClientRect();
+    t.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+    t.style.top = (y + r.height > innerHeight - 4 ? cmbTipXY.y - r.height - 6 : y) + 'px';
+  }, 600);
+});
+const cmbTipXY = { x: 0, y: 0 };
+document.addEventListener('mousemove', e => { cmbTipXY.x = e.clientX; cmbTipXY.y = e.clientY; }, { passive: true });
+['mousedown', 'dragstart', 'wheel', 'keydown'].forEach(ev => document.addEventListener(ev, cmbTipHide, { capture: true, passive: true }));
 function cmbRenderGrid(v) {
   const S = state.cmb, px = CMB_THUMB[S.size] || 170;
   v.innerHTML = `<div class="cmb-grid" style="--cw:${px}px"></div><div class="cmb-hint">Drag files to change the order. Hover over a file with more than one page and click <b>Expand</b> to choose pages.</div>`;
   const g = v.querySelector('.cmb-grid');
   S.files.forEach((f, fi) => {
-    const pages = f.expanded ? cmbPagesOf(f).concat([...f.exclude]).sort((a, b) => a - b) : [cmbPagesOf(f)[0] ?? 0];
+    // an expanded file shows its pages in a shaded group, like Acrobat (a deleted page leaves the list)
+    const pages = f.expanded ? cmbPagesOf(f) : [cmbPagesOf(f)[0] ?? 0];
+    const host = f.expanded ? g.appendChild(Object.assign(document.createElement('div'), { className: 'cmb-grp' })) : g;
     pages.forEach((p, k) => {
       const cell = document.createElement('div');
-      const off = f.exclude.has(p);
-      cell.className = `cmb-cell ${S.sel.has(f.id) ? 'sel' : ''} ${f.expanded ? 'page' : ''} ${off ? 'off' : ''} ${!f.expanded && f.pages > 1 ? 'stack' : ''}`;
+      cell.className = `cmb-cell ${S.sel.has(f.id) ? 'sel' : ''} ${!f.expanded && f.pages > 1 ? 'stack' : ''}`;
       cell.draggable = !f.expanded;
       cell.dataset.f = f.id; cell.dataset.p = p;
       const n = cmbPagesOf(f).length;
-      cell.innerHTML = `<div class="cmb-tw"><div class="cmb-thumb" style="transform:rotate(${f.rot[p] || 0}deg)"><img alt=""></div>
-          <div class="cmb-hov">${f.expanded
-            ? `<button title="Rotate page" data-a="rot"><span class="ic">${icon('cmb_rot')}</span></button><button title="${off ? 'Include page' : 'Remove page'}" data-a="tog"><span class="ic">${icon(off ? 'cmb_add' : 'trash')}</span></button>${k === 0 ? `<button title="Collapse pages" data-a="col"><span class="ic">${icon('cmb_collapse')}</span></button>` : ''}`
-            : `${f.pages > 1 ? `<button title="Expand ${f.pages} pages" data-a="exp"><span class="ic">${icon('cmb_expand')}</span></button>` : ''}<button title="Rotate" data-a="rot"><span class="ic">${icon('cmb_rot')}</span></button><button title="Remove file" data-a="rm"><span class="ic">${icon('trash')}</span></button>`}</div></div>
-        <div class="cmb-name" title="${escapeHtml(f.name)}">${f.expanded ? `${escapeHtml(f.name)} · ${p + 1}` : escapeHtml(f.name)}</div>
-        <div class="cmb-sub">${f.expanded ? (off ? 'Removed' : `Page ${p + 1}`) : f.kind === 'img' ? 'Image' : `${n} page${n === 1 ? '' : 's'}${n !== f.pages ? ` of ${f.pages}` : ''}${f.signed ? ' · signed' : ''}`}</div>`;
-      g.appendChild(cell);
+      const B = (a, t, ic) => `<button title="${t}" data-a="${a}"><span class="ic">${icon(ic)}</span></button>`;
+      // Acrobat's buttons: Expand (a file with more than one page) or Collapse (first page of an expanded file), Delete, Zoom
+      const hov = (!f.expanded ? (f.pages > 1 ? B('exp', 'Expand ' + f.pages + ' pages', 'cmb_exp2') : '') : (k === 0 ? B('col', 'Collapse pages', 'cmb_col2') : ''))
+        + B(f.expanded ? 'del' : 'rm', 'Delete', 'trash') + B('zoom', 'Zoom', 'cmb_zoom');
+      cell.innerHTML = `<div class="cmb-tw" data-ftip="${escapeHtml(cmbTip(f, n))}"><div class="cmb-thumb"><img alt="">${f.signed && k === 0 ? CMB_WARN : ''}<div class="cmb-hov">${hov}</div></div></div>
+        <div class="cmb-name" title="${escapeHtml(f.name)}">${f.expanded && k > 0 ? p + 1 : escapeHtml(f.name)}</div>
+        <div class="cmb-sub">${f.expanded ? '' : f.kind === 'img' ? 'Image' : `${n} page${n === 1 ? '' : 's'}${n !== f.pages ? ` of ${f.pages}` : ''}${f.signed ? ' · signed' : ''}`}</div>`;
+      host.appendChild(cell);
       if (f.thumbs[p]) cell.querySelector('img').src = f.thumbs[p];   // already drawn: show it straight away
       else cmbThumb(f, p, px).then(u => { const im = cell.querySelector('img'); if (im && u) im.src = u; });
       cell.addEventListener('mousedown', e => {
@@ -18707,11 +18857,11 @@ function cmbRenderGrid(v) {
       cell.querySelectorAll('.cmb-hov button').forEach(b => b.onclick = e => {
         e.stopPropagation();
         const a = b.dataset.a;
+        if (a === 'zoom') { cmbPreview(f, p); return; }
         if (a === 'exp') f.expanded = true;
         else if (a === 'col') f.expanded = false;
         else if (a === 'rm') { S.files.splice(S.files.indexOf(f), 1); S.sel.delete(f.id); }
-        else if (a === 'tog') { if (off) f.exclude.delete(p); else if (cmbPagesOf(f).length > 1) f.exclude.add(p); else toast('A file needs at least one page — remove the whole file instead.'); }
-        else if (a === 'rot') { const ps = f.expanded ? [p] : Array.from({ length: f.pages }, (_, i) => i); ps.forEach(i => f.rot[i] = ((f.rot[i] || 0) + 90) % 360); }
+        else if (a === 'del') { if (cmbPagesOf(f).length > 1) f.exclude.add(p); else { S.files.splice(S.files.indexOf(f), 1); S.sel.delete(f.id); } }
         cmbRender();
       });
       // drag files into a new order
@@ -18728,15 +18878,10 @@ function cmbRenderGrid(v) {
       cell.addEventListener('drop', e => {
         if (!S.drag) return;   // files from the computer: handled by the view (at cmbDropAt)
         e.preventDefault(); e.stopPropagation();
-        const moving = S.sel.has(S.drag) ? S.files.filter(x => S.sel.has(x.id)) : [S.files.find(x => x.id === S.drag)];
-        let at = cmbDropAt;
-        moving.forEach(m => { const i = S.files.indexOf(m); if (i < at) at--; S.files.splice(i, 1); });
-        S.files.splice(at, 0, ...moving);
-        S.drag = null; cmbRender();
+        cmbDropMove(cmbDropAt);
       });
     });
   });
-  v.querySelector('.cmb-grid').addEventListener('dragover', e => { if (e.target.classList.contains('cmb-grid')) cmbDropAt = S.files.length; });
 }
 function cmbRenderList(v) {
   const S = state.cmb;
@@ -18747,7 +18892,7 @@ function cmbRenderList(v) {
     const tr = document.createElement('tr');
     tr.className = S.sel.has(f.id) ? 'sel' : ''; tr.draggable = true; tr.dataset.f = f.id;
     const inc = cmbPagesOf(f), range = inc.length === f.pages ? 'All Pages' : cmbRangeText(inc);
-    tr.innerHTML = `<td><span class="cmb-li"><img alt=""></span>${escapeHtml(f.name)}</td><td>${f.pages}</td><td><input class="cmb-range" value="${range}" ${f.pages < 2 ? 'disabled' : ''}></td><td>${cmbFmtSize(f.size)}</td><td>${cmbFmtDate(f.mtime)}</td>
+    tr.innerHTML = `<td data-ftip="${escapeHtml(cmbTip(f, inc.length))}"><span class="cmb-li"><img alt="">${f.signed ? CMB_WARN : ''}</span>${escapeHtml(f.name)}</td><td>${f.pages}</td><td><input class="cmb-range" value="${range}" ${f.pages < 2 ? 'disabled' : ''}></td><td>${cmbFmtSize(f.size)}</td><td>${cmbFmtDate(f.mtime)}</td>
       <td class="cmb-rowbtns"><button title="Move up" ${i ? '' : 'disabled'}>▲</button><button title="Move down" ${i < S.files.length - 1 ? '' : 'disabled'}>▼</button></td>`;
     tb.appendChild(tr);
     cmbThumb(f, inc[0] ?? 0, 60).then(u => { const im = tr.querySelector('img'); if (im && u) im.src = u; });
@@ -18792,6 +18937,67 @@ document.addEventListener('keydown', e => {
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); state.cmb.files.forEach(f => state.cmb.sel.add(f.id)); cmbRender(); }
 }, true);
 
+// ---------- Zoom: a large preview of one page over the workspace, like Acrobat ----------
+// a black bar (previous / next page, the file name, close) and the page as tall as the workspace; the rest is dimmed
+let cmbPv = null;
+function cmbPreview(f, p) {
+  cmbPreviewClose();
+  const v = $('cmb-view'); if (!v) return;
+  const ov = document.createElement('div'); ov.className = 'cmb-pv';
+  ov.innerHTML = `<div class="cmb-pv-bar"><button data-a="prev" title="Previous page"><span class="ic">${icon('cmb_prev')}</span></button><button data-a="next" title="Next page"><span class="ic">${icon('cmb_next')}</span></button>
+      <span class="cmb-pv-sep"></span><div class="cmb-pv-t">${escapeHtml(f.name)}</div><button data-a="x" title="Close"><span class="ic">${icon('cmb_x')}</span></button></div>
+    <div class="cmb-pv-body"><canvas></canvas></div>`;
+  document.body.appendChild(ov); document.body.classList.add('cmb-pv-on');
+  cmbPv = { ov, f, p, seq: 0 };
+  ov.querySelector('[data-a=x]').onclick = cmbPreviewClose;
+  ov.querySelector('[data-a=prev]').onclick = () => cmbPreviewStep(-1);
+  ov.querySelector('[data-a=next]').onclick = () => cmbPreviewStep(1);
+  ov.querySelector('.cmb-pv-body').addEventListener('mousedown', e => { if (e.target.classList.contains('cmb-pv-body')) cmbPreviewClose(); });
+  cmbPreviewPlace(); cmbPreviewDraw();
+}
+function cmbPreviewPlace() {
+  if (!cmbPv) return;
+  const r = $('cmb-view').getBoundingClientRect();
+  Object.assign(cmbPv.ov.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+}
+function cmbPreviewStep(d) {
+  const P = cmbPv; if (!P) return;
+  const list = cmbPagesOf(P.f), i = list.indexOf(P.p) + d;
+  if (i < 0 || i >= list.length) return;
+  P.p = list[i]; cmbPreviewDraw();
+}
+async function cmbPreviewDraw() {
+  const P = cmbPv; if (!P) return;
+  const seq = ++P.seq, f = P.f, body = P.ov.querySelector('.cmb-pv-body'), cv = body.querySelector('canvas');
+  const list = cmbPagesOf(f), i = list.indexOf(P.p);
+  P.ov.querySelector('[data-a=prev]').disabled = i <= 0;
+  P.ov.querySelector('[data-a=next]').disabled = i < 0 || i >= list.length - 1;
+  const H = Math.max(100, body.clientHeight), W = Math.max(100, body.clientWidth), dpr = window.devicePixelRatio || 1;
+  let src, w, h;
+  if (f.kind === 'img') { src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = f.img.url; }); w = f.img.w; h = f.img.h; }
+  else { src = await f.pj.getPage(P.p + 1); const v1 = src.getViewport({ scale: 1 }); w = v1.width; h = v1.height; }
+  if (seq !== P.seq || cmbPv !== P) return;
+  const k = Math.min(H / h, W / w);
+  cv.width = Math.round(w * k * dpr); cv.height = Math.round(h * k * dpr);
+  cv.style.width = Math.round(w * k) + 'px'; cv.style.height = Math.round(h * k) + 'px';
+  const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (f.kind === 'img') ctx.drawImage(src, 0, 0, cv.width, cv.height);
+  else await src.render({ canvasContext: ctx, viewport: src.getViewport({ scale: k * dpr }) }).promise;
+}
+function cmbPreviewClose() {
+  if (!cmbPv) return;
+  cmbPv.ov.remove(); cmbPv = null; document.body.classList.remove('cmb-pv-on');
+}
+window.addEventListener('resize', () => { if (cmbPv) { cmbPreviewPlace(); cmbPreviewDraw(); } });
+window.addEventListener('keydown', e => {
+  if (!cmbPv) return;
+  if (e.key === 'Escape') cmbPreviewClose();
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') cmbPreviewStep(-1);
+  else if (e.key === 'ArrowRight' || e.key === 'PageDown') cmbPreviewStep(1);
+  else return;
+  e.preventDefault(); e.stopPropagation();
+}, true);
+
 // ---------- Options ----------
 function cmbOptions() {
   const S = state.cmb;
@@ -18819,29 +19025,10 @@ function cmbHelp() {
 }
 
 // ---------- Combine ----------
-// combining makes a new file, so signatures can't come along (a signature covers the exact bytes of the file it
-// was made on). Say so, and how to keep one: add the other pages to the signed file with Organize Pages › Insert,
-// which saves them as an update after the signature, so it stays valid.
-function cmbSignedWarning(signed) {
-  return new Promise(resolve => {
-    let done = false; const fin = v => { if (!done) { done = true; resolve(v); } };
-    const list = signed.map(f => `<li>${escapeHtml(f.name)}</li>`).join('');
-    const dlg = esDialog('cmb-sig-ov', 'Digital Signatures', `<div class="es-note" style="font-size:13px;line-height:1.5">
-        <p style="margin:0 0 8px"><b>One or more documents will lose their digital signature:</b></p>
-        <ul style="margin:0 0 10px 18px;padding:0">${list}</ul>
-        <p style="margin:0 0 8px">To keep the digital signature, consider re-attaching it using <b>Organize Pages</b>: open the signed document, then use <b>Insert › From File</b> to add the other files to it. The pages are added after the signature and it stays valid.</p>
-        <p style="margin:0;color:#9a9a9a">The original files are not changed either way.</p></div>`, [
-      { label: 'Combine Anyway', primary: true, run: () => fin(true) },
-      { label: 'Cancel', run: () => fin(false) }], 460);
-    new MutationObserver((m, o) => { if (!dlg.isConnected) { o.disconnect(); fin(false); } }).observe(document.body, { childList: true });
-  });
-}
 async function cmbCombine() {
   const S = state.cmb, files = S.files.filter(f => cmbPagesOf(f).length);
   if (!files.length) return;
-  const signed = files.filter(f => f.signed);
-  if (signed.length && !await cmbSignedWarning(signed)) return;
-  if (state.pdfDoc && state.dirty && !S.files.some(f => f.kind === 'current') && !await khzConfirm('The open document has unsaved changes that will be closed.\n\nCombine anyway? (Click Cancel, then "Add Open Files" to include it, or save it first.)')) return;
+  // (the open document stays open in its own tab: the combined file opens in a new one, so nothing is closed)
   showLoading(true, 'Combining files…');
   try {
     const out = await PDFLib.PDFDocument.create();
@@ -43829,7 +44016,8 @@ renderCommentList = khzWithIx(renderCommentList);
 // The PDF engine works through one request at a time. Opening asked it for each sheet, then each sheet's links and
 // markups, one after another — and each request waited behind the drawing of the first sheet (a big drawing sheet can
 // take seconds). Now every sheet and its markups are asked for at the start, and the markups list is kept, so the
-// several parts of the app that read it (comments, links, form fields, media) don't each ask again.
+// several parts of the app that read it (comments, links, form fields, media) don't each ask again. The same for a
+// one-page file, and the page's form-field scripts are asked for at the start too.
 const khzAnnotCache = new WeakMap();
 function khzPatchPageProto(page) {
   const P = Object.getPrototypeOf(page);
@@ -43854,7 +44042,7 @@ function khzPatchPageProto(page) {
   const _lp = layoutPages;
   layoutPages = async function () {
     const d = state.pdfDoc;
-    if (d && d.numPages > 1) for (let i = 1; i <= d.numPages; i++) d.getPage(i).then(p => { khzPatchPageProto(p); p.getAnnotations({ intent: 'display' }).catch(() => {}); }).catch(() => {});
+    if (d) for (let i = 1; i <= d.numPages; i++) d.getPage(i).then(p => { khzPatchPageProto(p); p.getAnnotations({ intent: 'display' }).catch(() => {}); if (p.getJSActions) p.getJSActions().catch(() => {}); }).catch(() => {});
     return _lp.apply(this, arguments);
   };
 }
@@ -44485,12 +44673,15 @@ recentList = async function () {
 }
 // the first page's picture for Home: drawn from the document itself (not from the screen, which may still be blank
 // or showing another tab), and stored once the Recent entry has been written
+// It is drawn after the page itself is on screen, the same way (annotation mode), so the PDF engine reuses that
+// work: drawn at the same time, a page with a very large picture was decoded twice and showed up seconds later.
 async function khzThumbOf(doc) {
   try {
+    for (let i = 0; i < 600 && state.pdfDoc === doc; i++) { const ps = state.pages && state.pages[1]; if (ps && ps.renderedKey && !ps.task) break; await new Promise(r => setTimeout(r, 200)); }
     const pg = await doc.getPage(1), v1 = pg.getViewport({ scale: 1 }), k = 120 / Math.max(v1.width, v1.height), vp = pg.getViewport({ scale: k * 1.5 });
     const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(vp.width)); c.height = Math.max(1, Math.round(vp.height));
     const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
-    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.ENABLE_STORAGE }).promise;
     return c.toDataURL('image/jpeg', 0.75);
   } catch (e) { return ''; }
 }
@@ -51311,6 +51502,242 @@ addCalibriFonts = (prev => async function (doc, ctx) {
   } catch (e) { console.warn('field fonts', e); }
   return r;
 })(addCalibriFonts);
+// ================================================================
+//  KHZ OVERCLOCK — page drawing engine (test). Created by K1LLAH0EZ.
+//  Built on PDFium (Apache License 2.0) through @embedpdf/pdfium (MIT), in WebAssembly: the same engine
+//  on Windows, Mac and the web version.
+//
+//  Pages are drawn by PDFium in a background worker instead of pdf.js; pdf.js still reads the document
+//  (text, links, forms, markups, Edit PDF). Colour profiles are applied by PDFium.
+//  Anything Overclock doesn't handle yet is drawn by pdf.js, page by page (see khzOcEligible / the worker's
+//  "fallback" answer). Off unless switched on (Help › KHZ Overclock engine).
+// ================================================================
+const KHZ_OC_PDFIUM = 'https://cdn.jsdelivr.net/npm/@embedpdf/pdfium@2.15.1/dist/';
+const khzOc = { on: false, worker: null, ready: null, seq: 0, waiting: new Map(), docs: new WeakMap(), docSeq: 0, failed: false, stats: { oc: 0, pdfjs: 0 } };
+khzOc.on = (() => { try { return getPref('engineOC', false) === true; } catch (e) { return false; } })();
+
+// ---------- the worker (PDFium + Little CMS) ----------
+function khzOcWorkerSource() {
+  return `
+import { init } from '${KHZ_OC_PDFIUM}index.browser.js';
+let P = null, E = null;
+const docs = new Map();   // id -> { doc, ptr, pages: Map(index -> page record) }
+const mem = () => E.memory.buffer;
+async function boot() {
+  const wasm = await (await fetch('${KHZ_OC_PDFIUM}pdfium.wasm')).arrayBuffer();
+  P = await init({ wasmBinary: wasm }); P.PDFiumExt_Init(); E = P.pdfium.wasmExports;
+}
+const then = (X, Y) => [X[0] * Y[0] + X[1] * Y[2], X[0] * Y[1] + X[1] * Y[3], X[2] * Y[0] + X[3] * Y[2], X[2] * Y[1] + X[3] * Y[3], X[4] * Y[0] + X[5] * Y[2] + Y[4], X[4] * Y[1] + X[5] * Y[3] + Y[5]];
+const inv = m => { const d = m[0] * m[3] - m[1] * m[2]; return [m[3] / d, -m[1] / d, -m[2] / d, m[0] / d, (m[2] * m[5] - m[3] * m[4]) / d, (m[1] * m[4] - m[0] * m[5]) / d]; };
+function pageRec(d, index) {
+  let r = d.pages.get(index); if (r) { d.pages.delete(index); d.pages.set(index, r); return r; }   // (most recently used last)
+  const page = P.FPDF_LoadPage(d.doc, index); if (!page) throw new Error('page ' + (index + 1) + ' could not be read');
+  // PDFium's own placement of the page at scale 1 (FPDF_RenderPageBitmapWithMatrix starts from it)
+  const PW = P.FPDF_GetPageWidthF(page), PH = P.FPDF_GetPageHeightF(page), o = E.malloc(8);
+  const at = (x, y) => { P.FPDF_PageToDevice(page, 0, 0, Math.round(PW * 1000), Math.round(PH * 1000), 0, x, y, o, o + 4); const v = new Int32Array(mem(), o, 2); return [v[0] / 1000, v[1] / 1000]; };
+  const z = at(0, 0), ux = at(1000, 0), uy = at(0, 1000); E.free(o);
+  const base = [(ux[0] - z[0]) / 1000, (ux[1] - z[1]) / 1000, (uy[0] - z[0]) / 1000, (uy[1] - z[1]) / 1000, z[0], z[1]];
+  // markups: which ones PDFium can't draw like pdf.js yet (form fields, no stored appearance) → pdf.js draws the page
+  const annots = []; let fallback = '';
+  const na = P.FPDFPage_GetAnnotCount(page);
+  for (let i = 0; i < na; i++) {
+    const a = P.FPDFPage_GetAnnot(page, i); if (!a) continue;
+    const sub = P.FPDFAnnot_GetSubtype(a), num = P.EPDFAnnot_GetObjectNumber(a), flags = P.FPDFAnnot_GetFlags(a);
+    // PDFium types: 1 note, 2 link, 16 pop-up (draw nothing on the page by themselves), 20 form field
+    if (sub === 20) fallback = fallback || 'form field';
+    annots.push({ num, flags, noAP: sub !== 1 && sub !== 2 && sub !== 16 && !(flags & 2) && !P.EPDFAnnot_HasAppearanceStream(a) });
+    P.FPDFPage_CloseAnnot(a);
+  }
+  r = { page, base, annots, hidden: '', fallback };
+  d.pages.set(index, r);
+  while (d.pages.size > 12) { const [k, old] = d.pages.entries().next().value; P.FPDF_ClosePage(old.page); d.pages.delete(k); }   // (PDFium keeps what it decoded for a page while the page is open)
+  return r;
+}
+function setHidden(r, hide) {   // markups KHZ draws itself are left out of the page drawing (pdf.js: annotationStorage noView)
+  const key = hide.join(','); if (key === r.hidden) return; r.hidden = key;
+  const set = new Set(hide), n = P.FPDFPage_GetAnnotCount(r.page);
+  for (let i = 0; i < n; i++) {
+    const a = P.FPDFPage_GetAnnot(r.page, i); if (!a) continue;
+    const rec = r.annots[i], want = set.has(rec && rec.num) ? (rec.flags | 2) : (rec ? rec.flags : P.FPDFAnnot_GetFlags(a));
+    if (P.FPDFAnnot_GetFlags(a) !== want) P.FPDFAnnot_SetFlags(a, want);
+    P.FPDFPage_CloseAnnot(a);
+  }
+}
+const fill = bg => { if (!bg) return 0xFFFFFFFF;   // (FillRect takes ARGB)
+  const m = /rgba?\\(([^)]+)\\)/.exec(bg); if (m) { const v = m[1].split(',').map(Number); const a = v.length > 3 ? Math.round(v[3] * 255) : 255; return ((a << 24) | (v[0] << 16) | (v[1] << 8) | v[2]) >>> 0; } const h = /^#?([0-9a-f]{6})$/i.exec(bg); return h ? (0xFF000000 | parseInt(h[1], 16)) >>> 0 : 0xFFFFFFFF; };
+const queue = []; let busy = false;
+async function pump() {
+  if (busy) return; busy = true;
+  while (queue.length) {
+    const m = queue.shift();
+    try { postMessage(await handle(m), m.op === 'render' && m._bm ? [m._bm] : []); }
+    catch (e) { postMessage({ rid: m.rid, error: String(e && e.message || e) }); }
+  }
+  busy = false;
+}
+async function handle(m) {
+  if (m.op === 'boot') { await boot(); return { rid: m.rid, ok: true }; }
+  if (m.op === 'open') {
+    const ptr = E.malloc(m.bytes.length); new Uint8Array(mem(), ptr, m.bytes.length).set(m.bytes);
+    const doc = P.FPDF_LoadMemDocument(ptr, m.bytes.length, m.password || '');
+    if (!doc) { E.free(ptr); return { rid: m.rid, error: 'could not open (' + P.FPDF_GetLastError() + ')' }; }
+    docs.set(m.id, { doc, ptr, pages: new Map() });
+    return { rid: m.rid, ok: true, pages: P.FPDF_GetPageCount(doc) };
+  }
+  if (m.op === 'close') { const d = docs.get(m.id); if (d) { d.pages.forEach(r => P.FPDF_ClosePage(r.page)); P.FPDF_CloseDocument(d.doc); E.free(d.ptr); docs.delete(m.id); } return { rid: m.rid, ok: true }; }
+  if (m.op === 'render') {
+    if (m.cancelled) return { rid: m.rid, cancelled: true };
+    const d = docs.get(m.id); if (!d) return { rid: m.rid, error: 'document not open' };
+    const r = pageRec(d, m.index);
+    if (r.fallback) return { rid: m.rid, fallback: r.fallback };
+    // a markup with no stored appearance that's shown (not drawn by KHZ itself): pdf.js makes one up, PDFium doesn't yet
+    { const hs = new Set(m.hide || []); if (r.annots.some(a => a.noAP && !hs.has(a.num))) return { rid: m.rid, fallback: 'markup without appearance' }; }
+    setHidden(r, m.hide || []);
+    const M = then(inv(r.base), m.t);
+    const bmp = P.FPDFBitmap_Create(m.w, m.h, 1); P.FPDFBitmap_FillRect(bmp, 0, 0, m.w, m.h, fill(m.bg));
+    const mp = E.malloc(24), cp = E.malloc(16); new Float32Array(mem(), mp, 6).set(M); new Float32Array(mem(), cp, 4).set([0, 0, m.w, m.h]);
+    P.FPDF_RenderPageBitmapWithMatrix(bmp, r.page, mp, cp, (m.annots ? 0x01 : 0) | 0x10);   // 0x01 markups, 0x10 RGBA byte order (what the canvas takes)
+    E.free(mp); E.free(cp);
+    const st = P.FPDFBitmap_GetStride(bmp), src = new Uint8Array(mem(), P.FPDFBitmap_GetBuffer(bmp), st * m.h), out = new Uint8ClampedArray(m.w * m.h * 4);
+    if (st === m.w * 4) out.set(src); else for (let y = 0; y < m.h; y++) out.set(src.subarray(y * st, y * st + m.w * 4), y * m.w * 4);
+    P.FPDFBitmap_Destroy(bmp);
+    const bm = await createImageBitmap(new ImageData(out, m.w, m.h), { premultiplyAlpha: 'default' });
+    m._bm = bm;
+    return { rid: m.rid, bitmap: bm };
+  }
+  return { rid: m.rid, error: 'unknown op' };
+}
+const byRid = new Map();
+onmessage = e => {
+  const m = e.data;
+  if (m.op === 'cancel') { const q = byRid.get(m.target); if (q) q.cancelled = true; return; }
+  byRid.set(m.rid, m); if (byRid.size > 500) byRid.delete(byRid.keys().next().value);
+  queue.push(m); pump();
+};
+`;
+}
+function khzOcStart() {
+  if (khzOc.ready) return khzOc.ready;
+  khzOc.ready = (async () => {
+    const url = URL.createObjectURL(new Blob([khzOcWorkerSource()], { type: 'text/javascript' }));
+    const w = new Worker(url, { type: 'module', name: 'KHZ Overclock' });
+    khzOc.worker = w;
+    w.onmessage = e => { const m = e.data, p = khzOc.waiting.get(m.rid); if (p) { khzOc.waiting.delete(m.rid); p(m); } };
+    w.onerror = e => { console.warn('KHZ Overclock stopped', e.message || e); khzOc.failed = true; khzOc.waiting.forEach(p => p({ error: 'engine stopped' })); khzOc.waiting.clear(); };
+    const r = await khzOcAsk({ op: 'boot' });
+    if (r.error) throw new Error(r.error);
+    return true;
+  })().catch(e => { console.warn('KHZ Overclock could not start:', e); khzOc.failed = true; return false; });
+  return khzOc.ready;
+}
+function khzOcAsk(m, transfer) {
+  const rid = ++khzOc.seq; m.rid = rid;
+  return new Promise(res => { khzOc.waiting.set(rid, res); khzOc.worker.postMessage(m, transfer || []); });
+}
+// each pdf.js document's bytes, kept so Overclock can open the same document (pdf.js hands its copy to its worker)
+{
+  const _gd = pdfjsLib.getDocument;
+  pdfjsLib.getDocument = function (src) {
+    const data = src && src.data, copy = data && (data instanceof Uint8Array ? data.slice() : new Uint8Array(data).slice());
+    const task = _gd.apply(this, arguments);
+    if (copy) task.promise.then(doc => { khzOc.docs.set(doc, { bytes: copy, id: 0, opening: null, pages: 0, password: src.password || '' }); }, () => {});
+    return task;
+  };
+}
+async function khzOcDoc(pdfDoc) {
+  const d = khzOc.docs.get(pdfDoc); if (!d) return null;
+  if (d.id) return d;
+  if (!d.opening) d.opening = (async () => {
+    if (!await khzOcStart()) return null;
+    const id = ++khzOc.docSeq;
+    const r = await khzOcAsk({ op: 'open', id, bytes: d.bytes, password: d.password });
+    if (r.error) { console.warn('KHZ Overclock:', r.error); d.bad = true; return null; }
+    d.id = id; d.pages = r.pages;
+    pdfDoc.loadingTask && pdfDoc.loadingTask.promise.then(() => {}, () => {});
+    const _destroy = pdfDoc.destroy;   // the pdf.js document closes → Overclock's copy closes too
+    pdfDoc.destroy = function () { khzOcAsk({ op: 'close', id }); return _destroy.apply(this, arguments); };
+    return d;
+  })();
+  return d.opening;
+}
+// ---------- drop-in for pdf.js page.render(), for the page drawings on screen ----------
+const khzOcThen = (X, Y) => [X[0] * Y[0] + X[1] * Y[2], X[0] * Y[1] + X[1] * Y[3], X[2] * Y[0] + X[3] * Y[2], X[2] * Y[1] + X[3] * Y[3], X[4] * Y[0] + X[5] * Y[2] + Y[4], X[4] * Y[1] + X[5] * Y[3] + Y[5]];
+function khzOcEligible(page, params) {
+  if (!khzOc.on || khzOc.failed || !params || !params.canvasContext || !params.viewport) return false;
+  if (!params.canvasContext.__khzScreen) return false;                  // the page drawings on screen (not thumbnails, printing, exports)
+  if (params.intent && params.intent !== 'display') return false;
+  if (params.optionalContentConfigPromise) return false;               // layers switched on/off: pdf.js for now
+  if (params.pageColors) return false;
+  if (!page._khzDoc || !khzOc.docs.get(page._khzDoc) || khzOc.docs.get(page._khzDoc).bad) return false;
+  return true;
+}
+function khzOcRender(page, params, orig, self, args) {
+  let cancelled = false, rid = 0, fallbackTask = null;
+  const ctx = params.canvasContext, c = ctx.canvas;
+  const T = params.transform ? khzOcThen(params.viewport.transform, params.transform) : params.viewport.transform.slice();
+  // markups KHZ draws itself on this page (KHZ marks them noView in pdf.js's annotation storage, app2b syncNativeVisibility)
+  const store = page._khzDoc.annotationStorage, ids = (state.nativeIds || {})[page._pageIndex + 1] || [];
+  const hide = ids.filter(id => { const v = store && store.getRawValue && store.getRawValue(id); return v && v.noView; }).map(id => parseInt(id, 10));
+  const mode = params.annotationMode == null ? pdfjsLib.AnnotationMode.ENABLE : params.annotationMode;
+  const t0 = performance.now();
+  const promise = (async () => {
+    const d = await khzOcDoc(page._khzDoc);
+    if (cancelled) throw khzOcCancelled();
+    if (!d) { fallbackTask = orig.apply(self, args); return fallbackTask.promise; }
+    const msg = { op: 'render', id: d.id, index: page._pageIndex, w: c.width, h: c.height, t: T, annots: mode !== pdfjsLib.AnnotationMode.DISABLE, hide, bg: params.background || '' };
+    const p = khzOcAsk(msg); rid = msg.rid;
+    const r = await p;
+    if (cancelled) { if (r.bitmap) r.bitmap.close(); throw khzOcCancelled(); }
+    if (r.fallback || r.error) {
+      if (r.error) console.warn('KHZ Overclock: page', page._pageIndex + 1, r.error);
+      khzOc.stats.pdfjs++; (khzOc.stats.why = khzOc.stats.why || {})[r.fallback || 'error'] = ((khzOc.stats.why || {})[r.fallback || 'error'] || 0) + 1;
+      fallbackTask = orig.apply(self, args); return fallbackTask.promise;
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'copy'; ctx.drawImage(r.bitmap, 0, 0); ctx.restore();
+    r.bitmap.close();
+    khzOc.stats.oc++; khzOc.last = Math.round(performance.now() - t0);
+  })();
+  return { promise, cancel() { cancelled = true; if (rid && khzOc.worker) khzOc.worker.postMessage({ op: 'cancel', target: rid }); if (fallbackTask) fallbackTask.cancel(); }, get separateAnnots() { return false; }, onContinue: null };
+}
+function khzOcCancelled() { const e = new Error('Rendering cancelled'); e.name = 'RenderingCancelledException'; return e; }
+// pages get their document noted, and their render() goes through Overclock when it's on and can draw it
+{
+  const _gd2 = pdfjsLib.getDocument;
+  pdfjsLib.getDocument = function () {
+    const task = _gd2.apply(this, arguments);
+    task.promise.then(doc => {
+      const _gp = doc.getPage;
+      doc.getPage = function () {
+        return _gp.apply(this, arguments).then(pg => {
+          pg._khzDoc = doc;
+          const P = Object.getPrototypeOf(pg);
+          if (!P._khzOc) {
+            P._khzOc = true;
+            const _render = P.render;
+            P.render = function (params) { return khzOcEligible(this, params) ? khzOcRender(this, params, _render, this, arguments) : _render.apply(this, arguments); };
+          }
+          return pg;
+        });
+      };
+    }, () => {});
+    return task;
+  };
+}
+// ---------- switch (Help menu) ----------
+function khzOcSet(on) {
+  khzOc.on = !!on; setPrefs({ engineOC: khzOc.on });
+  if (khzOc.on) khzOcStart();
+  Object.values(state.pages || {}).forEach(ps => { if (ps) { ps.renderedKey = null; ps.wrapper && ps.wrapper.querySelectorAll('.page-tile').forEach(t => t.remove()); } });
+  if (typeof renderVisiblePages === 'function') renderVisiblePages();
+  toast(khzOc.on ? 'KHZ Overclock engine is on (test). Pages are drawn by Overclock.' : 'KHZ Overclock engine is off. Pages are drawn by the standard engine.');
+}
+{ const _rk = renderKey; renderKey = function () { return _rk.apply(this, arguments) + (khzOc.on ? '|oc' : ''); }; }
+if (khzOc.on) setTimeout(khzOcStart, 0);
+function khzOcAbout() {
+  esDialog('oc-about', 'KHZ Overclock engine', `<div class="es-note" style="line-height:1.6"><b>KHZ Overclock</b> — page drawing engine (test)<br>Created by <b>K1LLAH0EZ</b>.<br><br>
+    Built on PDFium (Apache License 2.0, © The PDFium Authors) through @embedpdf/pdfium (MIT, © EmbedPDF).<br><br>
+    ${khzOc.on ? `On. Pages drawn by Overclock this session: ${khzOc.stats.oc}; by the standard engine (not handled yet): ${khzOc.stats.pdfjs}.` : 'Off.'}</div>`, [{ label: khzOc.on ? 'Turn Off' : 'Turn On', primary: true, run: () => khzOcSet(!khzOc.on) }, { label: 'Close' }], 470);
+}
 </script>
 </body>
 </html>
