@@ -16254,7 +16254,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1503';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1504';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -16538,6 +16538,7 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1504', ['Display themes redesigned (View \u203a Display Theme): every named theme now colours the whole window \u2014 menus and their highlight, dividers, fields, side panels and rails, dialogs\u2019 title bars, tooltips, scroll bars \u2014 with colours worked out in even steps of its own hue (no more grey and Adobe-blue parts, no muddy shades), contrast checked for every theme, rounded tabs and menus, a soft shadow under the toolbar, filled fields, the selected tool on an accent-tinted pill, and the right panel\u2019s tools on rounded tiles in their own colour turned toward the theme. Acrobat\u2019s Dark Gray and Light Gray stay as they are.']],
   ['2026.10.1503', ['Desktop app: the KHZ Overclock page engine is no longer a test \u2014 it is now the standard page engine, on unless you switch it off (Help \u203a KHZ Overclock Engine). The web version keeps it off unless switched on.', 'Desktop: text recognition is faster \u2014 the AI reader reads its lines while Tesseract is still reading the page (it used to wait for Tesseract to finish; about 3 seconds a page on 8-thread computers).']],
   ['2026.10.1502', ['Desktop (Windows): the first text recognition after opening KHZ PDF no longer waits for the graphics card check. The AI reader starts on the processor at once; whether the graphics card is faster on your computer is checked later, in the background while nothing is being read, and remembered for that computer (it used to run at every start, and a scan right after opening waited for it \u2014 up to 25 seconds).']],
   ['2026.10.1501', ['Edit PDF on a scanned page (and Recognize Text \u203a Editable Text and Images): the scanned letters are taken out of the page picture more cleanly \u2014 no left-over \u201c(\u201d or letter tops beside the new text, fill-in lines and box borders stay unbroken where words sit on them, and a highlighted label keeps its highlight (it used to get white holes).']],
@@ -58113,6 +58114,278 @@ async function khzOcrWarm() {
 }
 window.addEventListener('load', () => setTimeout(khzOcrWarm, 6000));
 if (document.readyState === 'complete') setTimeout(khzOcrWarm, 6000);
+
+// ================================================================
+//  DISPLAY THEMES, REDESIGNED (Brandon picked them in the KHZ Theme Studio preview)
+//  Every named theme (View › Display Theme, all but Acrobat's own Dark Gray / Light Gray) now colours the whole window:
+//  • its colours are worked out in OKLCH (even steps of perceived lightness, tinted with the theme's own hue) instead
+//    of mixing with black — coloured themes keep their colour on every layer (menu bar, tabs, toolbar, panels, menus,
+//    page area), light themes take their colour from the page area onto the bars, panels and side rails;
+//  • contrast is checked per theme: text 7:1, secondary text 4.5:1, accent 3:1 against the bars (accent hue kept);
+//  • the parts that stayed grey and Adobe-blue whatever the theme (menus and their highlight, dividers, input lines,
+//    fields, side panels, dialogs, context menus, scroll bars, tooltips) follow the theme;
+//  • finishing: one band for menu bar + tabs, rounded tabs and menus, a soft shadow under the toolbar, filled fields,
+//    accent-tinted selected tools, raised menus, a layered page shadow, the right panel's tool icons on rounded tiles
+//    in their own colour turned toward the theme.
+//  Acrobat's Dark Gray and Light Gray (and Use System Setting) stay exactly Acrobat's.
+// ================================================================
+const [khzThemeTokens, khzOk] = (() => {
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+const rgb2hex = c => '#' + c.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('');
+const lin = v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4, delin = v => v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+function toOklch(h) {
+  const [r, g, b] = hex2rgb(h).map(lin);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  return [L, Math.hypot(A, B), (Math.atan2(B, A) * 180 / Math.PI + 360) % 360];
+}
+function oklch(L, C, H) {
+  const a = C * Math.cos(H * Math.PI / 180), b = C * Math.sin(H * Math.PI / 180);
+  const to = (L, a, b) => { const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+    return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s]; };
+  // (out of the screen's range: lower the chroma until it fits, keeping lightness and hue)
+  let c = C, rgb = to(L, a, b);
+  for (let i = 0; i < 24 && rgb.some(v => v < -0.0005 || v > 1.0005); i++) { c *= 0.9; rgb = to(L, c * Math.cos(H * Math.PI / 180), c * Math.sin(H * Math.PI / 180)); }
+  return rgb2hex(rgb.map(v => delin(Math.min(1, Math.max(0, v)))));
+}
+const lum = h => { const [r, g, b] = hex2rgb(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+function mixOk(a, b, k) { const A = toOklch(a), B = toOklch(b); let dh = B[2] - A[2]; if (dh > 180) dh -= 360; if (dh < -180) dh += 360; const ha = A[1] < 0.01 ? B[2] : B[1] < 0.01 ? A[2] : A[2] + dh * k; return oklch(A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, ha); }
+const alpha = (h, a) => { const [r, g, b] = hex2rgb(h).map(v => Math.round(v * 255)); return `rgba(${r},${g},${b},${a})`; };
+// lightness moved until the colour reaches a contrast against `bg` (keeps hue and chroma)
+function ensure(fg, bg, min, dirUp) {
+  let [L, C, H] = toOklch(fg), c = fg, up = dirUp != null ? dirUp : lum(bg) < 0.25;
+  for (let i = 0; i < 60 && contrast(c, bg) < min; i++) { L += up ? 0.012 : -0.012; if (L > 1 || L < 0) break; c = oklch(L, C * (up && L > 0.9 ? 0.85 : 1), H); }
+  return c;
+}
+
+
+const CURATED = {
+  dracula: { line: '#191a21', raised: '#44475a', selected: '#44475a', dim: '#6272a4', strip: '#ff79c6' },
+  nord: { line: '#2e3440', raised: '#434c5e', selected: '#4c566a', dim: '#81a1c1', strip: '#b48ead' },
+  onedark: { line: '#181a1f', raised: '#353b45', dim: '#7f848e', strip: '#c678dd' },
+  tokyo: { line: '#101014', raised: '#292e42', dim: '#565f89', strip: '#bb9af7' },
+  'mocha-cat': { line: '#11111b', raised: '#45475a', dim: '#7f849c', strip: '#f5c2e7' },
+  gruvbox: { line: '#1d2021', raised: '#504945', dim: '#a89984', strip: '#fe8019' },
+  monokai: { line: '#1e1f1c', raised: '#49483e', dim: '#90908a', strip: '#f92672' },
+  'solar-d': { line: '#00212b', raised: '#0a4352', dim: '#839496', strip: '#d33682' },
+  'gh-dark': { line: '#30363d', raised: '#161b22', dim: '#8b949e', strip: '#bc8cff' },
+  'solar-l': { line: '#e3dcc6', raised: '#fdf6e3', dim: '#93a1a1', strip: '#d33682' },
+  'gh-light': { line: '#d0d7de', raised: '#ffffff', dim: '#656d76', strip: '#8250df' },
+  latte: { line: '#ccd0da', raised: '#ffffff', dim: '#8c8fa1', strip: '#ea76cb' },
+  'ros-pine': { line: '#1f1d2e', raised: '#2a273f', dim: '#6e6a86', strip: '#c4a7e7' },
+  palenight: { line: '#1b1e2b', raised: '#3a3f58', dim: '#676e95', strip: '#f07178' },
+  'night-owl': { line: '#122d42', raised: '#0e2a41', dim: '#637777', strip: '#c792ea' },
+  'catppuccin-macchiato': { line: '#181926', raised: '#494d64', dim: '#8087a2', strip: '#f5bde6' },
+  'shades-of-purple': { line: '#1e1e3f', raised: '#2d2b55', dim: '#a599e9', strip: '#ff628c' },
+  horizon: { line: '#1c1e26', raised: '#2e303e', dim: '#6c6f93', strip: '#26bbd9' },
+  cobalt2: { line: '#15232d', raised: '#234e6d', dim: '#8aa8bf', strip: '#ff9d00' },
+};
+function newTokens(t) {
+  const id = t[0], dark = t[3] === 'dark', src = t;
+  const bar0 = src[4], doc0 = src[5], acc0 = src[6], hc = t[2] === 'High Contrast', cur = CURATED[id] || {};
+  let [bL, bC, bH] = toOklch(bar0); const [dL, dC, dH] = toOklch(doc0);
+  // surfaces: a ladder in perceived lightness, all with the bar's hue; colourful bars keep their colour, greys get a
+  // whisper of the accent's hue so they don't look dead
+  const aH = toOklch(acc0)[2];
+  let tintH, tintC;
+  if (dark) { tintH = bC < 0.012 ? aH : bH; tintC = bC < 0.012 ? (hc ? 0 : 0.006) : Math.min(bC, 0.09); }
+  else {
+    // light themes: their colour is mostly in the page area (the bars are near white), so the bars, panels and rails
+    // take the theme's hue from the bar if it has one, else from the page area — strong enough to see, so the whole
+    // window reads as one theme (before, near-white bars came out plain white beside a coloured page area)
+    const src2 = bC >= 0.008 ? [bC, bH] : dC >= 0.012 ? [dC, dH] : [0, aH];
+    tintH = src2[1]; tintC = hc ? 0 : src2[0] < 0.008 ? 0.004 : Math.min(0.05, Math.max(0.03, Math.max(bC, src2[0] * 0.8)));
+  }
+  const vivid = bC > 0.12;   // a strongly coloured bar (Barbie): a painted window, kept as it is
+  const S = (L, k = 1) => oklch(Math.min(0.995, Math.max(0, L)), tintC * k, tintH);
+  let T = {};
+  if (dark && !vivid) {
+    const L0 = Math.min(0.42, Math.max(0.2, bL));          // the toolbar
+    const canvas = oklch(Math.min(dL, L0 - 0.075), Math.min(dC, 0.06), dC < 0.012 ? tintH : dH);
+    T = { toolbar: S(L0), chrome: S(L0), rail: S(L0 - 0.012), panel: S(L0 - 0.006), tabs: S(L0 - 0.045), menubar: S(L0 - 0.065), canvas,
+      raised: S(L0 + 0.045), line: S(L0 - 0.085, 1.1), menuLine: S(L0 - 0.1, 1.1), tabDiv: 'transparent', tabLine: S(L0 - 0.085, 1.1) };
+  } else if (dark && vivid) {   // a painted (coloured) window
+    // (deep enough for white writing to read at 5:1)
+    while (contrast('#ffffff', oklch(bL, bC, bH)) < 5 && bL > 0.3) bL -= 0.01;
+    const barV = oklch(bL, bC, bH);
+    T = { toolbar: barV, chrome: barV, rail: oklch(bL - 0.03, bC, bH), panel: oklch(bL - 0.015, bC * 0.95, bH), tabs: oklch(bL - 0.07, bC, bH), menubar: oklch(bL - 0.1, bC, bH), canvas: doc0,
+      raised: oklch(bL + 0.05, bC * 0.9, bH), line: oklch(bL - 0.12, bC, bH), menuLine: oklch(bL - 0.16, bC, bH), tabDiv: 'transparent', tabLine: oklch(bL - 0.12, bC, bH) };
+  } else {
+    const L0 = tintC > 0.01 ? 0.955 : Math.min(0.975, Math.max(0.94, bL));   // (a coloured light theme: bars a clear, light shade of its colour; a neutral one just off white)
+    const canvas = oklch(Math.min(0.9, Math.max(0.85, dL)), Math.min(dC, 0.032), dC < 0.01 ? tintH : dH);   // (a calm page area: soft, never a loud colour)
+    T = { toolbar: S(L0), chrome: S(L0), rail: S(L0 - 0.018), panel: S(Math.min(0.995, L0 + 0.006)), tabs: S(L0 - 0.045), menubar: S(L0 - 0.02), canvas,
+      raised: S(Math.min(0.985, L0 + 0.025), 0.75), fieldBg: S(Math.min(0.99, L0 + 0.03), 0.55), line: S(L0 - 0.11, 1.3), menuLine: S(L0 - 0.08, 1.2), tabDiv: 'transparent', tabLine: S(L0 - 0.11, 1.3) };
+  }
+  if (hc) { T.line = dark ? '#ffffff' : '#000000'; T.menuLine = T.line; T.tabLine = T.line; T.raised = dark ? '#000000' : '#ffffff'; }
+  if (cur.line) { T.line = cur.line; T.menuLine = cur.line; T.tabLine = cur.line; }
+  if (cur.raised) T.raised = cur.raised;
+  const bg = T.toolbar;
+  // text: the theme's own, made to reach 7:1 on the bars (and on the darkest/lightest surface)
+  let text = src[7] || (dark ? oklch(0.95, Math.min(0.012, tintC), tintH) : oklch(0.25, Math.min(0.02, tintC * 1.5), tintH));
+  text = ensure(text, bg, hc ? 15 : 7, dark ? undefined : false);
+  const dim = cur.dim && contrast(cur.dim, bg) >= 4.2 ? cur.dim : ensure(mixOk(text, bg, 0.42), bg, 4.5, dark ? undefined : false);
+  const icon = ensure(mixOk(text, bg, 0.14), bg, 6, dark ? undefined : false);
+  // accent: its hue kept; lightness only as far as needed for 3:1 on the bars; a softer version for text on the bars (4.5:1)
+  // (a refined accent: the hue kept, its brightness and strength brought into a calm, even range — no neon, no mud)
+  let acc1 = acc0;
+  if (!hc && !vivid) { const [l, c, h] = toOklch(acc0); acc1 = dark ? oklch(Math.min(0.86, Math.max(0.68, l)), Math.min(c, 0.2), h) : oklch(Math.min(0.62, Math.max(0.47, l)), Math.min(c, 0.2), h); }
+  let accent = ensure(acc1, bg, 3, dark ? undefined : false);
+  const accentText = ensure(accent, bg, 4.5, dark ? undefined : false);
+  const onAccent = contrast('#ffffff', accent) >= contrast('#111111', accent) ? '#ffffff' : '#111111';
+  const [aL, aC, aHH] = toOklch(accent);
+  const selected = cur.selected || (dark ? alpha(accent, 0.2) : alpha(accent, 0.13));
+  const hover = dark ? alpha(text, 0.085) : alpha(text, 0.065);
+  const strip = cur.strip || (hc ? accent : vivid ? '#ffffff' : oklch(dark ? 0.72 : 0.62, 0.19, 350));   // Edit PDF's strip: the app's pink, set in the theme's light
+  const sh = dark ? 'rgba(0,0,0,.55)' : 'rgba(30,25,40,.16)';
+  return Object.assign(T, {
+    text, dim, icon, accent, accentText, onAccent, hover, selected, selLine: alpha(accent, dark ? 0.35 : 0.3), tabDivNew: alpha(text, 0.16),
+    fieldBg: dark ? alpha('#000000', 0.18) : (T.fieldBg || alpha('#ffffff', 0.85)), fieldRing: dark ? alpha('#ffffff', 0.07) : alpha('#000000', 0.08),
+    raisedGlass: hc ? T.raised : alpha(T.raised, dark ? 0.86 : 0.88), fieldLine: mixOk(bg, text, dark ? 0.32 : 0.38),
+    tabText: mixOk(text, T.tabs, 0.22), tabR: '9px', tabShadow: dark ? '0 -1px 0 rgba(255,255,255,.04)' : '0 -1px 3px rgba(0,0,0,.05)',
+    ctxStrip: strip, closeLine: mixOk(text, bg, 0.35), raisedLine: hc ? T.line : (dark ? alpha('#ffffff', 0.08) : alpha('#000000', 0.09)),
+    raisedSep: dark ? alpha(text, 0.1) : alpha(text, 0.1), menuHover: hc ? accent : (dark ? alpha(accent, 0.28) : alpha(accent, 0.14)), menuHoverText: hc ? onAccent : text,
+    ddR: '10px', ddShadow: `0 12px 32px ${sh}, 0 2px 6px ${dark ? 'rgba(0,0,0,.35)' : 'rgba(0,0,0,.08)'}`, r1: '6px', r2: '8px',
+    barShadow: dark ? `0 1px 0 rgba(255,255,255,.03) inset, 0 4px 14px -6px ${sh}` : `0 4px 14px -8px ${sh}`,
+    pageShadow: dark ? '0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45)' : '0 1px 2px rgba(0,0,0,.08), 0 10px 30px rgba(40,35,60,.16)',
+    scroll: alpha(text, dark ? 0.22 : 0.25), btnShadow: `0 1px 0 rgba(255,255,255,.18) inset, 0 4px 12px ${alpha(accent, 0.35)}`
+  });
+}
+
+  return [newTokens, { toOklch, oklch, contrast }];
+})();
+
+// ---------- the window's colours from the tokens ----------
+// (the --ac-* colours every part of the window is drawn with, plus --kt-* for the parts that had fixed colours)
+khzThemeVars = function (t) {
+  if (!t || !t[4]) return null;
+  const k = khzThemeTokens(t);
+  return { '--ac-bar': k.toolbar, '--ac-menu': k.tabs, '--ac-tabs': k.tabs, '--ac-panel': k.panel, '--ac-doc': k.canvas, '--ac-sep': k.line, '--ac-text': k.text,
+    '--ac-ico': k.icon, '--ac-dim': k.dim, '--ac-blue': k.accent, '--ac-hover': k.hover, '--ac-tabhover': k.hover };
+};
+const KHZ_KT = ['rail', 'raised', 'raisedGlass', 'raisedLine', 'raisedSep', 'line', 'tabLine', 'tabText', 'tabDivNew', 'accentText', 'onAccent', 'selected', 'selLine', 'fieldBg', 'fieldRing', 'fieldLine',
+  'ctxStrip', 'closeLine', 'menuHover', 'menuHoverText', 'ddShadow', 'barShadow', 'pageShadow', 'scroll', 'btnShadow', 'canvas'];
+applyTheme = (prev => function (previewId) {
+  const r = prev.apply(this, arguments);
+  const id = previewId || getPref('theme', 'dark'), t = khzThemeById(id), st = document.body.style, named = !!(t && t[4]);
+  document.body.classList.toggle('khz-th', named);
+  if (named) { const k = khzThemeTokens(t); KHZ_KT.forEach(n => st.setProperty('--kt-' + n, k[n])); }
+  else KHZ_KT.forEach(n => st.removeProperty('--kt-' + n));
+  // (a painted tab bar, Taxi: its writing stays the colour chosen for it)
+  const P = named && t[8] || {}, ps = document.getElementById('khz-theme-paint');
+  if (ps && P.tabs) ps.textContent += `body.khz-th #tab-bar .tab:not(.active), body.khz-th #tab-bar .home-tab:not(.on) { color:${khzLum(P.tabs) > 0.55 ? '#141414' : '#f5f5f5'} !important; }`;
+  return r;
+})(applyTheme);
+
+// ---------- the theme layer: every part of the window drawn with the theme's colours ----------
+(function khzThemeLayer() {
+  const B = 'body.khz-th';
+  const css = `
+  ${B} #menu-bar { background:var(--ac-menu); border-bottom:none; }
+  ${B} #menu-bar .menu-item { color:var(--ac-text); border-radius:6px; }
+  ${B} .menu-item:hover, ${B} .menu-dropdown.open .menu-item { background:var(--ac-hover) !important; }
+  ${B} .menu-dropdown .dropdown-content, ${B} .dd-sub, ${B} #ctx-menu, ${B} .cm-submenu { background:var(--kt-raised) !important; border:1px solid var(--kt-raisedLine) !important; border-radius:10px !important; box-shadow:var(--kt-ddShadow) !important; padding:5px !important; }
+  ${B} .dropdown-content .dd-item, ${B} .dd-sub .dd-item.fm, ${B} #ctx-menu .cm-item { color:var(--ac-text) !important; border-radius:6px; }
+  ${B} .dropdown-content .dd-item span, ${B} .fm-key, ${B} .fm-arrow { color:var(--ac-dim) !important; }
+  ${B} .fm-ic, ${B} .em-check { color:var(--ac-ico) !important; }
+  ${B} .dropdown-content .dd-item:hover, ${B} .dd-sub .dd-item.fm:hover, ${B} .dd-item.has-sub.sub-open, ${B} #ctx-menu .cm-item:hover { background:var(--kt-menuHover) !important; color:var(--kt-menuHoverText) !important; }
+  ${B} .dropdown-content .dd-item:hover span, ${B} .dd-item.fm:hover .fm-ic, ${B} .dd-item.fm:hover .fm-arrow, ${B} .dd-item.fm:hover .fm-key { color:var(--kt-menuHoverText) !important; }
+  ${B} .dd-item.fm.disabled, ${B} .dd-sub .dd-item.fm.disabled { color:var(--ac-dim) !important; opacity:.7; }
+  ${B} .dropdown-content .dd-sep, ${B} .dd-sep { background:var(--kt-raisedSep) !important; border-color:var(--kt-raisedSep) !important; }
+  ${B} #tab-bar { background:var(--ac-tabs); border-bottom:1px solid var(--kt-tabLine); }
+  ${B} #tab-bar .tab { border:none !important; border-radius:10px 10px 0 0; color:var(--kt-tabText); position:relative; }
+  ${B} #tab-bar .tab:not(.active) + .tab:not(.active)::before { content:""; position:absolute; left:0; top:9px; bottom:9px; width:1px; background:var(--kt-tabDivNew); }
+  ${B} #tab-bar .tab.active { background:var(--ac-bar); color:var(--ac-text); }
+  ${B} #tab-bar .tab:hover:not(.active) { background:var(--ac-hover); }
+  ${B} #tab-bar .tab .tab-close { color:inherit; }
+  ${B} #tab-bar .home-tab { color:var(--kt-tabText); border-radius:10px 10px 0 0; }
+  ${B} #tab-bar .home-tab:hover { color:var(--ac-text); }
+  ${B} #tab-bar .home-tab.on { color:var(--ac-text); background:var(--ac-bar); }
+  ${B} #main-toolbar { border-bottom:1px solid var(--kt-line) !important; box-shadow:var(--kt-barShadow); position:relative; z-index:3; }
+  ${B} .tb-btn, ${B} .ctx-btn, ${B} .side-btn, ${B} .hdr-btn, ${B} .fp-btn, ${B} .cmp-tools button { border-radius:8px; }
+  ${B} .tb-btn.active, ${B} .ctx-btn.active, ${B} .ctx-btn.on, ${B} .ctx-btn.on.cm-tool, ${B} #cm-pin.on { background:var(--kt-selected) !important; box-shadow:inset 0 0 0 1px var(--kt-selLine) !important; color:var(--kt-accentText) !important; }
+  ${B} .tb-btn.active .ic, ${B} .ctx-btn.active .ic, ${B} .ctx-btn.on .ic { color:var(--kt-accentText) !important; }
+  ${B} .tb-input, ${B} #page-input, ${B} #zoom-select { border-bottom:none !important; background-color:var(--kt-fieldBg) !important; border-radius:8px !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); color:var(--ac-text) !important; }
+  ${B} .tb-input:focus, ${B} #page-input:focus { box-shadow:inset 0 0 0 1.5px var(--ac-blue); }
+  ${B} #zoom-select option, ${B} .fp-sel option { background:var(--kt-raised); color:var(--ac-text); }
+  ${B} #context-toolbar { border-color:var(--kt-line) !important; color:var(--ac-text); }
+  ${B} .ctx-strip { background:var(--kt-ctxStrip); }
+  ${B} #ctx-content .ctx-sep { background:var(--kt-line); }
+  ${B} .ctx-close { border:none !important; background:var(--ac-hover) !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); color:var(--ac-text) !important; }
+  ${B} .ctx-close:hover { background:var(--kt-selected) !important; }
+  ${B} #left-sidebar, ${B} #right-icon-sidebar { background:var(--kt-rail) !important; border-color:var(--kt-line) !important; }
+  ${B} .side-btn.active { background:var(--kt-selected) !important; color:var(--kt-accentText) !important; position:relative; }
+  ${B} .side-btn.active::before { content:""; position:absolute; left:-6px; top:8px; bottom:8px; width:3px; border-radius:0 3px 3px 0; background:var(--ac-blue); }
+  ${B} #left-panel, ${B} #right-panel, ${B} #comment-panel { background:var(--ac-panel) !important; border-color:var(--kt-line) !important; color:var(--ac-text) !important; }
+  ${B} #left-panel *, ${B} #right-panel *, ${B} #comment-panel * { border-color:var(--kt-line); }
+  ${B} .thumb-num { color:var(--ac-dim); }
+  ${B} .pane-toggle { border-color:var(--kt-line) !important; }
+  ${B} #right-toggle { border-right-color:var(--kt-line) !important; }
+  ${B} .tri-l, ${B}.rp-hidden .tri-r { border-right-color:var(--ac-ico) !important; }
+  ${B} .tri-r, ${B}.lp-open .tri-l { border-left-color:var(--ac-ico) !important; }
+  ${B} #canvas-area::-webkit-scrollbar-track, ${B} #canvas-area::-webkit-scrollbar-button:single-button { background:var(--ac-doc) !important; }
+  ${B} #canvas-area::-webkit-scrollbar-thumb { background:var(--kt-scroll) !important; border-color:var(--ac-doc) !important; }
+  ${B} .page-wrapper { box-shadow:var(--kt-pageShadow) !important; }
+  ${B} .rp-search input, ${B} #find-bar input[type=text] { background:var(--kt-fieldBg) !important; border:none !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); border-radius:8px !important; color:var(--ac-text) !important; }
+  ${B} .tool-item { margin:1px 8px; padding:6px 8px; border-radius:9px; }
+  ${B} .tool-item:hover { background:var(--ac-hover) !important; }
+  /* the tools' icons on rounded tiles: each in its own colour, set in the theme's lightness and turned toward its accent */
+  ${B} .tool-item .tool-icon { width:28px !important; height:28px !important; border-radius:8px !important; display:flex !important; align-items:center; justify-content:center;
+    background:var(--kt-tile, transparent) !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.18); }
+  ${B} .tool-item .tool-icon .ic { width:19px !important; height:19px !important; color:var(--kt-tileFg, #fff) !important; }
+  ${B} .fp-auto, ${B} .fp-sec { border-color:var(--kt-line) !important; }
+  ${B} .fp-sel { border-bottom:none !important; background-color:var(--kt-fieldBg) !important; border-radius:8px !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); padding:5px 8px !important; color:var(--ac-text) !important; }
+  ${B} .fp-btn.on { color:var(--kt-accentText) !important; background:var(--kt-selected) !important; }
+  ${B} .fp-btn.dis, ${B} .fp-lab.dis, ${B} .fp-split.dis, ${B} .fp-editusing.dis, ${B} .fp-check.dis, ${B} #rp-format.noobj .fp-btn.obj { color:var(--ac-dim) !important; }
+  ${B} .fp-link:hover { color:var(--ac-text); }
+  ${B} .cmp-head { border-color:var(--kt-line) !important; color:var(--ac-text); }
+  ${B} .cmp-tools button { color:var(--ac-ico); }
+  ${B} .modal, ${B} #find-bar, ${B} #st-pal { background:var(--kt-raised) !important; border:1px solid var(--kt-raisedLine) !important; border-radius:12px !important; box-shadow:var(--kt-ddShadow) !important; color:var(--ac-text) !important; }
+  ${B} .modal-header, ${B} .modal-footer { border-color:var(--kt-raisedSep) !important; }
+  ${B} .modal-close { color:var(--ac-ico) !important; }
+  ${B} .modal-close:hover { background:var(--ac-hover) !important; }
+  ${B} .btn-primary { background:var(--ac-blue) !important; color:var(--kt-onAccent) !important; border:none !important; box-shadow:var(--kt-btnShadow); }
+  ${B} .btn-primary:hover { filter:brightness(1.08); }
+  ${B} .btn-secondary { border-color:var(--kt-closeLine) !important; color:var(--ac-text) !important; background:none !important; }
+  ${B} .btn-secondary:hover { background:var(--ac-hover) !important; }
+  ${B} #qtip, ${B} [data-tip]:hover::after { background:var(--kt-raised) !important; color:var(--ac-text) !important; border:1px solid var(--kt-raisedLine) !important; border-radius:6px !important; }
+  /* the classic dialogs (Properties and the like) keep their light body, like Acrobat's; their frame and title bar take
+     the theme, and the default button its accent */
+  ${B} .ap-dlg { border:1px solid var(--kt-line) !important; border-radius:12px !important; box-shadow:var(--kt-ddShadow) !important; }
+  ${B} .ap-title { background:var(--ac-tabs) !important; color:var(--ac-text) !important; height:34px; }
+  ${B} .ap-title .ap-x { color:var(--ac-ico) !important; }
+  ${B} .ap-ok { background:var(--ac-blue) !important; color:var(--kt-onAccent) !important; border-color:var(--ac-blue) !important; box-shadow:none !important; }
+  ${B} .ap-ok:hover { filter:brightness(1.08); }
+  ${B} .ap-btn { border-radius:7px !important; }
+  ${B} #welcome-screen { color:var(--ac-text); }
+  ${B} .home-title, ${B} .home-card b, ${B} #tools-center h2 { color:var(--ac-text) !important; }
+  ${B} .home-card span { color:var(--ac-dim) !important; }
+  ${B} .home-card, ${B} .tc-card { background:var(--ac-panel) !important; color:var(--ac-text) !important; border-radius:12px; box-shadow:inset 0 0 0 1px var(--kt-line); }
+  ${B} .home-card:hover, ${B} .tc-card:hover { background:var(--kt-raised) !important; }
+  ${B} #welcome-screen .drop-hint { border-color:var(--kt-fieldLine) !important; color:var(--ac-dim) !important; }
+  ${B} #tools-center { background:var(--ac-doc) !important; }
+  ${B} .tc-card .open { color:var(--kt-accentText); border-color:var(--kt-accentText); }
+  `;
+  const s = document.createElement('style'); s.id = 'khz-theme-layer'; s.textContent = css; document.head.appendChild(s);
+})();
+// the tiles' colours (each tool's own colour, set in the theme's lightness and turned 30% toward its accent), worked out
+// here — the right panel's list is rebuilt now and then, so new rows get theirs as they appear
+function khzThemeTiles() {
+  const id = getPref('theme', 'dark'), t = khzThemeById(id), on = document.body.classList.contains('khz-th');
+  const tiles = document.querySelectorAll('#right-panel .tool-item .tool-icon');
+  if (!on || !t) { tiles.forEach(el => { el.style.removeProperty('--kt-tile'); el.style.removeProperty('--kt-tileFg'); }); return; }
+  const k = khzThemeTokens(t), dark = khzOk.toOklch(k.toolbar)[0] < 0.6, [, aC, aH] = khzOk.toOklch(k.accent), hc = t[2] === 'High Contrast';
+  tiles.forEach(el => {
+    const m = /#[0-9a-f]{6}/i.exec(el.getAttribute('style') || ''); if (!m) return;
+    const [, c, h] = khzOk.toOklch(m[0]); let dh = aH - h; if (dh > 180) dh -= 360; if (dh < -180) dh += 360;
+    const bg = khzOk.oklch(dark ? 0.6 : 0.64, Math.min(c, 0.16) * (aC < 0.03 ? 0.7 : 1), hc ? h : h + dh * 0.3);
+    el.style.setProperty('--kt-tile', bg); el.style.setProperty('--kt-tileFg', khzOk.contrast('#ffffff', bg) >= 3 ? '#ffffff' : '#141414');
+  });
+}
+applyTheme = (prev => function () { const r = prev.apply(this, arguments); try { khzThemeTiles(); } catch (e) {} return r; })(applyTheme);
+{ const rp = document.getElementById('right-panel'); let q = 0; if (rp) new MutationObserver(() => { if (q) return; q = 1; requestAnimationFrame(() => { q = 0; try { khzThemeTiles(); } catch (e) {} }); }).observe(rp, { childList: true, subtree: true }); }
+applyTheme();
 </script>
 </body>
 </html>
