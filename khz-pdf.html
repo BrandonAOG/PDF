@@ -11,6 +11,37 @@
 <meta name="apple-mobile-web-app-title" content="KHZ PDF">
 <meta name="application-name" content="KHZ PDF">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2064%2064%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27g%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%271%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%232368bd%27/%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%230f2a4d%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width%3D%2764%27%20height%3D%2764%27%20rx%3D%2714%27%20fill%3D%27url%28%23g%29%27/%3E%3Cpath%20d%3D%27M40%200h10a14%2014%200%200%201%2014%2014v10z%27%20fill%3D%27%23e2332b%27/%3E%3Ctext%20x%3D%2731%27%20y%3D%2740%27%20font-family%3D%27Segoe%20UI%2CArial%2CHelvetica%2Csans-serif%27%20font-size%3D%2721%27%20font-weight%3D%27800%27%20fill%3D%27%23fff%27%20text-anchor%3D%27middle%27%3EKHZ%3C/text%3E%3Crect%20x%3D%2715%27%20y%3D%2746%27%20width%3D%2732%27%20height%3D%273.2%27%20rx%3D%271.6%27%20fill%3D%27%23e2332b%27/%3E%3C/svg%3E">
+<script>
+// Features some browsers don't have yet (Safari and the Mac app's web view): added here in the standard way, so the
+// rest of the page and pdf.js can use them everywhere.
+(function () {
+  // reading a stream with "for await" (pdf.js reads a page's text this way)
+  var RS = window.ReadableStream && ReadableStream.prototype;
+  if (RS && !RS[Symbol.asyncIterator]) {
+    RS.values = function (o) {
+      var reader = this.getReader(), keep = o && o.preventCancel;
+      return {
+        next: function () { return reader.read().then(function (r) { if (r.done) reader.releaseLock(); return r; }); },
+        return: function (v) { var p = keep ? Promise.resolve() : reader.cancel(v); reader.releaseLock(); return p.then(function () { return { done: true, value: v }; }); },
+        [Symbol.asyncIterator]: function () { return this; }
+      };
+    };
+    RS[Symbol.asyncIterator] = RS.values;
+  }
+})();
+// Copy text the page is still putting together: some web views only let a click copy while the click is happening,
+// so the copy starts at once and its text follows when it's ready.
+window.khzCopyText = function (text) {
+  var C = navigator.clipboard;
+  if (C && C.write && window.ClipboardItem) {
+    try {
+      var blob = Promise.resolve(text).then(function (t) { return new Blob([String(t)], { type: 'text/plain' }); });
+      return C.write([new ClipboardItem({ 'text/plain': blob })]);
+    } catch (e) {}
+  }
+  return Promise.resolve(text).then(function (t) { return C.writeText(String(t)); });
+};
+</script>
 <script>window.KHZ_PDFJS5_BASE='https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/';</script>
 <script>var __khzPdfjs5=(()=>{var Qs=Object.defineProperty;var nh=Object.getOwnPropertyDescriptor;var rh=Object.getOwnPropertyNames;var ah=Object.prototype.hasOwnProperty;var oh=(h,t)=>{for(var e in t)Qs(h,e,{get:t[e],enumerable:!0})},hh=(h,t,e,i)=>{if(t&&typeof t=="object"||typeof t=="function")for(let s of rh(t))!ah.call(h,s)&&s!==e&&Qs(h,s,{get:()=>t[s],enumerable:!(i=nh(t,s))||i.enumerable});return h};var lh=h=>hh(Qs({},"__esModule",{value:!0}),h);var Pc={};oh(Pc,{AbortException:()=>Ut,AnnotationEditorLayer:()=>vs,AnnotationEditorParamsType:()=>q,AnnotationEditorType:()=>W,AnnotationEditorUIManager:()=>ae,AnnotationLayer:()=>ps,AnnotationMode:()=>qt,AnnotationType:()=>ht,CSSConstants:()=>Ji,ColorPicker:()=>wi,DOMSVGFactory:()=>ve,DrawLayer:()=>bs,FeatureTest:()=>Z,GlobalWorkerOptions:()=>ne,ImageKind:()=>si,InvalidPDFException:()=>$e,MathClamp:()=>rt,OPS:()=>Bt,OutputScale:()=>Ft,PDFDataRangeTransport:()=>bi,PDFDateString:()=>ze,PDFWorker:()=>qe,PasswordException:()=>je,PasswordResponses:()=>Po,PermissionFlag:()=>ko,PixelsPerInch:()=>Jt,RenderingCancelledException:()=>He,ResponseException:()=>me,SignatureExtractor:()=>Kt,SupportedImageMimeTypes:()=>Ki,TextLayer:()=>Ye,TextLayerImages:()=>ws,TouchManager:()=>pi,Util:()=>O,VerbosityLevel:()=>Ri,XfaLayer:()=>ui,applyOpacity:()=>Fo,build:()=>Ko,createValidAbsoluteUrl:()=>oa,fetchData:()=>Hs,findContrastColor:()=>Lo,getDocument:()=>Yo,getFilenameFromUrl:()=>Oo,getPdfFilenameFromUrl:()=>Ro,getRGB:()=>Ge,getRGBA:()=>ke,getUuid:()=>la,isDataScheme:()=>Fi,isPdfFile:()=>zs,isValidExplicitDest:()=>Uo,makeArr:()=>Te,makeMap:()=>$s,makeObj:()=>Yi,makeSet:()=>Do,noContextMenu:()=>Lt,normalizeUnicode:()=>Io,renderRichText:()=>ca,setLayerDimensions:()=>re,shadow:()=>N,stopEvent:()=>mt,updateUrlHash:()=>ha,version:()=>qo});var Zo={},ch={463(h){var t=TypeError;h.exports=function(e){if(typeof e=="string")return e;throw new t("Argument is not a string")}},804(h){var t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",e=t+"+/",i=t+"-_",s=function(n){for(var r={},a=0;a<64;a++)r[n.charAt(a)]=a;return r};h.exports={i2c:e,c2i:s(e),i2cUrl:i,c2iUrl:s(i)}},529(h){h.exports=function(t,e){return{value:t,done:e}}},837(h){var t=TypeError;h.exports=function(e){if(e>9007199254740991)throw new t("Maximum allowed index exceeded");return e}},2(h){h.exports={IndexSizeError:{s:"INDEX_SIZE_ERR",c:1,m:1},DOMStringSizeError:{s:"DOMSTRING_SIZE_ERR",c:2,m:0},HierarchyRequestError:{s:"HIERARCHY_REQUEST_ERR",c:3,m:1},WrongDocumentError:{s:"WRONG_DOCUMENT_ERR",c:4,m:1},InvalidCharacterError:{s:"INVALID_CHARACTER_ERR",c:5,m:1},NoDataAllowedError:{s:"NO_DATA_ALLOWED_ERR",c:6,m:0},NoModificationAllowedError:{s:"NO_MODIFICATION_ALLOWED_ERR",c:7,m:1},NotFoundError:{s:"NOT_FOUND_ERR",c:8,m:1},NotSupportedError:{s:"NOT_SUPPORTED_ERR",c:9,m:1},InUseAttributeError:{s:"INUSE_ATTRIBUTE_ERR",c:10,m:1},InvalidStateError:{s:"INVALID_STATE_ERR",c:11,m:1},SyntaxError:{s:"SYNTAX_ERR",c:12,m:1},InvalidModificationError:{s:"INVALID_MODIFICATION_ERR",c:13,m:1},NamespaceError:{s:"NAMESPACE_ERR",c:14,m:1},InvalidAccessError:{s:"INVALID_ACCESS_ERR",c:15,m:1},ValidationError:{s:"VALIDATION_ERR",c:16,m:0},TypeMismatchError:{s:"TYPE_MISMATCH_ERR",c:17,m:1},SecurityError:{s:"SECURITY_ERR",c:18,m:1},NetworkError:{s:"NETWORK_ERR",c:19,m:1},AbortError:{s:"ABORT_ERR",c:20,m:1},URLMismatchError:{s:"URL_MISMATCH_ERR",c:21,m:1},QuotaExceededError:{s:"QUOTA_EXCEEDED_ERR",c:22,m:1},TimeoutError:{s:"TIMEOUT_ERR",c:23,m:1},InvalidNodeTypeError:{s:"INVALID_NODE_TYPE_ERR",c:24,m:1},DataCloneError:{s:"DATA_CLONE_ERR",c:25,m:1}}},944(h){var t=TypeError;h.exports=function(e){var i=e&&e.alphabet;if(i===void 0||i==="base64"||i==="base64url")return i||"base64";throw new t("Incorrect `alphabet` option")}},767(h){h.exports=function(t){return{iterator:t,next:t.next,done:!1}}},117(h){h.exports=function(t){return t==null}},859(h){h.exports=function(t){t.iterator=t.next=t.nextHandler=t.mapper=t.predicate=t.inner=t.iterables=t.iters=t.openIters=t.padding=t.finishResults=t.buffer=null}},684(h){h.exports=function(t,e){var i=typeof Iterator=="function"&&Iterator.prototype[t];if(i)try{i.call({next:null},e).next()}catch{return!0}}},269(h){h.exports=Object.create?Object.create(null):{}},741(h){var t=Math.ceil,e=Math.floor;h.exports=Math.trunc||function(s){var n=+s;return(n>0?e:t)(n)}},149(h){var t=RangeError;h.exports=function(e){if(e==e)return e;throw new t("NaN is not allowed")}},717(h,t){t.f=Object.getOwnPropertySymbols},103(h){h.exports=function(t){try{return{error:!1,value:t()}}catch(e){return{error:!0,value:e}}}},750(h,t,e){var i=e(117),s=TypeError;h.exports=function(n){if(i(n))throw new s("Can't call method on "+n);return n}},835(h){h.exports=function(t){try{var e=new Set,i={size:0,has:function(){return!0},keys:function(){return Object.defineProperty({},"next",{get:function(){return e.clear(),e.add(4),function(){return{done:!0}}}})}},s=e[t](i);return s.size===1&&s.values().next().value===4}catch{return!1}}},291(h,t,e){var i=e(741);h.exports=function(s){var n=+s;return n!=n||n===0?0:i(n)}},14(h,t,e){var i=e(291),s=Math.min;h.exports=function(n){var r=i(n);return r>0?s(r,9007199254740991):0}},981(h,t,e){var i=e(750),s=Object;h.exports=function(n){return s(i(n))}},590(h,t,e){var i=e(291),s=RangeError;h.exports=function(n){var r=i(n);if(r<0)throw new s("The argument can't be less than 0");return r}},812(h){var t=TypeError;h.exports=function(e,i){if(e<i)throw new t("Not enough arguments");return e}}},va={};function _(h){let t=va[h];if(t!==void 0)return t.exports;let e=va[h]={exports:{}};return ch[h](e,e.exports,_),e.exports}_.cw=h=>{var t;return()=>{if(h){var e=h;h=0,t={exports:{}},e.call(t.exports,t,t.exports)}return t.exports}};_.d=(h,t)=>{for(var e in t)_.o(t,e)&&!_.o(h,e)&&Object.defineProperty(h,e,{enumerable:!0,get:t[e]})};_.o=(h,t)=>Object.prototype.hasOwnProperty.call(h,t);var _t=_.cw(function(h,t){var e=yt(),i=Fs(),s=TypeError;h.exports=function(n){if(e(n))return n;throw new s(i(n)+" is not a function")}}),dh=_.cw(function(h,t){var e=jh(),i=String,s=TypeError;h.exports=function(n){if(e(n))return n;throw new s("Can't set "+i(n)+" as a prototype")}}),Ae=_.cw(function(h,t){var e=Gt().has;h.exports=function(i){return e(i),i}}),Qa=()=>_(463),uh=_.cw(function(h,t){var e=Ns(),i=new e.WeakMap,s=e.set,n=e.remove;h.exports=function(r){return s(i,r,1),n(i,r),r}}),ph=_.cw(function(h,t){var e=Ns().has;h.exports=function(i){return e(i),i}}),fh=_.cw(function(h,t){var e=jt(),i=Ps(),s=he().f,n=e("unscopables"),r=Array.prototype;r[n]===void 0&&s(r,n,{configurable:!0,value:i(null)}),h.exports=function(a){r[n][a]=!0}}),Za=_.cw(function(h,t){var e=Is(),i=TypeError;h.exports=function(s,n){if(e(n,s))return s;throw new i("Incorrect invocation")}}),to=_.cw(function(h,t){var e=Ct(),i=String,s=TypeError;h.exports=function(n){if(n===void 0||e(n))return n;throw new s(i(n)+" is not an object or undefined")}}),dt=_.cw(function(h,t){var e=Ct(),i=String,s=TypeError;h.exports=function(n){if(e(n))return n;throw new s(i(n)+" is not an object")}}),As=_.cw(function(h,t){var e=_s(),i=TypeError;h.exports=function(s){if(e(s)==="Uint8Array")return s;throw new i("Argument is not an Uint8Array")}}),eo=_.cw(function(h,t){h.exports=typeof ArrayBuffer<"u"&&typeof DataView<"u"}),gh=_.cw(function(h,t){var e=ot(),i=qr(),s=xe(),n=e.ArrayBuffer,r=e.TypeError;h.exports=n&&i(n.prototype,"byteLength","get")||function(a){if(s(a)!=="ArrayBuffer")throw new r("ArrayBuffer expected");return a.byteLength}}),mh=_.cw(function(h,t){var e=ot(),i=eo(),s=gh(),n=e.DataView;h.exports=function(r){if(!i||s(r)!==0)return!1;try{return new n(r),!1}catch{return!0}}}),xs=_.cw(function(h,t){var e=mh(),i=TypeError;h.exports=function(s){if(e(s))throw new i("ArrayBuffer is detached");return s}}),yh=_.cw(function(h,t){var e,i,s,n=eo(),r=St(),a=ot(),o=yt(),l=Ct(),c=Et(),d=_s(),u=Fs(),p=Ss(),f=Cs(),g=no(),m=Is(),y=ta(),v=yo(),b=jt(),w=Ls(),A=Ms(),x=A.enforce,S=A.get,E=a.Int8Array,C=E&&E.prototype,T=a.Uint8ClampedArray,k=T&&T.prototype,P=E&&y(E),M=C&&y(C),D=Object.prototype,$=a.TypeError,H=b("toStringTag"),U=w("TYPED_ARRAY_TAG"),B="TypedArrayConstructor",Y=n&&!!v&&d(a.opera)!=="Opera",et=!1,tt={Int8Array:1,Uint8Array:1,Uint8ClampedArray:1,Int16Array:2,Uint16Array:2,Int32Array:4,Uint32Array:4,Float32Array:4,Float64Array:8},R={BigInt64Array:8,BigUint64Array:8},I=function(L){var X=y(L);if(l(X)){var z=S(X);return z&&c(z,B)?z[B]:I(X)}},F=function(L){if(!l(L))return!1;var X=d(L);return c(tt,X)||c(R,X)};for(e in tt)(s=(i=a[e])&&i.prototype)?x(s)[B]=i:Y=!1;for(e in R)(s=(i=a[e])&&i.prototype)&&(x(s)[B]=i);if((!Y||!o(P)||P===Function.prototype)&&(P=function(){throw new $("Incorrect invocation")},Y))for(e in tt)a[e]&&v(a[e],P);if((!Y||!M||M===D)&&(M=P.prototype,Y))for(e in tt)a[e]&&v(a[e].prototype,M);if(Y&&y(k)!==M&&v(k,M),r&&!c(M,H)){et=!0,g(M,H,{configurable:!0,get:function(){return l(this)?this[U]:void 0}});for(e in tt)a[e]&&p(a[e].prototype,U,e)}h.exports={NATIVE_ARRAY_BUFFER_VIEWS:Y,TYPED_ARRAY_TAG:et&&U,aTypedArray:function(L){if(F(L))return L;throw new $("Target is not a typed array")},aTypedArrayConstructor:function(L){if(o(L)&&(!v||m(P,L)))return L;throw new $(u(L)+" is not a typed array constructor")},exportTypedArrayMethod:function(L,X,z,G){if(r){if(z)for(var K in tt){var it=a[K];if(it&&c(it.prototype,L))try{delete it.prototype[L]}catch{try{it.prototype[L]=X}catch{}}}M[L]&&!z||f(M,L,z?X:Y&&C[L]||X,G)}},exportTypedArrayStaticMethod:function(L,X,z){var G,K;if(r){if(v){if(z){for(G in tt)if((K=a[G])&&c(K,L))try{delete K[L]}catch{}}if(P[L]&&!z)return;try{return f(P,L,z?X:Y&&P[L]||X)}catch{}}for(G in tt)!(K=a[G])||K[L]&&!z||f(K,L,X)}},getTypedArrayConstructor:I,isView:function(X){if(!l(X))return!1;var z=d(X);return z==="DataView"||c(tt,z)||c(R,z)},isTypedArray:F,TypedArray:P,TypedArrayPrototype:M}}),vh=_.cw(function(h,t){var e=Je();h.exports=function(i,s,n){for(var r=0,a=arguments.length>2?n:e(s),o=new i(a);a>r;)o[r]=s[r++];return o}}),Vr=_.cw(function(h,t){var e=Os(),i=ol(),s=Je(),n=function(r){return function(a,o,l){var c=e(a),d=s(c);if(d===0)return!r&&-1;var u,p=i(l,d);if(r&&o!=o){for(;d>p;)if((u=c[p++])!=u)return!0}else for(;d>p;p++)if((r||p in c)&&c[p]===o)return r||p||0;return!r&&-1}};h.exports={includes:n(!0),indexOf:n(!1)}}),bh=_.cw(function(h,t){var e=St(),i=Qr(),s=TypeError,n=Object.getOwnPropertyDescriptor,r=e&&!function(){if(this!==void 0)return!0;try{Object.defineProperty([],"length",{writable:!1}).length=1}catch(a){return a instanceof TypeError}}();h.exports=r?function(a,o){if(i(a)&&!n(a,"length").writable)throw new s("Cannot set read only .length");return a.length=o}:function(a,o){return a.length=o}}),wh=_.cw(function(h,t){var e=at();h.exports=e([].slice)}),io=()=>_(804),so=_.cw(function(h,t){var e=dt(),i=Tt();h.exports=function(s,n,r,a){try{return a?n(e(r)[0],r[1]):n(r)}catch(o){i(s,"throw",o)}}}),xe=_.cw(function(h,t){var e=at(),i=e({}.toString),s=e("".slice);h.exports=function(n){return s(i(n),8,-1)}}),_s=_.cw(function(h,t){var e=cl(),i=yt(),s=xe(),n=jt()("toStringTag"),r=Object,a=s(function(){return arguments}())==="Arguments";h.exports=e?s:function(o){var l,c,d;return o===void 0?"Undefined":o===null?"Null":typeof(c=function(u,p){try{return u[p]}catch{}}(l=r(o),n))=="string"?c:a?s(l):(d=s(l))==="Object"&&i(l.callee)?"Arguments":d}}),Ah=_.cw(function(h,t){var e=Et(),i=Jh(),s=go(),n=he();h.exports=function(r,a,o){for(var l=i(a),c=n.f,d=s.f,u=0;u<l.length;u++){var p=l[u];e(r,p)||o&&e(o,p)||c(r,p,d(a,p))}}}),xh=_.cw(function(h,t){var e=pt();h.exports=!e(function(){function i(){}return i.prototype.constructor=null,Object.getPrototypeOf(new i)!==i.prototype})}),Ss=_.cw(function(h,t){var e=St(),i=he(),s=Es();h.exports=e?function(n,r,a){return i.f(n,r,s(1,a))}:function(n,r,a){return n[r]=a,n}}),Es=_.cw(function(h,t){h.exports=function(e,i){return{enumerable:!(1&e),configurable:!(2&e),writable:!(4&e),value:i}}}),Wr=_.cw(function(h,t){var e=St(),i=he(),s=Es();h.exports=function(n,r,a){e?i.f(n,r,s(0,a)):n[r]=a}}),no=_.cw(function(h,t){var e=co(),i=he();h.exports=function(s,n,r){return r.get&&e(r.get,n,{getter:!0}),r.set&&e(r.set,n,{setter:!0}),i.f(s,n,r)}}),Cs=_.cw(function(h,t){var e=yt(),i=he(),s=co(),n=Xr();h.exports=function(r,a,o,l){l||(l={});var c=l.enumerable,d=l.name!==void 0?l.name:a;if(e(o)&&s(o,d,l),l.global)c?r[a]=o:n(a,o);else{try{l.unsafe?r[a]&&(c=!0):delete r[a]}catch{}c?r[a]=o:i.f(r,a,{value:o,enumerable:!1,configurable:!l.nonConfigurable,writable:!l.nonWritable})}return r}}),_h=_.cw(function(h,t){var e=Cs();h.exports=function(i,s,n){for(var r in s)e(i,r,s[r],n);return i}}),Xr=_.cw(function(h,t){var e=ot(),i=Object.defineProperty;h.exports=function(s,n){try{i(e,s,{value:n,configurable:!0,writable:!0})}catch{e[s]=n}return n}}),St=_.cw(function(h,t){var e=pt();h.exports=!e(function(){return Object.defineProperty({},1,{get:function(){return 7}})[1]!==7})}),ro=_.cw(function(h,t){var e=ot(),i=Ct(),s=e.document,n=i(s)&&i(s.createElement);h.exports=function(r){return n?s.createElement(r):{}}}),Yr=_.cw(function(h,t){h.exports=["constructor","hasOwnProperty","isPrototypeOf","propertyIsEnumerable","toLocaleString","toString","valueOf"]}),Sh=_.cw(function(h,t){var e=ot().navigator,i=e&&e.userAgent;h.exports=i?String(i):""}),Eh=_.cw(function(h,t){var e,i,s=ot(),n=Sh(),r=s.process,a=s.Deno,o=r&&r.versions||a&&a.version,l=o&&o.v8;l&&(i=(e=l.split("."))[0]>0&&e[0]<4?1:+(e[0]+e[1])),!i&&n&&(!(e=n.match(/Edge\/(\d+)/))||e[1]>=74)&&(e=n.match(/Chrome\/(\d+)/))&&(i=+e[1]),h.exports=i}),Ch=_.cw(function(h,t){var e=at(),i=Error,s=e("".replace),n=String(new i("zxcasd").stack),r=/\n\s*at [^:]*:[^\n]*/,a=r.test(n);h.exports=function(o,l){if(a&&typeof o=="string"&&!i.prepareStackTrace)for(;l--;)o=s(o,r,"");return o}}),J=_.cw(function(h,t){var e=ot(),i=go().f,s=Ss(),n=Cs(),r=Xr(),a=Ah(),o=Uh();h.exports=function(l,c){var d,u,p,f,g,m=l.target,y=l.global,v=l.stat;if(d=y?e:v?e[m]||r(m,{}):e[m]&&e[m].prototype)for(u in c){if(f=c[u],p=l.dontCallGetSet?(g=i(d,u))&&g.value:d[u],!o(y?u:m+(v?".":"#")+u,l.forced)&&p!==void 0){if(typeof f==typeof p)continue;a(f,p)}(l.sham||p&&p.sham)&&s(f,"sham",!0),n(d,u,f,l)}}}),pt=_.cw(function(h,t){h.exports=function(e){try{return!!e()}catch{return!0}}}),Th=_.cw(function(h,t){var e=Ts(),i=Function.prototype,s=i.apply,n=i.call;h.exports=typeof Reflect=="object"&&Reflect.apply||(e?n.bind(s):function(){return n.apply(s,arguments)})}),kh=_.cw(function(h,t){var e=Ph(),i=_t(),s=Ts(),n=e(e.bind);h.exports=function(r,a){return i(r),a===void 0?r:s?n(r,a):function(){return r.apply(a,arguments)}}}),Ts=_.cw(function(h,t){var e=pt();h.exports=!e(function(){var i=function(){}.bind();return typeof i!="function"||i.hasOwnProperty("prototype")})}),ft=_.cw(function(h,t){var e=Ts(),i=Function.prototype.call;h.exports=e?i.bind(i):function(){return i.apply(i,arguments)}}),Mh=_.cw(function(h,t){var e=St(),i=Et(),s=Function.prototype,n=e&&Object.getOwnPropertyDescriptor,r=i(s,"name"),a=r&&(!e||e&&n(s,"name").configurable);h.exports={CONFIGURABLE:a}}),qr=_.cw(function(h,t){var e=at(),i=_t();h.exports=function(s,n,r){try{return e(i(Object.getOwnPropertyDescriptor(s,n)[r]))}catch{}}}),Ph=_.cw(function(h,t){var e=xe(),i=at();h.exports=function(s){if(e(s)==="Function")return i(s)}}),at=_.cw(function(h,t){var e=Ts(),i=Function.prototype,s=i.call,n=e&&i.bind.bind(s,s);h.exports=e?n:function(r){return function(){return s.apply(r,arguments)}}}),ao=()=>_(944),oe=_.cw(function(h,t){var e=ot(),i=yt();h.exports=function(s,n){return arguments.length<2?(r=e[s],i(r)?r:void 0):e[s]&&e[s][n];var r}}),Nt=()=>_(767),Ih=_.cw(function(h,t){var e=ft(),i=dt(),s=Nt(),n=Kr();h.exports=function(r,a){a&&typeof r=="string"||i(r);var o=n(r);return s(i(o!==void 0?e(o,r):r))}}),Dh=_.cw(function(h,t){var e=ft(),i=yt(),s=dt(),n=Fs(),r=Kr(),a=TypeError;h.exports=function(o,l){var c=arguments.length<2?r(o):l;if(i(c))return s(e(c,o));throw new a(n(o)+" is not iterable")}}),Kr=_.cw(function(h,t){var e=xe(),i=ho(),s=ks(),n=jt()("iterator"),r=Array.prototype;h.exports=function(a){if(!i(a))return s(a,n)||s(a,"@@iterator")||(e(a)==="Arguments"?r[n]:void 0)}}),ks=_.cw(function(h,t){var e=_t(),i=ho();h.exports=function(s,n){var r=s[n];return i(r)?void 0:e(r)}}),_e=_.cw(function(h,t){var e=_t(),i=dt(),s=ft(),n=na(),r=Nt(),a="Invalid size",o=RangeError,l=TypeError,c=Math.max,d=function(u,p){this.set=u,this.size=c(p,0),this.has=e(u.has),this.keys=e(u.keys)};d.prototype={getIterator:function(){return r(i(s(this.keys,this.set)))},includes:function(u){return s(this.has,this.set,u)}},h.exports=function(u){i(u);var p=+u.size;if(p!=p)throw new l(a);var f=n(p);if(f<0)throw new o(a);return new d(u,f)}}),ot=_.cw(function(h,t){var e=function(i){return i&&i.Math===Math&&i};h.exports=e(typeof globalThis=="object"&&globalThis)||e(typeof window=="object"&&window)||e(typeof self=="object"&&self)||e(typeof global=="object"&&global)||e(typeof this=="object"&&this)||function(){return this}()||Function("return this")()}),Et=_.cw(function(h,t){var e=at(),i=ra(),s=e({}.hasOwnProperty);h.exports=Object.hasOwn||function(r,a){return s(i(r),a)}}),Jr=_.cw(function(h,t){h.exports={}}),Oh=_.cw(function(h,t){var e=oe();h.exports=e("document","documentElement")}),oo=_.cw(function(h,t){var e=St(),i=pt(),s=ro();h.exports=!e&&!i(function(){return Object.defineProperty(s("div"),"a",{get:function(){return 7}}).a!==7})}),Rh=_.cw(function(h,t){var e=at(),i=pt(),s=xe(),n=Object,r=e("".split);h.exports=i(function(){return!n("z").propertyIsEnumerable(0)})?function(a){return s(a)==="String"?r(a,""):n(a)}:n}),Fh=_.cw(function(h,t){var e=yt(),i=Ct(),s=yo();h.exports=function(n,r,a){var o,l;return s&&e(o=r.constructor)&&o!==a&&i(l=o.prototype)&&l!==a.prototype&&s(n,l),n}}),Lh=_.cw(function(h,t){var e=at(),i=yt(),s=sa(),n=e(Function.toString);i(s.inspectSource)||(s.inspectSource=function(r){return n(r)}),h.exports=s.inspectSource}),Ms=_.cw(function(h,t){var e,i,s,n=pl(),r=ot(),a=Ct(),o=Ss(),l=Et(),c=sa(),d=ia(),u=Jr(),p="Object already initialized",f=r.TypeError,g=r.WeakMap;if(n||c.state){var m=c.state||(c.state=new g);m.get=m.get,m.has=m.has,m.set=m.set,e=function(v,b){if(m.has(v))throw new f(p);return b.facade=v,m.set(v,b),b},i=function(v){return m.get(v)||{}},s=function(v){return m.has(v)}}else{var y=d("state");u[y]=!0,e=function(v,b){if(l(v,y))throw new f(p);return b.facade=v,o(v,y,b),b},i=function(v){return l(v,y)?v[y]:{}},s=function(v){return l(v,y)}}h.exports={set:e,get:i,has:s,enforce:function(v){return s(v)?i(v):e(v,{})},getterFor:function(v){return function(b){var w;if(!a(b)||(w=i(b)).type!==v)throw new f("Incompatible receiver, "+v+" required");return w}}}}),Nh=_.cw(function(h,t){var e=jt(),i=zh(),s=e("iterator"),n=Array.prototype;h.exports=function(r){return r!==void 0&&(i.Array===r||n[s]===r)}}),Qr=_.cw(function(h,t){var e=xe();h.exports=Array.isArray||function(s){return e(s)==="Array"}}),Bh=_.cw(function(h,t){var e=_s();h.exports=function(i){var s=e(i);return s==="BigInt64Array"||s==="BigUint64Array"}}),yt=_.cw(function(h,t){var e=typeof document=="object"&&document.all;h.exports=e===void 0&&e!==void 0?function(i){return typeof i=="function"||i===e}:function(i){return typeof i=="function"}}),Uh=_.cw(function(h,t){var e=pt(),i=yt(),s=/#|\.prototype\./,n=function(c,d){var u=a[r(c)];return u===l||u!==o&&(i(d)?e(d):!!d)},r=n.normalize=function(c){return String(c).replace(s,".").toLowerCase()},a=n.data={},o=n.NATIVE="N",l=n.POLYFILL="P";h.exports=n}),ho=()=>_(117),Ct=_.cw(function(h,t){var e=yt();h.exports=function(i){return typeof i=="object"?i!==null:e(i)}}),jh=_.cw(function(h,t){var e=Ct();h.exports=function(i){return e(i)||i===null}}),Pt=_.cw(function(h,t){h.exports=!1}),$h=_.cw(function(h,t){var e=Ct(),i=Ms().get;h.exports=function(n){if(!e(n))return!1;var r=i(n);return!!r&&r.type==="RawJSON"}}),Zr=_.cw(function(h,t){var e=oe(),i=yt(),s=Is(),n=Co(),r=Object;h.exports=n?function(a){return typeof a=="symbol"}:function(a){var o=e("Symbol");return i(o)&&s(o.prototype,r(a))}}),Se=_.cw(function(h,t){var e=ft();h.exports=function(i,s,n){for(var r,a,o=n?i:i.iterator,l=i.next;!(r=e(l,o)).done;)if((a=s(r.value))!==void 0)return a}}),Ke=_.cw(function(h,t){var e=kh(),i=ft(),s=dt(),n=Fs(),r=Nh(),a=Je(),o=Is(),l=Dh(),c=Kr(),d=Tt(),u=TypeError,p=function(g,m){this.stopped=g,this.result=m},f=p.prototype;h.exports=function(g,m,y){var v,b,w,A,x,S,E,C=y&&y.that,T=!(!y||!y.AS_ENTRIES),k=!(!y||!y.IS_RECORD),P=!(!y||!y.IS_ITERATOR),M=!(!y||!y.INTERRUPTED),D=e(m,C),$=function(B){var Y=v;return v=void 0,Y&&d(Y,"normal"),new p(!0,B)},H=function(B){return T?(s(B),M?D(B[0],B[1],$):D(B[0],B[1])):M?D(B,$):D(B)};if(k)v=g.iterator;else if(P)v=g;else{if(!(b=c(g)))throw new u(n(g)+" is not iterable");if(r(b)){for(w=0,A=a(g);A>w;w++)if((x=H(g[w]))&&o(f,x))return x;return new p(!1)}v=l(g,b)}for(S=k?g.next:v.next;!(E=i(S,v)).done;){var U=E.value;try{x=H(U)}catch(B){if(!v)throw B;d(v,"throw",B)}if(typeof x=="object"&&x&&o(f,x))return x}return new p(!1)}}),Hh=_.cw(function(h,t){var e=Tt();h.exports=function(i,s,n){for(var r=i.length-1;r>=0;r--)if(i[r]!==void 0)try{n=e(i[r].iterator,s,n)}catch(a){s="throw",n=a}if(s==="throw")throw n;return n}}),Tt=_.cw(function(h,t){var e=ft(),i=dt(),s=ks();h.exports=function(n,r,a){var o,l;i(n);try{if(!(o=s(n,"return"))){if(r==="throw")throw a;return a}o=e(o,n)}catch(c){l=!0,o=c}if(r==="throw")throw a;if(l)throw o;return i(o),a}}),Pi=_.cw(function(h,t){var e=ft(),i=Ps(),s=Ss(),n=_h(),r=jt(),a=Ms(),o=ks(),l=lo().IteratorPrototype,c=_(529),d=Tt(),u=Hh(),p=_(859),f=r("toStringTag"),g="IteratorHelper",m="WrapForValidIterator",y="normal",v="throw",b=a.set,w=function(S){var E=a.getterFor(S?m:g);return n(i(l),{next:function(){var T=E(this);if(S)return T.nextHandler();if(T.done)return c(void 0,!0);try{var k=T.nextHandler();return T.done&&p(T),T.returnHandlerResult?k:c(k,T.done)}catch(P){throw T.done=!0,p(T),P}},return:function(){var C=E(this),T=C.iterator,k=C.inner,P=C.openIters,M=C.done;if(C.done=!0,S){var D=o(T,"return");return D?e(D,T):c(void 0,!0)}if(p(C),M)return c(void 0,!0);if(k)try{d(k.iterator,y)}catch($){return d(T,v,$)}if(P)try{u(P,y)}catch($){if(T)return d(T,v,$);throw $}return T&&d(T,y),c(void 0,!0)}})},A=w(!0),x=w(!1);s(x,f,"Iterator Helper"),h.exports=function(S,E,C){var T=function(P,M){M?(M.iterator=P.iterator,M.next=P.next):M=P,M.type=E?m:g,M.returnHandlerResult=!!C,M.nextHandler=S,M.counter=0,M.done=!1,b(this,M)};return T.prototype=E?A:x,T}}),Ii=()=>_(684),Zt=_.cw(function(h,t){var e=ot();h.exports=function(i,s){var n=e.Iterator,r=n&&n.prototype,a=r&&r[i],o=!1;if(a)try{a.call({next:function(){return{done:!0}},return:function(){o=!0}},-1)}catch(l){l instanceof s||(o=!1)}if(!o)return a}}),lo=_.cw(function(h,t){var e,i,s,n=pt(),r=yt(),a=Ct(),o=Ps(),l=ta(),c=Cs(),d=jt(),u=Pt(),p=d("iterator");[].keys&&("next"in(s=[].keys())&&(i=l(l(s)))!==Object.prototype&&(e=i)),!a(e)||n(function(){var f={};return e[p].call(f)!==f})?e={}:u&&(e=o(e)),r(e[p])||c(e,p,function(){return this}),h.exports={IteratorPrototype:e}}),zh=()=>_(269),Je=_.cw(function(h,t){var e=ll();h.exports=function(i){return e(i.length)}}),co=_.cw(function(h,t){var e=at(),i=pt(),s=yt(),n=Et(),r=St(),a=Mh().CONFIGURABLE,o=Lh(),l=Ms(),c=l.enforce,d=l.get,u=String,p=Object.defineProperty,f=e("".slice),g=e("".replace),m=e([].join),y=r&&!i(function(){return p(function(){},"length",{value:8}).length!==8}),v=String(String).split("String"),b=h.exports=function(w,A,x){f(u(A),0,7)==="Symbol("&&(A="["+g(u(A),/^Symbol\(([^)]*)\).*$/,"$1")+"]"),x&&x.getter&&(A="get "+A),x&&x.setter&&(A="set "+A),(!n(w,"name")||a&&w.name!==A)&&(r?p(w,"name",{value:A,configurable:!0}):w.name=A),y&&x&&n(x,"arity")&&w.length!==x.arity&&p(w,"length",{value:x.arity});try{x&&n(x,"constructor")&&x.constructor?r&&p(w,"prototype",{writable:!1}):w.prototype&&(w.prototype=void 0)}catch{}var S=c(w);return n(S,"source")||(S.source=m(v,typeof A=="string"?A:"")),w};Function.prototype.toString=b(function(){return s(this)&&d(this).source||o(this)},"toString")}),uo=_.cw(function(h,t){var e=at(),i=Map.prototype;h.exports={Map,set:e(i.set),get:e(i.get),has:e(i.has),remove:e(i.delete),proto:i}}),Gh=_.cw(function(h,t){var e=pt();h.exports=!e(function(){var i="9007199254740993",s=JSON.rawJSON(i);return!JSON.isRawJSON(s)||JSON.stringify(s)!==i})}),po=_.cw(function(h,t){var e=_t(),i=TypeError,s=function(n){var r,a;this.promise=new n(function(o,l){if(r!==void 0||a!==void 0)throw new i("Bad Promise constructor");r=o,a=l}),this.resolve=e(r),this.reject=e(a)};h.exports.f=function(n){return new s(n)}}),Vh=_.cw(function(h,t){var e=Rs();h.exports=function(i,s){return i===void 0?arguments.length<2?"":s:e(i)}}),fo=()=>_(149),Ps=_.cw(function(h,t){var e,i=dt(),s=Wh(),n=Yr(),r=Jr(),a=Oh(),o=ro(),l=ia(),c="prototype",d="script",u=l("IE_PROTO"),p=function(){},f=function(y){return"<"+d+">"+y+"</"+d+">"},g=function(y){y.write(f("")),y.close();var v=y.parentWindow.Object;return y=null,v},m=function(){try{e=new ActiveXObject("htmlfile")}catch{}m=typeof document<"u"?document.domain&&e?g(e):function(){var v,b=o("iframe"),w="java"+d+":";return b.style.display="none",a.appendChild(b),b.src=String(w),(v=b.contentWindow.document).open(),v.write(f("document.F=Object")),v.close(),v.F}():g(e);for(var y=n.length;y--;)delete m[c][n[y]];return m()};r[u]=!0,h.exports=Object.create||function(v,b){var w;return v!==null?(p[c]=i(v),w=new p,p[c]=null,w[u]=v):w=m(),b===void 0?w:s.f(w,b)}}),Wh=_.cw(function(h,t){var e=St(),i=To(),s=he(),n=dt(),r=Os(),a=Yh();t.f=e&&!i?Object.defineProperties:function(l,c){n(l);for(var d,u=r(c),p=a(c),f=p.length,g=0;f>g;)s.f(l,d=p[g++],u[d]);return l}}),he=_.cw(function(h,t){var e=St(),i=oo(),s=To(),n=dt(),r=So(),a=TypeError,o=Object.defineProperty,l=Object.getOwnPropertyDescriptor,c="enumerable",d="configurable",u="writable";t.f=e?s?function(f,g,m){if(n(f),g=r(g),n(m),typeof f=="function"&&g==="prototype"&&"value"in m&&u in m&&!m[u]){var y=l(f,g);y&&y[u]&&(f[g]=m.value,m={configurable:d in m?m[d]:y[d],enumerable:c in m?m[c]:y[c],writable:!1})}return o(f,g,m)}:o:function(f,g,m){if(n(f),g=r(g),n(m),i)try{return o(f,g,m)}catch{}if("get"in m||"set"in m)throw new a("Accessors not supported");return"value"in m&&(f[g]=m.value),f}}),go=_.cw(function(h,t){var e=St(),i=ft(),s=qh(),n=Es(),r=Os(),a=So(),o=Et(),l=oo(),c=Object.getOwnPropertyDescriptor;t.f=e?c:function(u,p){if(u=r(u),p=a(p),l)try{return c(u,p)}catch{}if(o(u,p))return n(!i(s.f,u,p),u[p])}}),Xh=_.cw(function(h,t){var e=mo(),i=Yr().concat("length","prototype");t.f=Object.getOwnPropertyNames||function(n){return e(n,i)}}),ta=_.cw(function(h,t){var e=Et(),i=yt(),s=ra(),n=ia(),r=xh(),a=n("IE_PROTO"),o=Object,l=o.prototype;h.exports=r?o.getPrototypeOf:function(c){var d=s(c);if(e(d,a))return d[a];var u=d.constructor;return i(u)&&d instanceof u?u.prototype:d instanceof o?l:null}}),Is=_.cw(function(h,t){var e=at();h.exports=e({}.isPrototypeOf)}),mo=_.cw(function(h,t){var e=at(),i=Et(),s=Os(),n=Vr().indexOf,r=Jr(),a=e([].push);h.exports=function(o,l){var c,d=s(o),u=0,p=[];for(c in d)!i(r,c)&&i(d,c)&&a(p,c);for(;l.length>u;)i(d,c=l[u++])&&(~n(p,c)||a(p,c));return p}}),Yh=_.cw(function(h,t){var e=mo(),i=Yr();h.exports=Object.keys||function(n){return e(n,i)}}),qh=_.cw(function(h,t){var e={}.propertyIsEnumerable,i=Object.getOwnPropertyDescriptor,s=i&&!e.call({1:2},1);t.f=s?function(r){var a=i(this,r);return!!a&&a.enumerable}:e}),yo=_.cw(function(h,t){var e=qr(),i=Ct(),s=bo(),n=dh();h.exports=Object.setPrototypeOf||("__proto__"in{}?function(){var r,a=!1,o={};try{(r=e(Object.prototype,"__proto__","set"))(o,[]),a=o instanceof Array}catch{}return function(c,d){return s(c),n(d),i(c)&&(a?r(c,d):c.__proto__=d),c}}():void 0)}),Kh=_.cw(function(h,t){var e=ft(),i=yt(),s=Ct(),n=TypeError;h.exports=function(r,a){var o,l;if(a==="string"&&i(o=r.toString)&&!s(l=e(o,r))||i(o=r.valueOf)&&!s(l=e(o,r))||a!=="string"&&i(o=r.toString)&&!s(l=e(o,r)))return l;throw new n("Can't convert object to primitive value")}}),Jh=_.cw(function(h,t){var e=oe(),i=at(),s=Xh(),n=_(717),r=dt(),a=i([].concat);h.exports=e("Reflect","ownKeys")||function(l){var c=s.f(r(l)),d=n.f;return d?a(c,d(l)):c}}),vo=_.cw(function(h,t){var e=at(),i=Et(),s=SyntaxError,n=parseInt,r=String.fromCharCode,a=e("".charAt),o=e("".slice),l=e(/./.exec),c={'\\"':'"',"\\\\":"\\","\\/":"/","\\b":"\b","\\f":"\f","\\n":`
 `,"\\r":"\r","\\t":"	"},d=/^[\da-f]{4}$/i,u=/^[\u0000-\u001F]$/;h.exports=function(p,f){for(var g=!0,m="";f<p.length;){var y=a(p,f);if(y==="\\"){var v=o(p,f,f+2);if(i(c,v))m+=c[v],f+=2;else{if(v!=="\\u")throw new s('Unknown escape sequence: "'+v+'"');var b=o(p,f+=2,f+4);if(!l(d,b))throw new s("Bad Unicode escape at: "+f);m+=r(n(b,16)),f+=4}}else{if(y==='"'){g=!1,f++;break}if(l(u,y))throw new s("Bad control character in string literal at: "+f);m+=y,f++}}if(g)throw new s("Unterminated string at: "+f);return{value:m,end:f}}}),Qh=_.cw(function(h,t){var e=dt(),i=Ct(),s=po();h.exports=function(n,r){if(e(n),i(r)&&r.constructor===n)return r;var a=s.f(n);return(0,a.resolve)(r),a.promise}}),bo=()=>_(750),ea=_.cw(function(h,t){var e=Gt(),i=Di(),s=e.Set,n=e.add;h.exports=function(r){var a=new s;return i(r,function(o){n(a,o)}),a}}),Zh=_.cw(function(h,t){var e=Ae(),i=Gt(),s=ea(),n=Oi(),r=_e(),a=Di(),o=Se(),l=i.has,c=i.remove;h.exports=function(u){var p=e(this),f=r(u),g=s(p);return n(g)<=f.size?a(g,function(m){f.includes(m)&&c(g,m)}):o(f.getIterator(),function(m){l(g,m)&&c(g,m)}),g}}),Gt=_.cw(function(h,t){var e=at(),i=Set.prototype;h.exports={Set,add:e(i.add),has:e(i.has),remove:e(i.delete),proto:i}}),tl=_.cw(function(h,t){var e=Ae(),i=Gt(),s=Oi(),n=_e(),r=Di(),a=Se(),o=i.Set,l=i.add,c=i.has;h.exports=function(u){var p=e(this),f=n(u),g=new o;return s(p)>f.size?a(f.getIterator(),function(m){c(p,m)&&l(g,m)}):r(p,function(m){f.includes(m)&&l(g,m)}),g}}),el=_.cw(function(h,t){var e=Ae(),i=Gt().has,s=Oi(),n=_e(),r=Di(),a=Se(),o=Tt();h.exports=function(c){var d=e(this),u=n(c);if(s(d)<=u.size)return r(d,function(f){if(u.includes(f))return!1},!0)!==!1;var p=u.getIterator();return a(p,function(f){if(i(d,f))return o(p.iterator,"normal",!1)})!==!1}}),il=_.cw(function(h,t){var e=Ae(),i=Oi(),s=Di(),n=_e();h.exports=function(a){var o=e(this),l=n(a);return!(i(o)>l.size)&&s(o,function(c){if(!l.includes(c))return!1},!0)!==!1}}),sl=_.cw(function(h,t){var e=Ae(),i=Gt().has,s=Oi(),n=_e(),r=Se(),a=Tt();h.exports=function(l){var c=e(this),d=n(l);if(s(c)<d.size)return!1;var u=d.getIterator();return r(u,function(p){if(!i(c,p))return a(u.iterator,"normal",!1)})!==!1}}),Di=_.cw(function(h,t){var e=at(),i=Se(),s=Gt(),n=s.Set,r=s.proto,a=e(r.forEach),o=e(r.keys),l=o(new n).next;h.exports=function(c,d,u){return u?i({iterator:o(c),next:l},d):a(c,d)}}),Ee=_.cw(function(h,t){var e=oe(),i=function(n){return{size:n,has:function(){return!1},keys:function(){return{next:function(){return{done:!0}}}}}},s=function(n){return{size:n,has:function(){return!0},keys:function(){throw new Error("e")}}};h.exports=function(n,r){var a=e("Set");try{new a()[n](i(0));try{return new a()[n](i(-1)),!1}catch{if(!r)return!0;try{return new a()[n](s(-1/0)),!1}catch{return r(new a([1,2])[n](s(1/0)))}}}catch{return!1}}}),wo=()=>_(835),Oi=_.cw(function(h,t){var e=qr(),i=Gt();h.exports=e(i.proto,"size","get")||function(s){return s.size}}),nl=_.cw(function(h,t){var e=Ae(),i=Gt(),s=ea(),n=_e(),r=Se(),a=i.add,o=i.has,l=i.remove;h.exports=function(d){var u=e(this),p=n(d).getIterator(),f=s(u);return r(p,function(g){o(u,g)?l(f,g):a(f,g)}),f}}),rl=_.cw(function(h,t){var e=Ae(),i=Gt().add,s=ea(),n=_e(),r=Se();h.exports=function(o){var l=e(this),c=n(o).getIterator(),d=s(l);return r(c,function(u){i(d,u)}),d}}),ia=_.cw(function(h,t){var e=Ao(),i=Ls(),s=e("keys");h.exports=function(n){return s[n]||(s[n]=i(n))}}),sa=_.cw(function(h,t){var e=Pt(),i=ot(),s=Xr(),n="__core-js_shared__",r=h.exports=i[n]||s(n,{});(r.versions||(r.versions=[])).push({version:"3.50.0",mode:e?"pure":"global",copyright:"\xA9 2013\u20132025 Denis Pushkarev (zloirock.ru), 2025\u20132026 CoreJS Company (core-js.io). All rights reserved.",license:"https://github.com/zloirock/core-js/blob/v3.50.0/LICENSE",source:"https://github.com/zloirock/core-js"})}),Ao=_.cw(function(h,t){var e=sa(),i=Object.create||Object;h.exports=function(s,n){return e[s]||(e[s]=n||i(null))}}),Ds=_.cw(function(h,t){var e=Eh(),i=pt(),s=ot().String;h.exports=!!Object.getOwnPropertySymbols&&!i(function(){var n=Symbol("symbol detection");return!s(n)||!(Object(n)instanceof Symbol)||!Symbol.sham&&e&&e<41})}),al=_.cw(function(h,t){var e=at();h.exports=e(1.1.valueOf)}),ol=_.cw(function(h,t){var e=na(),i=Math.max,s=Math.min;h.exports=function(n,r){var a=e(n);return a<0?i(a+r,0):s(a,r)}}),hl=_.cw(function(h,t){var e=_o(),i=TypeError;h.exports=function(s){var n=e(s,"number");if(typeof n=="number")throw new i("Can't convert number to bigint");return BigInt(n)}}),Os=_.cw(function(h,t){var e=Rh(),i=bo();h.exports=function(s){return e(i(s))}}),na=()=>_(291),ll=()=>_(14),ra=()=>_(981),xo=()=>_(590),_o=_.cw(function(h,t){var e=ft(),i=Ct(),s=Zr(),n=ks(),r=Kh(),a=jt(),o=TypeError,l=a("toPrimitive");h.exports=function(c,d){if(!i(c)||s(c))return c;var u,p=n(c,l);if(p){if(d===void 0&&(d="default"),u=e(p,c,d),!i(u)||s(u))return u;throw new o("Can't convert object to primitive value")}return d===void 0&&(d="number"),r(c,d)}}),So=_.cw(function(h,t){var e=_o(),i=Zr();h.exports=function(s){var n=e(s,"string");return i(n)?n:n+""}}),cl=_.cw(function(h,t){var e={};e[jt()("toStringTag")]="z",h.exports=String(e)==="[object z]"}),Rs=_.cw(function(h,t){var e=_s(),i=String;h.exports=function(s){if(e(s)==="Symbol")throw new TypeError("Cannot convert a Symbol value to a string");return i(s)}}),Fs=_.cw(function(h,t){var e=String;h.exports=function(i){try{return e(i)}catch{return"Object"}}}),Ls=_.cw(function(h,t){var e=at(),i=0,s=Math.random(),n=e(1.1.toString);h.exports=function(r){return"Symbol("+(r===void 0?"":r)+")_"+n(++i+s,36)}}),Eo=_.cw(function(h,t){var e=ot(),i=at(),s=to(),n=Qa(),r=Et(),a=io(),o=ao(),l=xs(),c=a.c2i,d=a.c2iUrl,u=e.SyntaxError,p=e.TypeError,f=e.Array,g=i("".charAt),m=Math.floor,y=function(w,A){for(var x=w.length;A<x;A++){var S=g(w,A);if(S!==" "&&S!=="	"&&S!==`
@@ -10869,6 +10900,13 @@ document.title = document.title || 'KHZ PDF';
 const CTX_ACCENT = { edit: '#f56bb7', prepare: '#f56bb7', comment: '#ffde2e', 'fill-sign': '#b27df2', measure: '#f56bb7', protect: '#8a8af5', organize: '#9bd23c', export: '#2ac0d6' };
 const cb = (ic, label, onclick, extra = '') => `<button class="ctx-btn" ${extra} onclick="${onclick}"><span class="ic">${icon(ic)}</span>${label}</button>`;
 function activateToolGroup(group) {
+  // another tool chosen while the form is being edited: Prepare Form closes first — the fields are saved into the
+  // document, as its Close does (like Acrobat) — then that tool opens. (Preview, which keeps Prepare Form open, is
+  // the one exception.)
+  if (state.prepareMode && group !== 'prepare' && group !== 'prepare-start' && !state._ffKeepGroup) {
+    closePrepareForm().then(() => activateToolGroup(group), e => console.error(e));
+    return;
+  }
   if (state.activeToolGroup === 'edit' && group !== 'edit' && state.activeTool === 'edit-text') setActiveTool('select');
   // leaving Edit PDF: page text and pictures are no longer picked, so their frame and handles go away (like Acrobat)
   if (state.activeToolGroup === 'edit' && group !== 'edit') { const s = state.annotations.find(a => a.id === state.selectedId); if (s && ['text-block', 'page-image', 'page-path'].includes(s.type)) selectAnnot(null); }
@@ -12768,7 +12806,7 @@ async function khzOcrRead(o) {
       for (let i = lines.length - 1; i >= 0; i--) if (!lines[i].list.length) lines.splice(i, 1);
       c.width = c.height = 0;   // (the page picture's memory goes now, not when the whole run ends)
       finished++;
-      const res = { n, rot: job.rot, vp, k, mode, clean, pieces, lines, words: placed.length, hidden: job.hidden };
+      const res = { n, rot: job.rot, vp, k, mode, clean, pieces, lines, words: placed.length, hidden: job.hidden, lang };
       results.push(res);
       if (o.onPage) await o.onPage(res);
     }
@@ -13246,6 +13284,14 @@ async function khzOcrPieces(c, px, k, pics, look) {
   return out;
 }
 // one page's reading written into a document (ctx: the document's fonts, kept across pages: { font, fb })
+// punctuation an engine gave in its East Asian full-width form (\uff0c \uff1a \uff08\uff09 \u3001 \u3002…) written as ours on a page that isn't
+// Chinese, Japanese or Korean: the page's font has no such letters and they came out as "?" (the desktop AI reader
+// also limits itself this way, aiocr engine.js charSet; this covers every engine — Windows' and Apple's OCR too)
+function khzOcrLatinPunct(t, lang) {
+  if (/^(chi|jpn|kor)/.test(String(lang || ''))) return t;
+  const arabic = /^(ara|fas|urd|pus|uig|snd)/.test(String(lang || ''));   // (the Arabic comma is right on an Arabic page)
+  return String(t).replace(/[\uff01-\uff5e]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/\u3000/g, ' ').replace(arabic ? /[\u3001\ufe50\ufe51]/g : /[\u3001\u060c\ufe50\ufe51]/g, ',').replace(/[\u3002\ufe52]/g, '.');
+}
 async function khzOcrWrite(out, res, ctx) {
   if (!ctx.font) { ctx.font = await out.embedFont(PDFLib.StandardFonts.Helvetica); ctx.fb = {}; }
   const font = ctx.font, { vp, k, rot, mode } = res, lp = out.getPage(res.n - 1);
@@ -13256,7 +13302,8 @@ async function khzOcrWrite(out, res, ctx) {
     const size = line.sizePx / k, basePx = line.basePx, list = [];
     // text read with the page turned: written turned, starting where it starts on the page
     const at = p => line.frame ? { org: line.frame.toPage(p.b.x0, basePx), turn: line.frame.turn } : null;
-    for (const p of line.list) {
+    for (const p0 of line.list) {
+      const p = { ...p0, txt: khzOcrLatinPunct(p0.txt, res.lang) };
       // a word with letters Helvetica doesn't have (Greek, Cyrillic…) is written in a font that has them (app187)
       let wf = font;
       if (winAnsi(font, p.txt) !== p.txt) { const bad = [...p.txt].find(ch => !khzCanEncode(font, ch)); const f2 = bad && await khzFallbackFont(out, ctx.fb, bad, false, p.txt); if (f2 && [...p.txt].every(ch => khzCanEncode(f2, ch))) wf = f2; }
@@ -14244,6 +14291,7 @@ function deselectAll() {
 }
 async function copyFileToClipboard() {
   if (!requireDoc()) return;
+  const txtP = (async () => {   // (the copy starts during the click and the text follows: some web views allow no later copy)
   const out = [];
   for (let n = 1; n <= state.totalPages; n++) {
     const tc = await getTextContent(n);
@@ -14253,9 +14301,10 @@ async function copyFileToClipboard() {
     if (line) lines.push(line);
     out.push(lines.join('\r\n'));
   }
-  const txt = out.join('\r\n\f');
-  try { await navigator.clipboard.writeText(txt); toast('The document text was copied to the clipboard.'); }
-  catch (e) { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('The document text was copied to the clipboard.'); }
+  return out.join('\r\n\f');
+  })();
+  try { await khzCopyText(txtP); toast('The document text was copied to the clipboard.'); }
+  catch (e) { const txt = await txtP; const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('The document text was copied to the clipboard.'); }
 }
 
 // ---------- keyboard: F7 spelling, Ctrl+K preferences, Shift+Ctrl+A deselect, Shift+Ctrl+F advanced search ----------
@@ -16254,7 +16303,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1504';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1508';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -16393,7 +16442,7 @@ function showPlugins() {
     ['qpdf (qpdf-wasm)', '0.3.0', 'Jay Berkenbilt and contributors; WebAssembly build by neslinesli93', 'Apache-2.0', 'Opening and saving password-protected PDFs', !!window.QPDFFactory],
     ['Arimo, Tinos, Cousine', '5.3.0', 'Steve Matteson (Google); packaged by Fontsource', 'Apache-2.0', 'Stand-in fonts embedded for fonts a file doesn\u2019t include (PDF/A, edited text)', false],
     ['Carlito', '1.103', '\u0141ukasz Dziedzic (tyPoland)', 'SIL OFL 1.1', 'Stand-in for Calibri when editing text', true],
-    ['KHZ Overclock', '1.0', '\u00a9 2026 K1LLAH0EZ', 'KHZ PDF', 'Page drawing engine (test, Help \u203a KHZ Overclock)', typeof khzOc !== 'undefined' && !!(khzOc.eng && (khzOc.eng.w || khzOc.eng.n) && ((khzOc.eng.w && khzOc.eng.w.post) || (khzOc.eng.n && khzOc.eng.n.post)))],
+    ['KHZ Overclock', '1.0', '\u00a9 2026 K1LLAH0EZ', 'KHZ PDF', 'Page drawing engine (Help \u203a KHZ Overclock)', typeof khzOc !== 'undefined' && !!(khzOc.eng && (khzOc.eng.w || khzOc.eng.n) && ((khzOc.eng.w && khzOc.eng.w.post) || (khzOc.eng.n && khzOc.eng.n.post)))],
     ['PDFium (WebAssembly)', '2.15.1', 'The PDFium authors; WebAssembly build @embedpdf/pdfium by EmbedPDF', 'BSD-3 / Apache-2.0; build MIT', 'Inside KHZ Overclock: draws pages', typeof khzOc !== 'undefined' && !!(khzOc.eng && khzOc.eng.w && khzOc.eng.w.post)],
     ['Little CMS', '2.x', 'Marti Maria', 'MIT', 'Inside PDFium: applies colour profiles', false],
   ];
@@ -16402,7 +16451,7 @@ function showPlugins() {
     const on = !!(typeof ocrDeskInfo !== 'undefined' && ocrDeskInfo && ocrDeskInfo.ok);
     comp.push(
       ['ocrplus', '1.0.0', '© 2026 K1LLAH0EZ', 'Apache-2.0', 'Recognize Text in the desktop app (clean-up, straightening, second reading)', on],
-      ['Tesseract OCR', '5.5.3', 'The Tesseract authors', 'Apache-2.0', 'The text-recognition engine inside ocrplus', on],
+      ['Tesseract OCR', '5.5.3', 'The Tesseract authors', 'Apache-2.0', 'The text-recognition engine inside ocrplus' + (typeof ocrDeskInfo !== 'undefined' && ocrDeskInfo && ocrDeskInfo.core === 'native' ? ' (native code on this computer)' : ''), on],
       ['Leptonica', '1.74.3', 'Dan Bloomberg and contributors', 'BSD-2-Clause style', 'Image handling inside Tesseract', on],
       ['tessdata_best', '4.1.0', 'The Tesseract authors', 'Apache-2.0', 'English and page-orientation recognition models', on],
     ['tessdata_fast', '4.1.0', 'The Tesseract authors', 'Apache-2.0', 'Fast English model: the first reading of each page (unsure lines are read again with tessdata_best)', on],
@@ -16421,8 +16470,13 @@ function showPlugins() {
       ['Apache PDFBox', '2.0.x', 'The Apache Software Foundation', 'Apache-2.0', 'Inside Tabula: reads the PDF', false],
       ['veraPDF', '1.30.3', 'veraPDF Consortium', 'MPL-2.0 (or GPL-3+)', 'Verify PDF/A (PDF Standards, Preflight)', false],
       ['Eclipse Temurin (Java)', '21.0.12', 'Eclipse Adoptium', 'GPL-2.0 with Classpath Exception', 'Runs Tabula and veraPDF', false],
-      ['Electron', '33.4.11', 'OpenJS Foundation and contributors', 'MIT', 'The desktop app', true],
-      ['electron-updater', '6.8.9', 'electron-builder contributors', 'MIT', 'Updates the desktop app', true],
+      ...(window.__TAURI__ ? [
+        ['Tauri', '2.12', 'The Tauri Programme within The Commons Conservancy', 'MIT / Apache-2.0', 'The desktop app (the computer\u2019s own web view)', true],
+        ['Node.js', '22.23.3', 'OpenJS Foundation and contributors', 'MIT', 'The desktop app\u2019s helper (files, printing, OCR engines)', true],
+      ] : [
+        ['Electron', '33.4.11', 'OpenJS Foundation and contributors', 'MIT', 'The desktop app', true],
+        ['electron-updater', '6.8.9', 'electron-builder contributors', 'MIT', 'Updates the desktop app', true],
+      ]),
       ['Nodemailer', '6.9.16', 'Andris Reinman', 'MIT-0', 'Sends email from the desktop app', false]);
   }
   esDialog('plug-ov', 'About Plug-Ins', `<div class="es-note">Components this app uses. Components marked “Ready” start the first time you use their feature.</div>
@@ -16538,6 +16592,10 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1508', ['Mac (Tauri app): PDFs open, Recognize Text and reading page text work, Copy works, and the Mac build kit builds a second time.', 'Developer Mode: Test everything \u2014 one click checks each part of KHZ PDF on this computer (PDFs, files, printers, Recognize Text, Java helpers, internet); the results go in the report.', 'Copyright now reads \u00a9 2026 K1LLAH0EZ.']],
+  ['2026.10.1507', ['Desktop: the AI reader picks each letter faster (it looks only among the letters the page\u2019s language can have) \u2014 the same readings.', 'Tauri app: pulling a tab out into its own window no longer freezes the app at \u201cOpening in a new window\u2026\u201d.', 'Developer report and About Plug-Ins: the Tauri app is named as Tauri (with its web view), KHZ Overclock no longer marked as a test.']],
+  ['2026.10.1506', ['Windows desktop: Recognize Text\u2019s Tesseract engine now runs as native code instead of WebAssembly \u2014 the same engine, version and language data, the same words read, about 1.6\u20131.9 times faster (Help \u203a About Plug-Ins shows \u201cnative code on this computer\u201d). Mac keeps the WebAssembly engine for now.', 'Prepare Form: choosing another tool (Comment, Edit PDF, Fill & Sign\u2026) while the form is being edited now closes Prepare Form first and saves the fields, like its Close button (the field boxes and names used to stay on the page).']],
+  ['2026.10.1505', ['Desktop: Recognize Text no longer turns commas into \u201c?\u201d \u2014 the AI reader also reads Chinese and Japanese and sometimes gave its own full-width comma (and colon, brackets\u2026), which the page\u2019s font can\u2019t show. On a page that isn\u2019t Chinese, Japanese or Korean it now reads only that page\u2019s kind of letters.', 'Desktop: Recognize Text uses all of a 16 GB computer \u2014 such computers report a little under 16 GB and got one Tesseract engine fewer, so a page wasn\u2019t split into strips read at once.', 'Desktop: the app is never treated as the web version (no offline-cache sign-up or install offer) \u2014 for the Tauri test app.']],
   ['2026.10.1504', ['Display themes redesigned (View \u203a Display Theme): every named theme now colours the whole window \u2014 menus and their highlight, dividers, fields, side panels and rails, dialogs\u2019 title bars, tooltips, scroll bars \u2014 with colours worked out in even steps of its own hue (no more grey and Adobe-blue parts, no muddy shades), contrast checked for every theme, rounded tabs and menus, a soft shadow under the toolbar, filled fields, the selected tool on an accent-tinted pill, and the right panel\u2019s tools on rounded tiles in their own colour turned toward the theme. Acrobat\u2019s Dark Gray and Light Gray stay as they are.']],
   ['2026.10.1503', ['Desktop app: the KHZ Overclock page engine is no longer a test \u2014 it is now the standard page engine, on unless you switch it off (Help \u203a KHZ Overclock Engine). The web version keeps it off unless switched on.', 'Desktop: text recognition is faster \u2014 the AI reader reads its lines while Tesseract is still reading the page (it used to wait for Tesseract to finish; about 3 seconds a page on 8-thread computers).']],
   ['2026.10.1502', ['Desktop (Windows): the first text recognition after opening KHZ PDF no longer waits for the graphics card check. The AI reader starts on the processor at once; whether the graphics card is faster on your computer is checked later, in the background while nothing is being read, and remembered for that computer (it used to run at every start, and a scan right after opening waited for it \u2014 up to 25 seconds).']],
@@ -24304,7 +24362,8 @@ async function hfShrinkPages(hf) {
 //  • Help › Install KHZ PDF as an App…
 // ================================================================
 let khzInstallEvt = null;
-const khzWeb = /^https?:$/.test(location.protocol);
+// (the desktop app isn't the web version even when its page is served over http, as in the Tauri app on Windows)
+const khzWeb = /^https?:$/.test(location.protocol) && !(window.khzDesktop && window.khzDesktop.isDesktop);
 if (khzWeb && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('offline support not available', e)));
 }
@@ -54792,7 +54851,7 @@ function khzDevPanel() {
       <select class="kdv-settle">${[['', 'Normal (' + khzZoomSettleMs + ' ms)'], ['0', '0 ms'], ['40', '40 ms'], ['140', '140 ms'], ['300', '300 ms']].map(([v, l]) => `<option value="${v}" ${st === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <div class="kdv-g">Recent</div><div class="kdv-log"></div>
       <div class="kdv-dim" style="margin-top:5px">Press <b>F9</b> when something looks wrong: the moment is marked in the report.</div>
-      <div class="kdv-btns"><button class="kdv-info">This document…</button><button class="kdv-copy">Copy report</button><button class="kdv-save">Save report…</button><button class="kdv-clear">Clear logs</button></div>
+      <div class="kdv-btns"><button class="kdv-test" title="Checks each part of KHZ PDF on this computer: reading, drawing and saving PDFs, files, printers, Recognize Text and more. Results go in the report.">Test everything</button><button class="kdv-info">This document…</button><button class="kdv-copy">Copy report</button><button class="kdv-save">Save report…</button><button class="kdv-clear">Clear logs</button></div>
     </div>`;
   document.body.appendChild(p);
   p.style.zIndex = topZ();
@@ -54800,8 +54859,9 @@ function khzDevPanel() {
   p.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => khzDevSet(cb.dataset.k, cb.checked));
   p.querySelectorAll('input[name=kdv-eng]').forEach(r => r.onchange = () => khzDevEngine(r.value));
   p.querySelector('.kdv-settle').onchange = e => { khzDev.settle = e.target.value; khzDevSettle(); };
+  p.querySelector('.kdv-test').onclick = () => khzSelfTestShow();
   p.querySelector('.kdv-info').onclick = () => esDialog('khz-dev-info', 'This document', `<pre class="kdv-pre">${escapeHtml(khzDevInfo())}</pre>`, [{ label: 'Close', primary: true }], 640);
-  p.querySelector('.kdv-copy').onclick = async () => { try { await navigator.clipboard.writeText(await khzDevReport()); toast('Developer report copied.'); } catch (e) { toast('Could not copy: ' + (e.message || e)); } };
+  p.querySelector('.kdv-copy').onclick = async () => { try { await khzCopyText(khzDevReport()); toast('Developer report copied.'); } catch (e) { toast('Could not copy: ' + (e.message || e)); } };
   p.querySelector('.kdv-save').onclick = async () => downloadBlob(new Blob([await khzDevReport()], { type: 'text/plain' }), `KHZ PDF developer report ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`);
   p.querySelector('.kdv-clear').onclick = () => { khzDev.zooms = []; khzDev.scrolls = []; khzDev.draws = []; khzDevLogShow(); };
   // drag by its title
@@ -55163,7 +55223,7 @@ function khzDevStart() {
 function khzDevInfo() {
   const L = [], ps = state.pages && state.pages[state.currentPage];
   const ua = navigator.userAgent, ver = n => (new RegExp(n + '/([\\d.]+)').exec(ua) || [])[1] || '?';
-  L.push(`KHZ PDF ${typeof APP_BUILD !== 'undefined' ? APP_BUILD : '?'} · ${window.khzDesktop ? 'desktop app (' + (khzDesktop.platform || '?') + ')' : 'web version'} · Electron ${ver('Electron')} · Chrome ${ver('Chrome')}`);
+  L.push(`KHZ PDF ${typeof APP_BUILD !== 'undefined' ? APP_BUILD : '?'} · ${window.khzDesktop ? 'desktop app (' + (khzDesktop.platform || '?') + ')' : 'web version'} · ${window.__TAURI__ ? 'Tauri' + (ver('Edg') !== '?' ? ' · WebView2 ' + ver('Edg') : ' · WebKit') : ver('Electron') !== '?' ? 'Electron ' + ver('Electron') : 'browser'} · Chrome ${ver('Chrome')}`);
   L.push(`Screen ${screen.width}×${screen.height} · pixel ratio ${window.devicePixelRatio} · window ${innerWidth}×${innerHeight} · processors ${navigator.hardwareConcurrency || '?'}${navigator.deviceMemory ? ' · memory ~' + navigator.deviceMemory + ' GB' : ''}`);
   L.push(`pdf.js ${pdfjsLib.version || '?'}`);
   const E = khzOc.eng || {}, es = e => !e ? 'not started' : e.failed ? 'failed' : e.post ? 'running' : 'starting';
@@ -55192,6 +55252,7 @@ async function khzDevReport() {
   if (khzDev.timeline.length) L.push('', `Timeline (${khzDev.timeline.length}, stutters, F9 marks, A/B, scrolls):`, ...khzDev.timeline.map(e => `  ${t(e.at)} ${e.kind}: ${e.text}`));
   const stalls = khzDevPerf.long.slice(-30); if (stalls.length) L.push('', 'Main-thread stalls (last 30):', '  ' + stalls.map(s => `${t(s.at)} ${s.ms} ms`).join(', '));
   if (typeof khzOcrStats !== 'undefined' && khzOcrStats.length) L.push('', `Text recognition timings (ms; ${khzOcrStats.length}):`, ...khzOcrStats.map(x => '  ' + Object.entries(x).map(([k, v]) => k + ' ' + (typeof v === 'object' && v ? JSON.stringify(v) : v)).join(' · ')));
+  if (typeof khzSelfTestLast !== 'undefined' && khzSelfTestLast) L.push('', ...khzSelfTestText());
   L.push('', `Warnings and errors (${khzDev.problems.length}):`, ...khzDev.problems.map(p => `  ${p.t} ${p.level}: ${p.text}`));
   return L.join('\n');
 }
@@ -58067,7 +58128,7 @@ function khzOcrReadings(c, k, gray, o) {
     // worth a second look — and lost a point of accuracy)
     const aiJob = o.useAi ? (async () => {
       let aiFound = null, aiRes = null;
-      try { aiFound = await window.khzDesktop.ocrAiLines(aiRef, { width: c.width, height: c.height, data: gray }, { dpi: Math.round(k * 72) }); } catch (e) { console.warn('AI OCR', e); }
+      try { aiFound = await window.khzDesktop.ocrAiLines(aiRef, { width: c.width, height: c.height, data: gray }, { dpi: Math.round(k * 72), lang: o.lang || 'eng' }); } catch (e) { console.warn('AI OCR', e); }
       tm.aiLines = Math.round(performance.now() - t0);
       const t1 = performance.now();
       if (aiFound && aiFound.boxes && aiFound.boxes.length) { try { aiRes = await window.khzDesktop.ocrAiRead(aiRef, aiFound.boxes); } catch (e) { console.warn('AI OCR', e); } }
@@ -58105,7 +58166,7 @@ async function khzOcrWarm() {
     const tess = Promise.all(Array.from({ length: n }, () => D.ocrRecognize({ width: c.width, height: c.height, dpi: 300, data: gray.slice() }, { psm: 11, lang: desk.lang || 'eng' }).catch(() => null)));
     const ai = D.ocrAiLines && getPref('ocrAi', true) !== false ? (async () => {
       const ref = 'warm-' + Date.now();
-      try { const f = await D.ocrAiLines(ref, { width: c.width, height: c.height, data: gray.slice() }, { dpi: 300 }); if (f && f.boxes && f.boxes.length) await D.ocrAiRead(ref, f.boxes); } catch (e) {}
+      try { const f = await D.ocrAiLines(ref, { width: c.width, height: c.height, data: gray.slice() }, { dpi: 300, lang: 'eng' }); if (f && f.boxes && f.boxes.length) await D.ocrAiRead(ref, f.boxes); } catch (e) {}
       try { await D.ocrAiDrop(ref); } catch (e) {}
       try { await khzOcrDict(); } catch (e) {}
     })() : null;
@@ -58386,6 +58447,179 @@ function khzThemeTiles() {
 applyTheme = (prev => function () { const r = prev.apply(this, arguments); try { khzThemeTiles(); } catch (e) {} return r; })(applyTheme);
 { const rp = document.getElementById('right-panel'); let q = 0; if (rp) new MutationObserver(() => { if (q) return; q = 1; requestAnimationFrame(() => { q = 0; try { khzThemeTiles(); } catch (e) {} }); }).observe(rp, { childList: true, subtree: true }); }
 applyTheme();
+// ---------- Developer Mode › Test everything: one click checks each part of KHZ PDF on this computer ----------
+// Each check makes its own small test (a PDF made here, a picture of its text), so it doesn't touch the open document or
+// the clipboard. The results show in a window and go into the developer report. Same checks on Windows, Mac and the web
+// version (parts that need the desktop app are skipped in a browser).
+let khzSelfTestLast = null;
+async function khzSelfTest() {
+  const D = window.khzDesktop, rows = [], T0 = performance.now();
+  const add = (group, name, ok, detail, ms) => rows.push({ group, name, ok, detail: detail || '', ms });
+  const check = async (group, name, fn, { timeout = 30000 } = {}) => {
+    const t = performance.now();
+    try {
+      const r = await Promise.race([Promise.resolve().then(fn), new Promise((_, no) => setTimeout(() => no(new Error('no answer in ' + timeout / 1000 + ' s')), timeout))]);
+      const v = r && typeof r === 'object' && 'ok' in r ? r : { ok: r !== false, detail: typeof r === 'string' ? r : '' };
+      add(group, name, v.ok === null ? null : !!v.ok, v.detail, Math.round(performance.now() - t));
+    } catch (e) { add(group, name, false, (e && (e.message || e.name)) || String(e), Math.round(performance.now() - t)); }
+  };
+  const say = msg => { const el = document.querySelector('#khz-selftest-live'); if (el) el.textContent = msg; };
+  const word = 'KHZ self test 482';
+
+  // --- the web view ---
+  say('Checking the web view…');
+  await check('Web view', 'Features the page uses', () => {
+    const need = {
+      'stream reading (for await)': !!(window.ReadableStream && ReadableStream.prototype[Symbol.asyncIterator]),
+      'copy with ClipboardItem': !!(navigator.clipboard && window.ClipboardItem),
+      'Compression streams': typeof CompressionStream === 'function' && typeof DecompressionStream === 'function',
+      'OffscreenCanvas': typeof OffscreenCanvas === 'function',
+      'URL.parse': typeof URL.parse === 'function',
+      'structuredClone': typeof structuredClone === 'function',
+      'Intl.Segmenter': !!(window.Intl && Intl.Segmenter),
+      'crypto.subtle': !!(window.crypto && crypto.subtle),
+      'Workers': typeof Worker === 'function',
+      'WebAssembly': typeof WebAssembly === 'object',
+    };
+    const miss = Object.keys(need).filter(k => !need[k]);
+    return { ok: !miss.length, detail: miss.length ? 'missing: ' + miss.join(', ') : Object.keys(need).length + ' of ' + Object.keys(need).length + ' there' };
+  });
+  await check('Web view', 'WebAssembly SIMD', () => {
+    const simd = WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+    return { ok: simd, detail: simd ? 'yes' : 'no (WebAssembly engines run slower)' };
+  });
+  await check('Web view', 'Background worker', () => new Promise((yes, no) => {
+    const u = URL.createObjectURL(new Blob(['onmessage=e=>postMessage(e.data*2)'], { type: 'text/javascript' }));
+    const w = new Worker(u); w.onmessage = e => { w.terminate(); URL.revokeObjectURL(u); e.data === 42 ? yes('answered') : no(new Error('wrong answer')); };
+    w.onerror = e => { w.terminate(); no(new Error(e.message || 'could not start')); }; w.postMessage(21);
+  }), { timeout: 8000 });
+  await check('Web view', 'Compress and uncompress', async () => {
+    const src = new TextEncoder().encode(word.repeat(50));
+    const z = new Uint8Array(await new Response(new Blob([src]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+    const back = new Uint8Array(await new Response(new Blob([z]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+    return { ok: back.length === src.length && back.every((b, i) => b === src[i]), detail: src.length + ' → ' + z.length + ' bytes and back' };
+  });
+  await check('Web view', 'Signature maths (SHA-256)', async () => {
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('abc')));
+    return { ok: h[0] === 0xba && h[31] === 0xad, detail: 'checked against a known answer' };
+  });
+  await check('Web view', 'Fonts', async () => {
+    try { await document.fonts.ready; } catch (e) {}
+    const f = ['Carlito', 'Dancing Script'].map(n => [n, document.fonts.check('12px "' + n + '"')]);
+    const miss = f.filter(x => !x[1]).map(x => x[0]);
+    return { ok: miss.length ? null : true, detail: miss.length ? 'not loaded yet: ' + miss.join(', ') + ' (they load the first time they are used)' : 'Carlito, Dancing Script' };
+  });
+
+  // --- PDF: make, open, draw, read ---
+  say('Making and opening a test PDF…');
+  let bytes = null, canvas = null, k = 300 / 72;
+  await check('PDF', 'Make a PDF (pdf-lib)', async () => {
+    const doc = await PDFLib.PDFDocument.create(), pg = doc.addPage([612, 792]), f = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    pg.drawText(word, { x: 72, y: 700, size: 28, font: f });
+    pg.drawText('The quick brown fox jumps over the lazy dog.', { x: 72, y: 650, size: 18, font: f });
+    bytes = await doc.save();
+    return { ok: bytes.length > 500, detail: bytes.length + ' bytes' };
+  });
+  let pdoc = null;
+  await check('PDF', 'Open it (pdf.js)', async () => {
+    pdoc = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    return { ok: pdoc.numPages === 1, detail: pdoc.numPages + ' page' };
+  });
+  await check('PDF', 'Read its text', async () => {
+    const pg = await pdoc.getPage(1), tc = await pg.getTextContent(), t = tc.items.map(i => i.str).join(' ');
+    return { ok: t.includes('482'), detail: t.includes('482') ? 'found the test words' : 'got: ' + t.slice(0, 60) };
+  });
+  await check('PDF', 'Draw a page (pdf.js)', async () => {
+    const pg = await pdoc.getPage(1), vp = pg.getViewport({ scale: k });
+    canvas = document.createElement('canvas'); canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+    const g = canvas.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, canvas.width, canvas.height);
+    await pg.render({ canvasContext: g, viewport: vp }).promise;
+    const d = g.getImageData(Math.round(72 * k), Math.round((792 - 712) * k), Math.round(300 * k), Math.round(30 * k)).data;
+    let ink = 0; for (let i = 0; i < d.length; i += 16) if (d[i] < 128) ink++;
+    return { ok: ink > 50, detail: canvas.width + '×' + canvas.height + ' px' + (ink > 50 ? '' : ', but the page came out blank') };
+  });
+  await check('PDF', 'KHZ Overclock engine', () => {
+    if (typeof khzOc === 'undefined') return { ok: null, detail: 'not in this version' };
+    const n = khzOc.eng && khzOc.eng.n, w = khzOc.eng && khzOc.eng.w;
+    return { ok: !!(n || w) || null, detail: n ? 'native engine running' : w ? 'WebAssembly engine running' : 'not started (it starts with the first page it draws)' };
+  });
+  await check('PDF', 'Save a changed PDF (pdf-lib)', async () => {
+    const doc = await PDFLib.PDFDocument.load(bytes); doc.addPage([612, 792]); const out = await doc.save();
+    const back = await PDFLib.PDFDocument.load(out);
+    return { ok: back.getPageCount() === 2, detail: 'added a page, saved, opened again' };
+  });
+
+  // --- the desktop app ---
+  if (!D || !D.isDesktop) add('Desktop app', 'Desktop parts', null, 'skipped: this is the web version');
+  else {
+    say('Checking the desktop app…');
+    await check('Desktop app', 'The app’s helper', async () => { const i = await D.info(); return { ok: !!(i && i.version), detail: (i.platform || '') + ' ' + (i.version || '') }; }, { timeout: 8000 });
+    await check('Desktop app', 'Write and read a file', async () => {
+      const text = word + ' ' + Date.now(), p = await D.logAdd('self-test.txt', text + '\n');
+      if (!p) return { ok: false, detail: 'could not write in the app’s log folder' };
+      const b = await D.readFile(p), got = new TextDecoder().decode(b);
+      return { ok: got.includes(text), detail: got.includes(text) ? 'in ' + p : 'read back something else' };
+    });
+    await check('Desktop app', 'Printers', async () => {
+      const l = await D.printers() || [], def = l.find(p => p.isDefault) || l[0];
+      if (!l.length) return { ok: null, detail: 'none found (none set up in ' + (D.platform === 'darwin' ? 'System Settings › Printers & Scanners' : 'Windows Settings › Printers') + ', or the list could not be read)' };
+      let papers = '';
+      if (def && D.printerPapers) { const pp = await D.printerPapers(def.name); papers = ' · ' + ((pp && pp.papers) || []).length + ' paper sizes on ' + (def.displayName || def.name); }
+      return { ok: true, detail: l.length + ' (' + l.map(p => (p.displayName || p.name) + (p.isDefault ? ' — default' : '')).join(', ') + ')' + papers };
+    }, { timeout: 20000 });
+    if (D.svgToPdf) await check('Desktop app', 'Print engine (drawing to PDF)', async () => {
+      const b = await D.svgToPdf('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><text x="10" y="50">' + word + '</text></svg>', 200, 100);
+      if (b && b.ok === false) return { ok: false, detail: b.error || 'no PDF came back' };
+      const raw = b && (b.bytes || b), u = raw && new Uint8Array(raw); const ok = !!(u && u.length > 100 && u[0] === 0x25 && u[1] === 0x50);
+      return { ok, detail: ok ? u.length + ' bytes' : 'no PDF came back' };
+    });
+    // a picture of the test page's text, for both text readers
+    let gray = null, W = 0, H = 0;
+    if (canvas) { const top = Math.round((792 - 740) * k), bot = Math.round((792 - 630) * k); W = canvas.width; H = bot - top; const g = canvas.getContext('2d', { willReadFrequently: true }), d = g.getImageData(0, top, W, H).data; gray = new Uint8Array(W * H); for (let i = 0, j = 0; i < d.length; i += 4, j++) gray[j] = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; }
+    await check('Recognize Text', 'Tesseract', async () => {
+      const inf = await D.ocrInfo(); if (!inf || !inf.ok) return { ok: false, detail: (inf && inf.error) || 'did not start' };
+      const eng = (inf.core || '') + (inf.tesseract ? ' ' + inf.tesseract : '') + (inf.pool ? ', ' + inf.pool + ' at once' : '');
+      if (!gray) return { ok: null, detail: eng + ' (no test picture to read)' };
+      const r = await D.ocrRecognize({ width: W, height: H, data: gray, dpi: 300 }, { psm: 11, lang: 'eng' });
+      const t = (r.lines || []).map(l => l.words.map(w => w.text).join(' ')).join(' / ');
+      return { ok: /482/.test(t) && /fox/i.test(t), detail: eng + ' · read: ' + t.slice(0, 80) };
+    }, { timeout: 60000 });
+    if (D.ocrAiLines) await check('Recognize Text', 'AI reader', async () => {
+      if (!gray) return { ok: null, detail: 'no test picture to read' };
+      const ref = 'selftest' + Date.now();
+      try {
+        const f = await D.ocrAiLines(ref, { width: W, height: H, data: gray.slice() }, { dpi: 300, lang: 'eng' });
+        const n = (f && f.boxes && f.boxes.length) || 0; if (!n) return { ok: false, detail: 'found no lines' + (f && f.error ? ': ' + f.error : '') };
+        const r = await D.ocrAiRead(ref, f.boxes), s = JSON.stringify(r || '');
+        return { ok: s.includes('482'), detail: n + ' lines found' + (s.includes('482') ? ', read right' : ', read: ' + s.slice(0, 80)) + (f.on ? ' · ' + JSON.stringify(f.on) : '') };
+      } finally { try { await D.ocrAiDrop(ref); } catch (e) {} }
+    }, { timeout: 90000 });
+    if (D.javaAvailable) await check('Desktop app', 'Java helpers (tables, PDF/A checks)', async () => { const ok = await D.javaAvailable(); return { ok: !!ok, detail: ok ? 'ready' : 'not available' }; }, { timeout: 30000 });
+    if (D.netFetch) await check('Desktop app', 'Internet (updates, add-ons)', async () => {
+      const r = await D.netFetch('https://github.com/BrandonAOG/PDF/releases/latest', { method: 'HEAD', timeout: 10000 });
+      return { ok: !!(r && (r.ok || r.status < 500)), detail: r ? 'GitHub answered ' + r.status : 'no answer' };
+    }, { timeout: 15000 });
+  }
+  try { if (pdoc) pdoc.destroy(); } catch (e) {}
+  khzSelfTestLast = { at: new Date(), ms: Math.round(performance.now() - T0), rows };
+  return khzSelfTestLast;
+}
+function khzSelfTestText(r = khzSelfTestLast) {
+  if (!r) return [];
+  const mark = ok => (ok === true ? 'OK  ' : ok === false ? 'FAIL' : 'NOTE');
+  const bad = r.rows.filter(x => x.ok === false).length;
+  return [`Self test at ${r.at.toTimeString().slice(0, 8)} (${(r.ms / 1000).toFixed(1)} s): ${bad ? bad + ' failed' : 'all passed'}`,
+    ...r.rows.map(x => `  ${mark(x.ok)} ${x.group} › ${x.name}${x.ms != null ? ' (' + x.ms + ' ms)' : ''}${x.detail ? ': ' + x.detail : ''}`)];
+}
+async function khzSelfTestShow() {
+  esDialog('khz-selftest', 'Test everything', `<div id="khz-selftest-live" class="kdv-dim">Starting…</div><pre class="kdv-pre" id="khz-selftest-out" style="display:none"></pre>`, [{ label: 'Close', primary: true }], 720);
+  let r; try { r = await khzSelfTest(); } catch (e) { r = null; console.error('self test', e); }
+  const out = document.querySelector('#khz-selftest-out'), live = document.querySelector('#khz-selftest-live');
+  if (!out) return;
+  const lines = r ? khzSelfTestText(r) : ['The self test stopped: see Warnings and errors in the report.'];
+  live.textContent = lines[0] + ' — the results are also in the developer report.';
+  out.textContent = lines.slice(1).join('\n'); out.style.display = '';
+}
 </script>
 </body>
 </html>
