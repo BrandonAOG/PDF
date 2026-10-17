@@ -771,6 +771,8 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
   .inline-editor { outline:1px solid #2680eb; outline-offset:3px; }
   /* typing in a comment (text box, callout, text): no frame of its own, like Acrobat — the comment's own box shows. Edit PDF keeps its blue frame */
   body:not(.edit-mode) .inline-editor { outline:none; }
+  /* Edit PDF: while the box being typed in has its selection frame (with handles) showing, that frame is the one box, like Acrobat — the editor's own frame showed just inside it, so there were two */
+  .page-wrapper:has(svg g[data-annot-id] > circle) .inline-editor { outline:none; }
   .fp-auto { white-space:nowrap; font-size:12.5px; }
   body.nodoc #tab-0 { display:none; }
   #zoom-indicator { display:none !important; }
@@ -5248,7 +5250,7 @@ async function importNativeAnnots() {
     if (typeof khzAfterOpen === 'function') { await khzAfterOpen(); if (state.docGen !== gen0) return; }
     const before = new Set(state.annotations.map(a => a.id));
     // pictures, text runs and lines are read a page at a time (a big drawing set used to freeze the window for many seconds)
-    state.pageImages = {}; state.pageTextOps = {}; state.pagePaths = {}; state.imgHiddenKey = ''; state.imgCache = state.imgCache || {};
+    state.pageImages = {}; state.pageTextOps = {}; state.pagePaths = {}; state.imgHiddenKey = ''; state._imgOver = null; state.imgCache = state.imgCache || {};
     // pages are prepared nearest-first (the ones on screen, then outwards from the current page). Big files and long
     // documents only prepare the pages around where you are; the others are prepared when you scroll to them, so Edit PDF
     // is ready in a few seconds instead of waiting for every sheet (an 88-sheet drawing set took minutes and ran out of memory)
@@ -5732,7 +5734,7 @@ function imageNamesOf(doc, lp) {
 // Called after load: index page images and create (hidden-until-touched) editable objects for them.
 // only: index just that page (the background preparation goes a page at a time so the window stays responsive)
 function indexPageImages(lib, only) {
-  if (!only) { state.pageImages = {}; state.pageTextOps = {}; state.imgHiddenKey = ''; }
+  if (!only) { state.pageImages = {}; state.pageTextOps = {}; state.imgHiddenKey = ''; state._imgOver = null; }
   state.pageImages = state.pageImages || {}; state.pageTextOps = state.pageTextOps || {};
   state.imgCache = state.imgCache || {};
   if (!lib) return;
@@ -5744,6 +5746,7 @@ function indexPageImages(lib, only) {
     state.pageTextOps = state.pageTextOps || {};
     state.pageTextOps[n] = scan.texts;
     state.pageImages[n] = list.map((im, idx) => ({ ...im, key: `${n}:${idx}` }));
+    if (state._imgOver) [...state._imgOver.keys()].forEach(k => { if (+k.split(':')[0] === n) state._imgOver.delete(k); });
     list.forEach((im, idx) => {
       const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => mApply(im.ctm, u, v));
       const xs = corners.map(c => c[0]), ys = corners.map(c => c[1]);
@@ -5910,6 +5913,10 @@ async function getTextBlocks(n) {
     });
   });
   items.sort((a, b) => a.x - b.x);
+  // recognized text (a converted scan) grouped like Acrobat's converted pages (Preferences › Content Editing): a heading
+  // and the reference beside it are one line whatever their colour or weight, and the lines of a column are one box
+  const ocrGroup = getPref('ceOcrGroup', true) !== false;
+  const opsAll = state.pageTextOps && state.pageTextOps[n], isOcrOp = k => k >= 0 && opsAll && opsAll[k] && opsAll[k].ocr;
   const lines = [];
   for (const it of items) {
     let best = null;
@@ -5920,7 +5927,8 @@ async function getTextBlocks(n) {
       const prev = L.items[L.items.length - 1], ops = state.pageTextOps && state.pageTextOps[n];
       // different run of text that just happens to sit on the same line (another colour, another
       // font or size, or text that runs underneath it) is its own block, like in Acrobat
-      if (!sameOp) {
+      const ocrJoin = ocrGroup && isOcrOp(it.op) && isOcrOp(prev.op) && Math.abs(prev.fh - it.fh) <= 0.25 * Math.max(prev.fh, it.fh);
+      if (!sameOp && !ocrJoin) {
         const fa = ops && prev.op >= 0 && ops[prev.op] && ops[prev.op].fill, fb = ops && it.op >= 0 && ops[it.op] && ops[it.op].fill;
         if (fa && fb && fa !== fb) continue;
         if (prev.fontName !== it.fontName && (Math.abs(prev.fh - it.fh) > 0.02 * Math.max(prev.fh, it.fh) || gap < -0.05 * it.fh)) continue;
@@ -5929,7 +5937,7 @@ async function getTextBlocks(n) {
       // (only text recognized one word per text run, as older versions wrote it: a run per line is already one piece,
       // and two lines side by side are two columns)
       const ocrW = ops && it.op >= 0 && prev.op >= 0 && ops[it.op] && ops[prev.op] && ops[it.op].tr === 3 && ops[prev.op].tr === 3 && !/\S\s+\S/.test(it.str) && !/\S\s+\S/.test(prev.str);
-      if (L.sig === it.sig && Math.abs(L.base - it.base) < tol && gap > -0.6 * it.fh && (gap < (ocrW ? 1.6 : 1.0) * it.fh || (sameOp && gap < 80 * it.fh))) { if (!best || Math.abs(gap) < Math.abs(it.x - best.right)) best = L; }
+      if ((L.sig === it.sig || ocrJoin) && Math.abs(L.base - it.base) < tol && gap > -0.6 * it.fh && (gap < (ocrW ? 1.6 : 1.0) * it.fh || (sameOp && gap < 80 * it.fh))) { if (!best || Math.abs(gap) < Math.abs(it.x - best.right)) best = L; }
     }
     if (best) {
       const gap = it.x - best.right;
@@ -5968,6 +5976,17 @@ async function getTextBlocks(n) {
       // is a long one that wrapped. Short lines one under another (a list of loads, a column of values, a form's
       // labels) stay one object per line, like Acrobat's converted scans.
       const ocrOps = state.pageTextOps && state.pageTextOps[n], isOcr = l => l.items.every(it => it.op >= 0 && ocrOps && ocrOps[it.op] && ocrOps[it.op].ocr);
+      if (isOcr(L) && isOcr(last) && ocrGroup) {
+        // (like Acrobat's converted scans: lines one under another that start — or end — at the same place, at an even
+        // line spacing, are one box, whatever their colour or weight: a column of labels, the site address, a note
+        // under its row. A column of values — a number and its unit on each line — stays one box per line, as Acrobat
+        // has them. Lines of quite different sizes stay apart)
+        const val = l => /^[+\-−±]?\s*\d[\d.,]*\s*[A-Za-zφΦØ%°²/]{0,5}$/.test(l.text.trim());
+        if (val(L) || val(last)) return false;
+        const sizeOk = Math.abs(L.fh - last.fh) <= 0.2 * Math.max(L.fh, last.fh);
+        const al = Math.abs(L.x - last.x) <= atol || Math.abs(L.right - last.right) <= atol;
+        return !loose && dy > 0.5 * L.fh && dy < 1.75 * Math.max(L.fh, last.fh) && sizeOk && al;
+      }
       if (isOcr(L) && isOcr(last)) {
         const wl = last.right - last.x, widest = Math.max(...B.lines.map(l => l.right - l.x));
         if (!(wl >= 14 * last.fh && wl >= 0.8 * widest)) return false;
@@ -6616,6 +6635,33 @@ function textBlockGeometry(a, vp, V, box) {
 
 // ---------- on-screen PDF without the items the app is drawing ----------
 let contentSyncBusy = null;
+// Is anything drawn after this page picture, in the page's own drawing order, on top of it? (paths, text and other
+// pictures that come later in the page content and overlap it) — worked out once per picture.
+function khzImgDrawnOver(im) {
+  state._imgOver = state._imgOver || new Map();
+  if (state._imgOver.has(im.key)) return state._imgOver.get(im.key);
+  const n = +im.key.split(':')[0], E = 0.5;
+  const boxOf = (pts) => { const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]); return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }; };
+  const ib = boxOf([[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => mApply(im.ctm, u, v)));
+  const hit = b => b && b.x0 < ib.x1 - E && b.x1 > ib.x0 + E && b.y0 < ib.y1 - E && b.y1 > ib.y0 + E;
+  let over = false;
+  try {
+    for (const p of (state.pagePaths && state.pagePaths[n]) || []) {
+      if (p.start <= im.end || !p.box) continue;
+      const c = p.ctm || [1, 0, 0, 1, 0, 0], bb = p.box;
+      if (hit(boxOf([[bb.x0, bb.y0], [bb.x1, bb.y0], [bb.x0, bb.y1], [bb.x1, bb.y1]].map(([x, y]) => mApply(c, x, y))))) { over = true; break; }
+    }
+    if (!over) for (const t of (state.textBlockIndex || []).filter(t => t.page === n && t.ops && t.origPts)) {
+      if (t.ops.some(oi => { const op = (state.pageTextOps[n] || [])[oi]; return op && op.start > im.end; }) && hit(boxOf(t.origPts))) { over = true; break; }
+    }
+    if (!over) for (const o of (state.pageImages && state.pageImages[n]) || []) {
+      if (o === im || o.start <= im.end) continue;
+      if (hit(boxOf([[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => mApply(o.ctm, u, v))))) { over = true; break; }
+    }
+  } catch (e) { over = true; }   // (not sure: keep it on the page, where its order is always right)
+  if (state.pagePaths && state.pagePaths[n] && state.textBlockIndex) state._imgOver.set(im.key, over);   // (kept once the page's paths and text are known)
+  return over;
+}
 function wantedHidden() {
   const images = new Set(), texts = new Set();
   Object.values(state.pageImages || {}).flat().forEach(im => {
@@ -6623,7 +6669,10 @@ function wantedHidden() {
     // pictures whose pixels we have are drawn by the app while Edit PDF is open (no flicker when they move); when
     // just viewing they stay on the page, like Acrobat. (Taking them off at open meant a second copy of the document
     // right after opening: the page was drawn again from scratch, and zooming waited behind it.)
-    if (!a || !a.untouched || (state.imgCache[im.key] && state.activeTool === 'edit-text')) images.add(im.key);
+    // (not a picture with something drawn over it later on the page — lines, text, another picture: the app draws
+    //  its pictures above the page, so it would cover what the page draws on top of it, like the arrows over a scan
+    //  cut into strips. Such a picture stays on the page until it's changed.)
+    if (!a || !a.untouched || (state.imgCache[im.key] && state.activeTool === 'edit-text' && !khzImgDrawnOver(im))) images.add(im.key);
   });
   (state.textBlockIndex || []).forEach(t => {
     const a = khzAnnId(t.id);
@@ -6917,7 +6966,8 @@ function pendingMasks(n) {
 //  RICH TEXT — colour / size / font / bold / italic on PART of a text
 //  (Acrobat-style: select some words while editing, then change them)
 // ================================================================
-const STYLE_KEYS = ['color', 'fontSize', 'family', 'bold', 'italic', 'underline', 'strike', 'script'];
+// (charSp: letter spacing in em, kept per piece — a tracked heading and the plain reference after it in one box)
+const STYLE_KEYS = ['color', 'fontSize', 'family', 'bold', 'italic', 'underline', 'strike', 'script', 'charSp'];
 const RICH_TYPES = ['text-block', 'textbox', 'text-edit', 'callout'];
 const INPLACE_TEXT = ['text-comment', 'textbox', 'callout', 'text-edit', 'text-block'];
 const FONT_CHOICES = [['calibri', 'Calibri'], ['sans', 'Helvetica / Arial'], ['serif', 'Times New Roman'], ['mono', 'Courier']];
@@ -6926,7 +6976,7 @@ let lastEditorRuns = null;
 
 function baseStyleOf(a) {
   return { color: a.color || (a.type === 'stamp' ? '#cc0000' : '#000000'), fontSize: a.fontSize || (a.type === 'stamp' ? 18 : 12),
-    family: a.family || 'sans', bold: !!a.bold || a.type === 'stamp', italic: !!a.italic, underline: !!a.underline, strike: !!a.strike, script: a.script || '' };
+    family: a.family || 'sans', bold: !!a.bold || a.type === 'stamp', italic: !!a.italic, underline: !!a.underline, strike: !!a.strike, script: a.script || '', charSp: a.charSp || 0 };
 }
 function cleanStyle(st, base) {
   const o = {};
@@ -7027,7 +7077,7 @@ function fillRichBox(el, runs, spec, k) {
     const deco = [st.underline ? 'underline' : '', st.strike ? 'line-through' : ''].filter(Boolean).join(' ');
     if (deco) sp.style.textDecoration = deco;
     if (st.script === 'sup' || st.script === 'sub') { sp.style.fontSize = (st.fontSize * 0.65 * k) + 'px'; sp.style.verticalAlign = st.script === 'sup' ? 'super' : 'sub'; if (!(r.s && Object.keys(r.s).length)) Object.assign(sp.style, { fontFamily: FAMILY_CSS[st.family] || TEXT_FONT, fontWeight: st.bold ? 'bold' : 'normal', fontStyle: st.italic ? 'italic' : 'normal' }); }
-    sp.style.letterSpacing = (spec.charSp || 0) + 'em';
+    sp.style.letterSpacing = (r.s && r.s.charSp !== undefined ? r.s.charSp : spec.charSp || 0) + 'em';
     sp.textContent = r.t;
     el.appendChild(sp);
   });
@@ -7113,7 +7163,7 @@ function layoutRich(spec) {
     }
   });
   const res = {
-    frags: frags.filter(f => f.t.length).map(f => ({ t: f.t, x: f.xK / K, y: f.yK / K, size: f.st.fontSize, family: f.st.family, bold: !!f.st.bold, italic: !!f.st.italic, color: f.st.color, ls: (spec.charSp || 0) * f.st.fontSize, w: (f.endK - f.xK) / K, u: !!f.st.underline, k: !!f.st.strike })),
+    frags: frags.filter(f => f.t.length).map(f => ({ t: f.t, x: f.xK / K, y: f.yK / K, size: f.st.fontSize, family: f.st.family, bold: !!f.st.bold, italic: !!f.st.italic, color: f.st.color, ls: (f.st.charSp !== undefined ? f.st.charSp : spec.charSp || 0) * f.st.fontSize, w: (f.endK - f.xK) / K, u: !!f.st.underline, k: !!f.st.strike })),
     width: br.width / K, height: br.height / K,
   };
   box.remove();
@@ -7310,6 +7360,28 @@ function inlineEdit(ps, o) {
       red.length = 0; runKind = kind;
     });
     el.addEventListener('input', () => { saveSel(); runEnd = Math.min(saved[0], saved[1]); });
+    // typing or pasting puts the new letters in the look of the letters they replace (colour, font, size, bold…), like
+    // Acrobat — or, with nothing selected, of the letter before the cursor. (The browser's own replacing drops a run
+    // whose letters are all selected and types in the box's plain style; pasting went through it too.)
+    const insertKeep = (data, viaInput) => {
+      saveSel();
+      const a = Math.min(saved[0], saved[1]), b = Math.max(saved[0], saved[1]);
+      if (!viaInput) { und.push(snap()); if (und.length > 200) und.shift(); red.length = 0; runKind = null; }
+      const r = readEditor(el), st = (a < b ? r.styles[a] : r.styles[a - 1] || r.styles[a]) || {};
+      const text = r.text.slice(0, a) + data + r.text.slice(b);
+      const styles = r.styles.slice(0, a).concat(Array.from({ length: data.length }, () => st), r.styles.slice(b));
+      unghost(); setRuns(charsToRuns(text, styles, base)); el.focus({ preventScroll: true }); setSel(a + data.length); saved = [a + data.length, a + data.length];
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    el.addEventListener('beforeinput', e => {
+      const t = e.inputType;
+      if (t !== 'insertText' && t !== 'insertFromPaste' && t !== 'insertReplacementText') return;
+      saveSel();
+      if (saved[0] === saved[1]) return;   // (plain typing: the browser already types in the look of the letter before)
+      const data = e.data != null ? e.data : (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+      if (data == null) return;
+      e.preventDefault(); insertKeep(data, true);
+    });
     el.addEventListener('keydown', e => {   // (Ctrl+Z / Ctrl+Y reach the editor as these steps, not the document's undo)
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) {
@@ -7452,7 +7524,7 @@ function inlineEdit(ps, o) {
       const t = e.clipboardData && e.clipboardData.getData('text/plain');
       if (t == null) return;
       e.preventDefault();
-      document.execCommand('insertText', false, t);
+      insertKeep(t.replace(/\r\n?/g, '\n'));
     });
     el.addEventListener('blur', () => setTimeout(() => {
       if (done) return;
@@ -7469,7 +7541,7 @@ function inlineEdit(ps, o) {
     document.addEventListener('selectionchange', onSelChange);
     document.addEventListener('mousedown', outside, true);
     const replaceText = (text, styles) => { unghost(); setRuns(charsToRuns(text, styles, base)); el.focus({ preventScroll: true }); setSel(text.length); saved = [text.length, text.length]; };
-    activeEditor = { finish, el, annotId: o.annotId, unghost, applyStyle, selStyle, hasSelection, selectWordAt, replaceText, read: () => readEditor(el) };
+    activeEditor = { finish, el, annotId: o.annotId, unghost, applyStyle, selStyle, hasSelection, selectWordAt, replaceText, insertText: t => insertKeep(t), read: () => readEditor(el) };
     el.focus({ preventScroll: true });
     const len = readEditor(el).text.length;
     let anchor = len;
@@ -12431,7 +12503,9 @@ document.addEventListener('keydown', e => {
 // ================================================================
 const TESS_VER = '7.0.0';
 // share of the letter size taken by the tallest and the hanging letters of a word
-const ocrDesc = t => /[gjpqy]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;
+// (brackets, @ and | reach as far below the line as g j p q y: a word with them read as one of plain capitals came out a
+// third bigger — "(220.82(C))", "rest@40%)" — and pulled its whole line up to that size)
+const ocrDesc = t => /[gjpqyφø()\[\]{}|@]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;
 function ocrWordSize(t, hPx) {
   if (!t || !(hPx > 0)) return 0;
   const top = /[A-Z0-9bdfhklt!?#$%&@\/|()\[\]{}'"]/.test(t) ? 0.716 : /[a-z]/.test(t) ? 0.519 : 0;
@@ -12586,7 +12660,7 @@ function ocrWriteLine(doc, lp, font, ws, vp, k, basePx, size, rot, fill, at) {  
   const fk = lp._ocrFk.get(font);
   // (marked as recognized text, /KHZOcr, so Edit PDF knows these lines came from a scan: app2c)
   lp.pushOperators(
-    L.beginMarkedContent('KHZOcr'), L.pushGraphicsState(), L.beginText(), L.setFontAndSize(fk, size), ...(fill ? [L.setFillingRgbColor(...fill), L.setTextRenderingMode(L.TextRenderingMode.Fill)] : [L.setTextRenderingMode(L.TextRenderingMode.Invisible)]), L.setCharacterSqueeze(+tz.toFixed(2)), L.setCharacterSpacing(+tc.toFixed(4)),
+    L.beginMarkedContent('KHZOcr'), L.pushGraphicsState(), L.beginText(), L.setFontAndSize(fk, size), ...(fill && fill.hidden ? [L.setFillingRgbColor(...fill.hidden), L.setTextRenderingMode(L.TextRenderingMode.Invisible)] : fill ? [L.setFillingRgbColor(...fill), L.setTextRenderingMode(L.TextRenderingMode.Fill)] : [L.setTextRenderingMode(L.TextRenderingMode.Invisible)]), L.setCharacterSqueeze(+tz.toFixed(2)), L.setCharacterSpacing(+tc.toFixed(4)),
     L.PDFOperator.of(L.PDFOperatorNames.SetTextMatrix, [c, s, -s, c, x, y].map(num)),
     L.PDFOperator.of(L.PDFOperatorNames.ShowTextAdjusted, [doc.context.obj(arr)]),
     L.endText(), L.popGraphicsState(), L.endMarkedContent());
@@ -12726,6 +12800,8 @@ async function khzOcrRead(o) {
       // the two readings combined word by word (khzOcrFuse); text on its side comes from the AI engine's reading
       let aiSide = null;
       if (aiRes && aiRes.lines) { const f = khzOcrFuse(found, aiRes, job.gray, c.width, c.height, await khzOcrDict()); found = f.words; aiSide = f.side; }
+      // a 0 or O with a stroke through it: φ (phase: "1φ") or Ø, which neither engine reads (khzOcrSlashed)
+      found = khzOcrSlashed(found, job.gray || khzOcrGray(c), c.width, c.height);
       job.gray = null;
       const pageWords = await ocrSplitLines(worker, c, found);
       if (stop()) return { cancelled: true };
@@ -12760,8 +12836,10 @@ async function khzOcrRead(o) {
       const inPic = p => pics.some(r => { const b = p.pb, ix = Math.min(b.x1, r.x1 * k) - Math.max(b.x0, r.x0 * k), iy = Math.min(b.y1, r.y1 * k) - Math.max(b.y0, r.y0 * k); return ix > 0 && iy > 0 && ix * iy >= 0.6 * (b.x1 - b.x0) * (b.y1 - b.y0); });
       for (let i = placed.length - 1; i >= 0; i--) if (inPic(placed[i])) placed.splice(i, 1);
       // (the page's pixels are read once for all its words: reading them word by word took seconds on a full page)
-      const px = mode === 'editable' && placed.length ? cx.getImageData(0, 0, c.width, c.height) : null;
-      if (px) placed.forEach(p => { p.colors = khzOcrColors(px, p.pb); });
+      // (searchable output too: its invisible text carries each word's colour and weight, so editing it later in
+      // Edit PDF shows a bold orange heading and the grey reference after it as they're printed, not all one style)
+      const px = placed.length ? cx.getImageData(0, 0, c.width, c.height) : null;
+      if (px) { placed.forEach(p => { p.colors = khzOcrColors(px, p.pb); p.stroke = khzOcrStroke(px, p.pb, p.colors, p.sizePx); }); khzOcrBold(placed); }
       // a scanned page made editable (like Acrobat's "Editable Text and Images"): the scanned letters are taken out
       // of the page picture itself, so moving or changing a word leaves clean paper, not the old print. Other pages
       // (drawn text, pictures in pieces) keep their drawing, with each word covered in its background colour.
@@ -12855,6 +12933,9 @@ function khzOcrFuse(tWords, ai, gray, W, H, dict) {
   tWords.forEach(w => { const [x, y] = cen(w.bbox), L = across.find(l => inQuad(l.quad, x, y)); if (L) lineOf.set(w, L); else if (side.some(l => inQuad(l.quad, x, y))) lineOf.set(w, 'side'); });
   const out = [];
   const tight = b => khzOcrTight(gray, W, H, b);
+  // the height of the page's letters (the boxes of the words Tesseract is sure of)
+  // (capitals and numbers: no letters reaching below the line)
+  const textH = (() => { const hs = tWords.filter(w => (w.confidence ?? 0) >= 90 && /^[A-Z0-9]{2,}$/.test(String(w.text || ''))).map(w => w.bbox.y1 - w.bbox.y0).sort((p, q) => p - q); return hs.length ? hs[hs.length >> 1] : 0; })();
   across.forEach(L => {
     const al = (x, y) => (x - L.p0[0]) * L.d[0] + (y - L.p0[1]) * L.d[1];
     const line = { bbox: L.bbox, words: [], ai: true };
@@ -12942,8 +13023,21 @@ function khzOcrFuse(tWords, ai, gray, W, H, dict) {
     // letters Tesseract didn't see: words of their own, split where the AI reading put its word gaps
     const groups = []; loose.forEach(c => { const g = groups[groups.length - 1]; if (g && g.wi === c.wi) g.cs.push(c); else groups.push({ wi: c.wi, cs: [c] }); });
     groups.forEach(g => {
-      const ap = g.cs.reduce((a, c) => a + c.p, 0) / g.cs.length; if (ap < 70) return;
+      const ap = g.cs.reduce((a, c) => a + c.p, 0) / g.cs.length;
       const A = g.cs.map(c => c.c).join(''); if (!A.trim()) return;
+      if (ap < 70) {
+        // a dash standing on its own ("—" in a table's empty cell): neither reader is sure of a lone dash, but its print
+        // is: one thin flat stroke, as long as a letter or more, at the middle height of the page's letters
+        if (!/^[-–—]$/.test(A.trim()) || !textH) return;
+        const d = tight(boxOf(g.cs[0].a - pitch * 1.2, g.cs[0].a + pitch * 1.2)); if (!d) return;
+        const w = d.x1 - d.x0, h = d.y1 - d.y0;
+        if (w < 0.5 * textH || h > 0.25 * textH || w > 3 * textH) return;
+        // (its box: the stroke's length and the letters' height, standing where a dash stands among letters — its
+        // middle a little under half their height above the line they stand on)
+        const cy = (d.y0 + d.y1) / 2, y1 = cy + 0.44 * textH;
+        push(w >= textH ? '—' : w >= 0.6 * textH ? '–' : '-', 80, { x0: d.x0, x1: d.x1, y0: y1 - textH, y1 }, 'ink');
+        return;
+      }
       const b = tight(boxOf(g.cs[0].a - pitch * 0.7, g.cs[g.cs.length - 1].a + pitch * 0.7)); if (!b) return;
       push(A, ap, b, 'ai', g.cs);
     });
@@ -12960,6 +13054,59 @@ function khzOcrFuse(tWords, ai, gray, W, H, dict) {
   out.forEach(w => { w.text = fixDim(String(w.text)); });
   const sideWords = side.map(L => ({ dir: L.dir, quad: L.quad, height: L.height, words: L.words.map(w => ({ text: fixDim(w.text), confidence: w.confidence, bbox: khzOcrTight(gray, W, H, w.bbox, true) || w.bbox, page: true })) }));
   return { words: out, side: sideWords };
+}
+// letters read as 0, O, o or q that have a stroke through their middle: neither reading engine knows φ (single- and
+// three-phase: "1φ", "3φ") or Ø, and they read them as 0. The print shows them: across the letter's middle a 0 has two
+// strokes (its sides), φ and Ø three (a stem or slash between them). φ's stem reaches below the line the letters
+// stand on; Ø stays on it. A page whose zeros are all drawn with a slash (some typefaces do: Consolas, drawing
+// lettering) keeps them as 0s — only the φ that hangs below the line is still a φ there.
+function khzOcrSlashed(words, gray, W, H) {
+  if (!gray) return words;
+  const seen = [];   // every 0/O looked at: { w, i, slash, kind }
+  words.forEach(w => {
+    const text = String(w.text || ''), chars = [...text];
+    if (!/[0Ooq]/.test(text) || !w.bbox) return;
+    const b = w.bbox, x0 = Math.max(0, Math.floor(b.x0)), x1 = Math.min(W, Math.ceil(b.x1)), y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(H, Math.ceil(b.y1));
+    if (x1 - x0 < 4 || y1 - y0 < 8) return;
+    let mn = 255, mx = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const v = gray[y * W + x]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 60) return;
+    const thr = (mx + mn) / 2, dark = mx > 160, ink = (x, y) => dark ? gray[y * W + x] < thr : gray[y * W + x] > thr;
+    // the letters: groups of inked columns, one per letter (letters that touch: not looked at)
+    const runs = []; let cur = null;
+    for (let x = x0; x < x1; x++) {
+      let top = -1, bot = -1; for (let y = y0; y < y1; y++) if (ink(x, y)) { if (top < 0) top = y; bot = y; }
+      if (top >= 0) { if (!cur) { cur = { a: x, b: x, top, bot }; runs.push(cur); } else { cur.b = x; cur.top = Math.min(cur.top, top); cur.bot = Math.max(cur.bot, bot); } } else cur = null;
+    }
+    if (runs.length !== chars.length) return;
+    // the line the letters stand on and their height, from the word's other letters that don't hang below it
+    const others = runs.filter((r, i) => !/[0Ooqgjpyφ,;()\[\]{}|@Qµ]/.test(chars[i]));
+    if (!others.length) return;
+    const med = a => a.slice().sort((p, q) => p - q)[a.length >> 1];
+    const base = med(others.map(r => r.bot)), capH = med(others.map(r => r.bot - r.top + 1));
+    if (capH < 6) return;
+    chars.forEach((ch, i) => {
+      if (!/[0Ooq]/.test(ch)) return;
+      const r = runs[i], gh = r.bot - r.top + 1;
+      const segs = y => { let n = 0, on = false; for (let x = r.a; x <= r.b; x++) { const v = ink(x, y); if (v && !on) n++; on = v; } return n; };
+      // (the letter's round part: for φ the stem above and below it isn't part of it)
+      const hang = r.bot - base, ringTop = r.top, ringBot = Math.min(r.bot, base);
+      const rows = [0.35, 0.5, 0.65].map(f => Math.round(ringTop + (ringBot - ringTop) * f));
+      const slash = rows.every(y => segs(y) >= 3);
+      // (a stem straight up the middle is φ or Φ; a slash leaning across is Ø. Lowercase φ hangs below the line,
+      // capital Φ stands on it, as tall as the capitals)
+      const middle = y => { const xs = []; let on = false, s0 = 0; for (let x = r.a; x <= r.b + 1; x++) { const v = x <= r.b && ink(x, y); if (v && !on) s0 = x; if (!v && on) xs.push((s0 + x - 1) / 2); on = v; } return xs.length >= 3 ? xs[1] : NaN; };
+      const mids = rows.map(middle), stem = mids.every(Number.isFinite) && Math.max(...mids) - Math.min(...mids) <= 0.12 * (r.b - r.a + 1);
+      const kind = !slash ? null : hang >= 0.12 * capH ? (stem ? 'φ' : 'ø') : stem ? 'Φ' : gh >= 0.85 * capH ? 'Ø' : 'ø';
+      seen.push({ w, i, slash, kind, zero: /[0Oo]/.test(ch) });
+    });
+  });
+  const zeros = seen.filter(s => s.zero), slashed = zeros.filter(s => s.slash && /[Øø]/.test(s.kind));
+  const fontStyle = slashed.length >= 3 && slashed.length >= 0.5 * zeros.length;
+  seen.forEach(s => {
+    if (!s.kind || (fontStyle && /[Øø]/.test(s.kind))) return;
+    const chars = [...String(s.w.text)]; chars[s.i] = s.kind; s.w.text = chars.join('');
+  });
+  return words;
 }
 // a word whose print has a raised mark at its end (a footnote number, ™, ®) or a wide gap inside it is split there.
 // The print's columns are looked at in the word's box: groups of inked columns, how low each reaches.
@@ -12997,13 +13144,24 @@ function khzOcrInkSplit(text, gray, W, H, b, cs, L) {
   }
   // a gap as wide as a word space (half the letters' height or more) inside the word
   const out = []; let from = 0, fromX = b.x0;
+  const capH = base - Math.min(...runs.map(q => q.top));
   for (let r = 1; r < runs.length; r++) {
-    const g0 = runs[r - 1].b + 1, g1 = runs[r].a; if (g1 - g0 < 0.5 * (base - Math.min(...runs.map(q => q.top)))) continue;
-    const mid = (g0 + g1) / 2; let n = from; while (n < chars.length && xOf(n) < mid) n++;
+    const g0 = runs[r - 1].b + 1, g1 = runs[r].a, gap = g1 - g0; if (gap < 0.3 * capH) continue;
+    // (one group of ink per letter: the gap is after letter r; otherwise the reader's positions say which letters)
+    const mid = (g0 + g1) / 2; let n = from; if (runs.length === chars.length) n = r; else while (n < chars.length && xOf(n) < mid) n++;
     if (n <= from || n >= chars.length) continue;
     // (only beside a dash: letters spaced out wide — "m e t e r" — aren't separate words)
-    if (!/[-–—]/.test(chars[n - 1] + chars[n])) continue;
-    out.push({ text: chars.slice(from, n).join(''), bbox: { ...b, x0: fromX, x1: g0 } }); from = n; fromX = g1;
+    const dash = gap >= 0.5 * capH && /[-–—]/.test(chars[n - 1] + chars[n]);
+    // and between a number and its unit, where the space is narrower ("0 VA", "15 A" read as "0VA", "15A"). A 0 read as
+    // the letter O there is a 0 ("OVA" for "0 VA")
+    const num = chars.slice(from, n).join(''), rest = chars.slice(n).join('');
+    // (a unit of measure after it, and a gap clearly wider than the word's other gaps between letters: "1st" stays)
+    // (a 1 has wide space either side of it: numbers' figures are all as wide as each other, and the 1 is the narrowest)
+    const others = runs.slice(1).map((q, i) => q.a - runs[i].b - 1).filter((g, i) => i !== r - 1 && !(runs.length === chars.length && (chars[i] === '1' || chars[i + 1] === '1')));
+    const unit = gap >= 1.25 * Math.max(0, ...others) && /^[\dOo.,]*[\dOo]$/.test(num) && /\d/.test(num + (/^[Oo]+$/.test(num.replace(/[.,]/g, '')) ? '0' : '')) &&
+      /^(k?VA|k?W|V|A|mA|AWG|kcmil|MCM|Hz|ft|in|mm|cm|m|kg|lbs?|psi|HP|BTU)\b/.test(rest);
+    if (!dash && !unit) continue;
+    out.push({ text: unit ? num.replace(/[Oo]/g, '0') : num, bbox: { ...b, x0: fromX, x1: g0 } }); from = n; fromX = g1;
   }
   if (!out.length) return one;
   out.push({ text: chars.slice(from).join(''), bbox: { ...b, x0: fromX } });
@@ -13305,9 +13463,14 @@ async function khzOcrWrite(out, res, ctx) {
     for (const p0 of line.list) {
       const p = { ...p0, txt: khzOcrLatinPunct(p0.txt, res.lang) };
       // a word with letters Helvetica doesn't have (Greek, Cyrillic…) is written in a font that has them (app187)
-      let wf = font;
-      if (winAnsi(font, p.txt) !== p.txt) { const bad = [...p.txt].find(ch => !khzCanEncode(font, ch)); const f2 = bad && await khzFallbackFont(out, ctx.fb, bad, false, p.txt); if (f2 && [...p.txt].every(ch => khzCanEncode(f2, ch))) wf = f2; }
-      const t = wf === font ? winAnsi(font, p.txt) : p.txt;
+      // (a word printed bold is written bold, khzOcrBold)
+      if (p.bold && !ctx.fontB) ctx.fontB = await out.embedFont(PDFLib.StandardFonts.HelveticaBold);
+      const base = p.bold ? ctx.fontB : font;
+      let wf = base;
+      // (asked letter by letter: the PDF library writes "?" for a letter Helvetica hasn't got, rather than refusing it —
+      // "1φ" came out "1?")
+      if ([...p.txt].some(ch => !khzCanEncode(base, ch))) { const bad = [...p.txt].find(ch => !khzCanEncode(base, ch)); const f2 = bad && await khzFallbackFont(out, ctx.fb, bad, !!p.bold, p.txt); if (f2 && [...p.txt].every(ch => khzCanEncode(f2, ch))) wf = f2; }
+      const t = wf === base ? winAnsi(base, p.txt) : p.txt;
       if (t.trim()) list.push({ ...p, t, font: wf });
     }
     if (mode === 'editable') {
@@ -13333,8 +13496,10 @@ async function khzOcrWrite(out, res, ctx) {
       // invisible text over the picture: selectable, searchable, copyable. One text run per line; each word
       // starts exactly where it is on the scan (the run's own spacing moves it there)
       // (words in another font go in a run of their own, at their own place)
-      const groups = []; list.forEach(p => { const g = groups[groups.length - 1]; if (g && g.font === p.font) g.list.push(p); else groups.push({ font: p.font, list: [p] }); });
-      groups.forEach(g => ocrWriteLine(out, lp, g.font, g.list.map(p => ({ t: p.t, x0: p.b.x0 / k, x1: p.b.x1 / k })), vp, k, basePx, size, rot, undefined, at(g.list[0])));
+      // (each in its colour, though it doesn't show: Edit PDF shows it in that colour when it's edited)
+      const near = (u, v) => Math.abs(u[0] - v[0]) + Math.abs(u[1] - v[1]) + Math.abs(u[2] - v[2]) < 0.45, fgOf = p => p.colors ? p.colors.fg : null;
+      const groups = []; list.forEach(p => { const g = groups[groups.length - 1], f = fgOf(p); if (g && g.font === p.font && (!f || !g.fg || near(g.fg, f) || p.t.replace(/[^A-Za-z0-9]/g, '').length < 3)) g.list.push(p); else groups.push({ font: p.font, fg: f, list: [p] }); });
+      groups.forEach(g => ocrWriteLine(out, lp, g.font, g.list.map(p => ({ t: p.t, x0: p.b.x0 / k, x1: p.b.x1 / k })), vp, k, basePx, size, rot, g.fg ? { hidden: g.fg } : undefined, at(g.list[0])));
       words += list.length;
     }
   }
@@ -13418,7 +13583,11 @@ function khzOcrErase(px, b0, others) {
   for (let i = 0; i < n; i++) { const q = i * 4, v = d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11; if (dark ? bl - v > 12 : v - bl > 12) ink[i] = 1; }
   // ruled lines (fill-in lines, table and box borders) stay, even where they run through the word's box: ink in a
   // straight run longer than 2.2 line heights across or down (looked for on the page round the box, not only in it)
-  const rule = new Uint8Array(n), RL = Math.max(12, Math.round(bh * 2.2));
+  // (measured against the line's letters, not the word's own box: a dash or underscore on its own is only a few pixels
+  //  tall, so its own stroke counted as a ruled line and stayed on the page beside the new dash — "GENERATOR — PROPANE"
+  //  had two dashes)
+  const lineH = (() => { const hs = (others || []).filter(o => o !== b0 && Math.abs((o.y0 + o.y1) / 2 - (b0.y0 + b0.y1) / 2) < Math.max(o.y1 - o.y0, bh) * 0.6 && Math.abs((o.x0 + o.x1) / 2 - (b0.x0 + b0.x1) / 2) < 30 * Math.max(bh, o.y1 - o.y0)).map(o => o.y1 - o.y0).sort((p, q) => p - q); return hs.length ? Math.max(bh, hs[hs.length >> 1]) : bh; })();
+  const rule = new Uint8Array(n), RL = Math.max(12, Math.round(lineH * 2.2));
   // (darker than the paper: on a highlighted label the white paper round the highlight isn't a line, and letters touching it aren't either)
   const inkAt = (X, Y) => { const q = (Y * W + X) * 4, v = D[q] * 0.3 + D[q + 1] * 0.59 + D[q + 2] * 0.11; return dark ? bl - v > 12 : v - bl > 12; };
   for (let yy = 0; yy < h; yy++) {
@@ -13469,7 +13638,7 @@ function khzOcrColors(px, b) {
   const med = arr => [0, 1, 2].map(c => arr.map(q => q[c]).sort((u, v) => u - v)[arr.length >> 1]);
   const bg = med(edge), far = [];
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const q = p(x, y); if (Math.abs(q[0] - bg[0]) + Math.abs(q[1] - bg[1]) + Math.abs(q[2] - bg[2]) > 180) far.push(q); }
-  const fg = far.length ? med(far) : (bg[0] + bg[1] + bg[2] > 384 ? [0, 0, 0] : [255, 255, 255]);
+  const fg = far.length ? med(khzInkCore(far, bg)) : (bg[0] + bg[1] + bg[2] > 384 ? [0, 0, 0] : [255, 255, 255]);
   return { bg: bg.map(v => v / 255), fg: fg.map(v => v / 255) };
 }
 // the page's drawing replaced by its cleaned picture (the scan without its printed letters), placed exactly over the page
@@ -13540,8 +13709,81 @@ function wordColors(cx, b) {
   const bg = med(edge);
   const far = [];
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const p = px(x, y); const dd = Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]); if (dd > 180) far.push(p); }
-  const fg = far.length ? med(far) : (bg[0] + bg[1] + bg[2] > 384 ? [0, 0, 0] : [255, 255, 255]);
+  const fg = far.length ? med(khzInkCore(far, bg)) : (bg[0] + bg[1] + bg[2] > 384 ? [0, 0, 0] : [255, 255, 255]);
   return { bg: bg.map(v => v / 255), fg: fg.map(v => v / 255) };
+}
+// the solid middle of a word's strokes: the half of its ink pixels furthest from the paper. (The edges of the strokes are
+// blends of ink and paper, and how many there are depends on how the scan is decoded and drawn: two words in the same
+// ink came out different shades — "Min. Pool Feeder" and "Wire" — and were made separate pieces, on one computer and
+// not another.)
+// how thick a word's strokes are, as a share of its letter size: the typical run of ink across the rows through the
+// middle of the letters (the middle half of the runs: the long ones are bars and joins, the short ones edges)
+function khzOcrStroke(px, b, colors, sizePx) {
+  if (!colors || !(sizePx > 0)) return 0;
+  const W = px.width, D = px.data, fg = colors.fg.map(v => v * 255), bg = colors.bg.map(v => v * 255);
+  const x0 = Math.max(0, Math.floor(b.x0)), x1 = Math.min(W, Math.ceil(b.x1)), y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(px.height, Math.ceil(b.y1));
+  const h = y1 - y0; if (x1 - x0 < 3 || h < 6) return 0;
+  const ink = i => { const r = D[i], g = D[i + 1], bl = D[i + 2]; return Math.abs(r - fg[0]) + Math.abs(g - fg[1]) + Math.abs(bl - fg[2]) < Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(bl - bg[2]); };
+  const runs = [];
+  for (let y = y0 + Math.round(h * 0.25); y < y1 - Math.round(h * 0.25); y++) {
+    let n = 0;
+    for (let x = x0; x < x1; x++) { if (ink((y * W + x) * 4)) n++; else if (n) { runs.push(n); n = 0; } }
+    if (n) runs.push(n);
+  }
+  if (runs.length < 4) return 0;
+  runs.sort((p, q) => p - q);
+  const mid = runs.slice(runs.length >> 2, runs.length - (runs.length >> 2));
+  return mid.reduce((a, v) => a + v, 0) / mid.length / sizePx;
+}
+// words printed bold (like Acrobat's converted pages, which keep a bold word bold): the page's strokes fall in two
+// groups when it has bold print — plain about 0.08 of the letter size thick, bold about 0.14 — split where they divide
+// best (Otsu's method). A page whose strokes don't fall in two clearly different groups has no bold. A word measured
+// near the dividing line (short words, brackets: few strokes) goes with the words beside it on its line.
+function khzOcrBold(placed) {
+  const al = p => (p.txt.match(/[A-Za-z0-9]/g) || []).length;
+  const v = placed.filter(p => p.stroke > 0 && al(p) >= 1).map(p => p.stroke).sort((p, q) => p - q);
+  if (v.length < 6) return;
+  let best = -1, T = 0;
+  for (let i = 1; i < v.length; i++) {
+    const a = v.slice(0, i), b = v.slice(i), ma = a.reduce((s, x) => s + x, 0) / a.length, mb = b.reduce((s, x) => s + x, 0) / b.length;
+    const sc = a.length * b.length * (mb - ma) * (mb - ma);
+    if (sc > best) { best = sc; T = (v[i - 1] + v[i]) / 2; }
+  }
+  const lo = v.filter(x => x < T), hi = v.filter(x => x >= T), m = a => a[a.length >> 1];
+  if (!lo.length || !hi.length || m(hi) < 1.35 * m(lo) || hi.length < 2) return;
+  // (the dividing line between the two groups' typical strokes, as a ratio: very heavy headings don't pull it up)
+  T = Math.sqrt(m(lo) * m(hi));
+  const sure = p => p.stroke > 0 && al(p) >= 3 && Math.abs(p.stroke - T) > 0.1 * T;
+  placed.forEach(p => { if (p.stroke > 0) p.bold = p.stroke >= T; });
+  // (the words beside it: on the same line, with no more than about two letters' room between)
+  // (in the same ink: a grey reference after a bold orange heading isn't bold because the heading is. A word near the
+  // line with no sure word beside it is taken as plain: small print measures thicker than it is)
+  const sameInk = (p, q) => !p.colors || !q.colors || p.colors.fg.reduce((a, v, i) => a + Math.abs(v - q.colors.fg[i]), 0) < 0.45;
+  const unsure = placed.filter(p => !sure(p) && p.sizePx && p.stroke > 0);
+  const sizes = placed.filter(p => p.sizePx).map(p => p.sizePx).sort((a, b) => a - b), medSize = sizes[sizes.length >> 1] || 0;
+  const beside = (p, q) => q !== p && sameInk(p, q) && Math.abs((q.pb.y0 + q.pb.y1) / 2 - (p.pb.y0 + p.pb.y1) / 2) < 0.4 * p.sizePx &&
+    Math.min(Math.abs(q.pb.x0 - p.pb.x1), Math.abs(p.pb.x0 - q.pb.x1)) < 1.2 * p.sizePx;
+  const to = unsure.map(p => {
+    const near = placed.filter(q => sure(q) && beside(p, q));
+    if (near.length && near.every(q => q.bold === near[0].bold)) return near[0].bold;
+    // (no sure word beside it: it and the unsure words beside it, measured together — "0.00" and "A". Small print
+    // measures thicker than it is, so it needs a clearer difference)
+    const grp = [p, ...unsure.filter(q => beside(p, q))], st = grp.reduce((a, q) => a + q.stroke, 0) / grp.length;
+    return st >= (p.sizePx < 0.85 * medSize ? 1.15 : 1) * T;
+  });
+  unsure.forEach((p, i) => { p.bold = to[i]; });
+  // marks with no strokes to measure (dashes, dots, short marks) go with the nearest word on their line
+  placed.forEach(p => {
+    if (p.stroke > 0 || !p.sizePx) return;
+    const cy = (p.pb.y0 + p.pb.y1) / 2, gap = q => Math.max(q.pb.x0 - p.pb.x1, p.pb.x0 - q.pb.x1);
+    const near = placed.filter(q => q !== p && q.stroke > 0 && Math.abs((q.pb.y0 + q.pb.y1) / 2 - cy) < 0.6 * p.sizePx && gap(q) < 2 * p.sizePx).sort((a, b) => gap(a) - gap(b));
+    if (near.length) p.bold = near[0].bold;
+  });
+}
+function khzInkCore(far, bg) {
+  if (far.length < 4) return far;
+  const dist = q => Math.abs(q[0] - bg[0]) + Math.abs(q[1] - bg[1]) + Math.abs(q[2] - bg[2]);
+  return far.map(q => [dist(q), q]).sort((u, v) => v[0] - u[0]).slice(0, Math.ceil(far.length / 2)).map(u => u[1]);
 }
 
 // Recognize Text keeps going while you work in another app (desktop app: the window isn't slowed down while it's in
@@ -16303,7 +16545,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1508';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1702';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -16573,9 +16815,10 @@ async function checkForUpdates() {
   if (D && typeof D.checkUpdates === 'function') {
     let r = null; try { r = await D.checkUpdates(); } catch (e) {}
     if (r && r.ok) {
-      if (r.available && r.mac) say(`KHZ PDF ${r.version} is available.`, cur + ' Download it from the release page that opened and install it over this one.');
-      else if (r.available && getPref('upAuto', true) === false) say(`KHZ PDF ${r.version} is available.`, cur + ' Choose Download and install in the window that opened.');
-      else if (r.available) say(`KHZ PDF ${r.version} is downloading.`, cur + ' You’ll be asked to restart when it’s ready, or it installs when you close KHZ PDF.');
+      if (r.available && r.mac) say(`KHZ PDF ${r.version} is available.`, cur + ' Choose Open download page in the update panel (bottom right) and install it over this one.');
+      else if (r.available && r.ready) say(`KHZ PDF ${r.version} is ready.`, cur + ' Choose Restart now in the update panel (bottom right), or it installs when you close KHZ PDF.');
+      else if (r.available && (r.offered || getPref('upAuto', true) === false)) say(`KHZ PDF ${r.version} is available.`, cur + ' Choose Download and install in the update panel (bottom right).');
+      else if (r.available) say(`KHZ PDF ${r.version} is downloading.`, cur + ' The update panel (bottom right) shows how far it has got; keep working, and you’ll be asked to restart when it’s ready.');
       else say('No updates available.', cur + ' KHZ PDF is up to date.');
     } else if (r && r.reason === 'off') say('Updates come from your administrator.', cur + ' This copy of KHZ PDF is updated with a new installer.');
     else say('Could not check for updates right now.', cur + ' Check your internet connection and try again.');
@@ -16592,6 +16835,16 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1702', ['Edit PDF on a recognized scan groups text like Acrobat\u2019s converted pages: a heading and the reference beside it are one box, the lines of a column (labels, the site address, a note under its row) are one box; values stay one per line. Each part keeps its own colour, weight, size and letter spacing when you type. Preferences \u203a Content Editing \u203a Recognized Text turns it off.', 'Display themes: the selected tool always shows \u2014 where a theme\u2019s accent is too close to its icons (Gunmetal, Barbie, Nord, Stone, Ice, Bumblebee\u2019s yellow toolbar\u2026) it\u2019s a solid tile.']],
+  ['2026.10.1701', ['Recognize Text / Edit PDF on a scan: bold print stays bold (\u201cService Demand\u201d, the totals) \u2014 it all came out plain.', 'The phase sign is recognized: \u201c1\u03c6\u201d / \u201c3\u03a6\u201d (and \u00d8) were read as \u201c10\u201d, \u201c30\u201d.', 'Letters Helvetica doesn\u2019t have (Greek, \u03c6) are written in a font that has them \u2014 they came out \u201c?\u201d.', '\u201c100 A\u201d keeps its space (was \u201c100A\u201d).', 'Recognize Text as a searchable image keeps each word\u2019s colour and weight, so editing it in Edit PDF later shows them as printed (a line came out all one colour and weight).']],
+  ['2026.10.1607', ['Recognize Text / Edit PDF on a scan: a line with brackets or @ in it (\u201cDemand (first 10k@100%, rest@40%)\u201d, \u201c(NEC 220.61)\u201d) is the size it\u2019s printed \u2014 it came out about a third bigger and squeezed narrower.']],
+  ['2026.10.1606', ['Recognize Text / Edit PDF on a scan: a number and its unit with a narrow space between them are read as two words (\u201c0 VA\u201d, \u201c15 A\u201d, \u201c0.00 A\u201d were read \u201cOVA\u201d, \u201c15A\u201d, \u201c0.00A\u201d).', 'A dash standing on its own (\u201c\u2014\u201d in an empty table cell) is recognized \u2014 it was left on the scan.', 'Words in the same ink on one line stay one piece (\u201cMin. Pool Feeder Wire\u201d was split in two): the ink\u2019s colour is measured from the middle of the strokes.']],
+  ['2026.10.1605', ['Edit PDF: the box being edited shows one frame, with its handles on it, like Acrobat (there were two frames, one just inside the other).', 'Edit PDF on a scanned page: a dash between words (\u201cGENERATOR \u2014 PROPANE\u201d) is taken off the scan when it becomes editable text \u2014 the scan\u2019s dash stayed beside the new one, so there were two.']],
+  ['2026.10.1604', ['Mac: Preferences \u203a General \u203a Select As Default PDF Handler makes KHZ PDF the app PDFs open with, like Acrobat on a Mac (it did nothing), and the \u201cnot your default PDF application\u201d question works on a Mac.', 'Mac (Tauri) build kit: puts the new app straight into Applications and leaves no other copy, so Open With shows one KHZ PDF Tauri.']],
+  ['2026.10.1603', ['Edit PDF: where a colour changes inside a line (a red address between black brackets, saved with letter spacing) is found from the letters\u2019 own widths \u2014 the last word no longer turns black and the bracket keeps its colour when edited.', 'Mac (Tauri): double-clicking a PDF while KHZ PDF is closed opens it (the app started without it).']],
+  ['2026.10.1602', ['Edit PDF: coloured text written right before text in another colour (red \u201c3892 Bordeaux Dr\u201d then a black \u201c)\u201d) keeps its colour to the end when edited \u2014 the last word turned black.', 'Notifications: each one has its own Clear (\u00d7, on pointing at it), and \u201cready to install\u201d notes go once that version is running.', 'Mac (Tauri): after an update, the new version opens once the old one has fully closed, like other Mac apps — it no longer gets a second Dock icon beside the pinned one, and the first PDF opens normally (it sometimes said the PDF reader could not start).', 'Mac (Tauri): the app is signed as a whole, so the Apple M chip version opens on other Macs (it said the app was “damaged”).']],
+  ['2026.10.1601', ['Edit PDF: typing or pasting over selected text keeps its look (colour, font, size, bold), like Acrobat \u2014 pasting over red text gave black text.', 'Edit PDF: a picture with lines, text or another picture drawn over it (like a scanned plan cut into strips, with arrows on top) stays under them \u2014 before, some strips covered the arrows as soon as Edit PDF opened.', 'Mac (Tauri) files on GitHub have clearer names: M-chip, Intel, and \u201cupdate-only\u201d for the automatic-update files.']],
+  ['2026.10.1509', ['Updates: a small panel at the bottom right shows a new version downloading (how much, and the percent), then Restart now \u2014 or why it failed, with Try again. It never stops you working, and the \u2212 button makes it a small pill. No more pop-up windows for updates (Windows, Mac and the Tauri app).']],
   ['2026.10.1508', ['Mac (Tauri app): PDFs open, Recognize Text and reading page text work, Copy works, and the Mac build kit builds a second time.', 'Developer Mode: Test everything \u2014 one click checks each part of KHZ PDF on this computer (PDFs, files, printers, Recognize Text, Java helpers, internet); the results go in the report.', 'Copyright now reads \u00a9 2026 K1LLAH0EZ.']],
   ['2026.10.1507', ['Desktop: the AI reader picks each letter faster (it looks only among the letters the page\u2019s language can have) \u2014 the same readings.', 'Tauri app: pulling a tab out into its own window no longer freezes the app at \u201cOpening in a new window\u2026\u201d.', 'Developer report and About Plug-Ins: the Tauri app is named as Tauri (with its web view), KHZ Overclock no longer marked as a test.']],
   ['2026.10.1506', ['Windows desktop: Recognize Text\u2019s Tesseract engine now runs as native code instead of WebAssembly \u2014 the same engine, version and language data, the same words read, about 1.6\u20131.9 times faster (Help \u203a About Plug-Ins shows \u201cnative code on this computer\u201d). Mac keeps the WebAssembly engine for now.', 'Prepare Form: choosing another tool (Comment, Edit PDF, Fill & Sign\u2026) while the form is being edited now closes Prepare Form first and saves the fields, like its Close button (the field boxes and names used to stay on the page).']],
@@ -29647,7 +29900,8 @@ showPreferences = function (cat) {
       + F('Font Options', `${row('Fallback font for Editing', S('ceFallback', ['Let KHZ PDF choose', 'Arial', 'Calibri', 'Times New Roman', 'Courier New'], 'Let KHZ PDF choose', 270))}
         <div class="pf2-r"><label>Default font for Add Text</label>${S('ceAddFont', ['Let KHZ PDF choose', 'Arial', 'Calibri', 'Helvetica', 'Times New Roman', 'Courier New'], 'Let KHZ PDF choose', 270)}<label style="margin-left:10px">Font Size</label>${S('ceAddSize', ['8', '9', '10', '11', '12', '14', '16', '18', '24'], '12', 56)}</div>
         ${C('ceArtificial', 'Enable Artificial Bold/Italic Font Styles', true)}${C('ceOnlineFonts', 'Enable support for online fonts (requires relaunch)', true)}`)
-      + F('Auto-adjust layout', C('ceAutoAdjust', 'Enable Auto-adjust layout by default (requires relaunch)', false)),
+      + F('Auto-adjust layout', C('ceAutoAdjust', 'Enable Auto-adjust layout by default (requires relaunch)', false))
+      + F('Recognized Text', C('ceOcrGroup', 'Group recognized text like Acrobat (a heading with its reference, a column of lines in one box) — for documents opened after this', true)),
     'Convert From PDF': () => F('Converting From PDF', `<div class="pf2-two"><div class="pf2-list" data-list="cfp">${['Encapsulated PostScript', 'Excel Workbook', 'HTML', 'JPEG', 'JPEG2000', 'PNG', 'PostScript', 'PowerPoint Presentation', 'Rich Text Format', 'Text (Accessible)', 'Text (Plain)', 'TIFF', 'Word 97-2003 Document', 'Word Document', 'XML 1.0'].map((x, i) => `<div class="${i ? '' : 'on'}">${x}</div>`).join('')}</div>
         <div class="pf2-list pf2-info2" data-info="cfp">${cfpInfo('Encapsulated PostScript')}</div></div><div style="margin:10px 0 0 200px">${B('Edit Settings...', 'cfpEdit')}</div>`),
     'Convert To PDF': () => F('Converting To PDF', `<div class="pf2-two"><div class="pf2-list sm" data-list="ctp">${['Supported Formats', 'AutoCAD', 'BMP', 'Compuserve GIF', 'HTML', 'JPEG', 'JPEG2000', 'Microsoft Office Excel', 'Microsoft Office PowerPoint', 'Microsoft Office Word', 'Multimedia', 'PCX', 'PNG', 'PostScript/EPS', 'Text', 'TIFF'].map((x, i) => `<div class="${i ? '' : 'on'}">${x}</div>`).join('')}</div>
@@ -45905,24 +46159,49 @@ if (typeof buildTextBlockObjects === 'function') {
       const blocks = await getTextBlocks(n), tc = await getTextContent(n), ps = state.pages[n];
       const ops = (state.pageTextOps && state.pageTextOps[n]) || [];
       const vp = ps.origPage.getViewport({ scale: 1, rotation: effRot(n) });
+      // a piece's weight from its font's own name (…-Bold, …,Bold, Black, Heavy); null: not known
+      const pg = ps.origPage || ps.page;
+      const itemBold = it => { try { if (!pg || !pg.commonObjs.has(it.fontName)) return null; const fo = pg.commonObjs.get(it.fontName), real = String((fo && (fo.name || fo.loadedName)) || ''); return real ? /bold|black|heavy|semibold/i.test(real) : null; } catch (e) { return null; } };
+      const ocrPage = ops.length > 0 && ops.filter(o => o.ocr).length >= 0.5 * ops.length;
       const opPts = ops.map((op, k) => { const v = vp.convertToViewportPoint(op.pt[0], op.pt[1]); return { x: v[0], y: v[1], fill: op.fill, k }; }).filter(o => o.fill);
       made.forEach((a, bi) => {
         const b = blocks[bi]; if (!b || b.text !== a.text || !b.idxs || a.runs) return;
-        const text = String(a.text), styles = new Array(text.length).fill(null);
+        const text = String(a.text), styles = new Array(text.length).fill(null), weight = new Array(text.length).fill(null), size = new Array(text.length).fill(null), spc = new Array(text.length).fill(null);
         let cur = 0, any = false; const heavy = new Array(text.length).fill(false);
+        const runOf = {};
         b.idxs.slice().sort((p, q) => p - q).forEach(k => {
           const it = tc.items[k]; if (!it || !it.str || !it.str.trim()) return;
           const s = it.str.trim(), at = text.indexOf(s, cur); if (at < 0) return; cur = at + s.length;
           if (it._khzOverprint) { const lead = it.str.length - it.str.trimStart().length; for (let q = at; q < at + Math.max(0, it._khzOverprint - lead); q++) heavy[q] = true; }
+          // (each piece's own weight: a bold heading running into plain text stays bold, the plain part plain)
+          { const wb = itemBold(it); if (wb !== null) for (let q = at; q < at + s.length; q++) weight[q] = wb; }
+          // (and its own size and letter spacing: a tracked heading keeps its spacing beside the plain reference, a small
+          // note under a row keeps its size — recognized text grouped like Acrobat, app2c)
+          // (the spacing is measured over the whole text run the piece belongs to — every word of the heading together —
+          // so one run's words don't come out spaced differently)
+          { const t0 = pdfjsLib.Util.transform(vp.transform, it.transform), fh0 = Math.abs(t0[3]) || 0;
+            if (fh0) { let tw0 = 0; const wb = itemBold(it); try { tw0 = textWidth(it.str, fh0, wb === null ? !!a.bold : wb, a.family); } catch (e) {}
+              const own = opPts.filter(o => Math.abs(o.y - t0[5]) < 0.4 * fh0 && o.x <= t0[4] + 0.5).sort((p, q) => q.x - p.x)[0], key = own ? own.k : 'i' + k;
+              const g = runOf[key] = runOf[key] || { w: 0, tw: 0, n: 0, fh: fh0, at: [] };
+              g.w += it.width; g.tw += tw0; g.n += [...it.str].length; g.at.push([at, at + s.length]);
+              for (let q = at; q < at + s.length; q++) size[q] = fh0; } }
           const t = pdfjsLib.Util.transform(vp.transform, it.transform), fh = Math.abs(t[3]) || 10;
-          const here = opPts.filter(o => Math.abs(o.y - t[5]) < 0.4 * fh && o.x >= t[4] - 0.6 && o.x <= t[4] + it.width + 0.6).sort((p, q) => p.x - q.x || p.k - q.k);
+          // (a text op that starts where this piece ends — the next word or a bracket in another colour, written right
+          //  after it — is the next piece's colour, not a change inside this one: "3892 Bordeaux Dr" then a black ")")
+          const half = 0.5 * it.width / Math.max(1, s.length);
+          const here = opPts.filter(o => Math.abs(o.y - t[5]) < 0.4 * fh && o.x >= t[4] - 0.6 && o.x < t[4] + it.width - half).sort((p, q) => p.x - q.x || p.k - q.k);
           if (!here.length) return;
           let lastFill = null;
           here.forEach(o => {
             if (o.fill === lastFill) return; lastFill = o.fill;
-            let c = Math.round((o.x - t[4]) / Math.max(it.width, 1) * s.length);
-            // snap the colour change to the nearest word boundary
-            let best = c; for (let d = 0; d <= 3; d++) { if (c - d >= 0 && (c - d === 0 || /\s/.test(s[c - d - 1]))) { best = c - d; break; } if (c + d <= s.length && /\s/.test(s[c + d - 1] || '')) { best = c + d; break; } }
+            // which letter the colour change starts at: measured with the letters' own widths (not an even share each), so
+            // a change right before a closing bracket lands there; it moves to a word's start only when one is that close
+            const lead = it.str.length - it.str.trimStart().length, full = it.str, dx = o.x - t[4];
+            let tw = 0; try { tw = textWidth(full, 1, !!a.bold, a.family); } catch (e) {}
+            const posOf = i => tw > 0 ? textWidth(full.slice(0, lead + i), 1, !!a.bold, a.family) / tw * it.width : (lead + i) / Math.max(1, full.length) * it.width;
+            let c = 0, bestD = Infinity; for (let i = 0; i <= s.length; i++) { const d = Math.abs(posOf(i) - dx); if (d < bestD) { bestD = d; c = i; } }
+            const near = 0.6 * it.width / Math.max(1, full.length);
+            let best = c; for (let d = 1; d <= 3; d++) { const tryAt = q => q >= 0 && q <= s.length && (q === 0 || /\s/.test(s[q - 1])) && Math.abs(posOf(q) - dx) <= near; if (tryAt(c)) break; if (tryAt(c - d)) { best = c - d; break; } if (tryAt(c + d)) { best = c + d; break; } }
             for (let q = at + best; q < at + s.length; q++) styles[q] = o.fill;
           });
           any = true;
@@ -45931,10 +46210,25 @@ if (typeof buildTextBlockObjects === 'function') {
         const fam = String(a.family || ''), up = { 'f:Roboto Condensed Light': 'f:Roboto Condensed', 'f:Swis721 LtCn BT': 'f:Swis721 Cn BT', 'f:Swis721 Lt BT': 'f:Swis721 BT', 'f:Swis721 LtEx BT': 'f:Swis721 Ex BT', 'f:Swis721 Th BT': 'f:Swis721 Lt BT' }[fam];
         const upOk = up && (up === 'f:Roboto Condensed' || (typeof sysFonts !== 'undefined' && (sysFonts.detected.has(up.slice(2)) || sysFonts.local.has(up.slice(2)))));
         const anyHeavy = upOk && heavy.some(Boolean);
-        const cols = new Set(styles.filter(Boolean)); if ((!any || cols.size < 2) && !anyHeavy) return;
-        // fill the gaps (spaces, line breaks) with the colour before them
+        Object.values(runOf).forEach(g => { if (g.tw > 0 && g.n >= 4) { const cs = Math.max(-0.12, Math.min(0.25, (g.w - g.tw) / (g.n * g.fh))); g.at.forEach(([p, q]) => { for (let i = p; i < q; i++) spc[i] = cs; }); } });
+        // (shades of one ink — #020202 and #050505, a scan's black measured word by word — are the box's own colour)
+        { const hx = h => [1, 3, 5].map(i => parseInt(String(h).slice(i, i + 2), 16)), cnt = {}; styles.forEach(c => { if (c) cnt[c] = (cnt[c] || 0) + 1; });
+          const dom = Object.keys(cnt).sort((p, q) => cnt[q] - cnt[p])[0];
+          if (dom && /^#[0-9a-f]{6}$/i.test(dom)) { const D = hx(dom); for (let q = 0; q < styles.length; q++) { const c = styles[q]; if (c && c !== dom && /^#[0-9a-f]{6}$/i.test(c)) { const C = hx(c); if (Math.abs(C[0] - D[0]) + Math.abs(C[1] - D[1]) + Math.abs(C[2] - D[2]) < 30) styles[q] = dom; } } } }
+        const cols = new Set(styles.filter(Boolean)), wts = new Set(weight.filter(v => v !== null));
+        // (sizes and spacings that differ clearly from the box's own: a piece of its own size or spacing)
+        const fs0 = a.fontSize || 0, sizeOdd = q => size[q] && fs0 && Math.abs(size[q] - fs0) > 0.08 * fs0, spcVals = spc.filter(v => v !== null), spcSpread = (() => {   // (only where pieces on ONE line differ — a tracked heading and its plain reference; lines of a column each measured from the scan differ a little, and that isn't a style)
+          let worst = 0, from = 0; for (let q = 0; q <= text.length; q++) if (q === text.length || text[q] === '\n') { const v = spc.slice(from, q).filter(x => x !== null); if (v.length) worst = Math.max(worst, Math.max(...v) - Math.min(...v)); from = q + 1; }
+          return worst; })(), spcOdd = q => spcSpread > 0.035 && spc[q] !== null;
+        // (only on a recognized page: on other pages a piece's measured spacing is off by the font the box is shown in)
+        const anySize = ocrPage && text.split('').some((c, q) => sizeOdd(q)), anySpc = ocrPage && text.split('').some((c, q) => spcOdd(q));
+        if ((!any || cols.size < 2) && !anyHeavy && wts.size < 2 && !anySize && !anySpc) return;
+        // fill the gaps (spaces, line breaks) with the colour and weight before them
         let prev = styles.find(Boolean) || a.color; for (let q = 0; q < styles.length; q++) { if (styles[q]) prev = styles[q]; else styles[q] = prev; }
-        setRichText(a, text, styles.map((c, q) => anyHeavy && heavy[q] ? { color: c, family: up } : { color: c }));
+        let pw = weight.find(v => v !== null); if (pw === undefined) pw = !!a.bold; for (let q = 0; q < weight.length; q++) { if (weight[q] !== null) pw = weight[q]; else weight[q] = pw; }
+        let ps0 = size.find(Boolean) || null, pc0 = spc.find(v => v !== null); if (pc0 === undefined) pc0 = null; for (let q = 0; q < text.length; q++) { if (size[q]) ps0 = size[q]; else size[q] = ps0; if (spc[q] !== null) pc0 = spc[q]; else spc[q] = pc0; }
+        setRichText(a, text, styles.map((c, q) => ({ color: c, ...(wts.size > 1 ? { bold: weight[q] } : {}), ...(anyHeavy && heavy[q] ? { family: up } : {}),
+          ...(anySize && sizeOdd(q) ? { fontSize: +size[q].toFixed(2) } : {}), ...(anySpc && spcOdd(q) ? { charSp: +spc[q].toFixed(4) } : {}) })));
         a.origRuns = a.runs ? JSON.parse(JSON.stringify(a.runs)) : null;
       });
     } catch (e) { console.warn('block colours', e); }
@@ -46557,7 +46851,8 @@ document.addEventListener('contextmenu', e => {
       try { t = await navigator.clipboard.readText(); } catch (err) { toast('Press Ctrl+V to paste (this browser only lets the keyboard read the clipboard).'); return; }
       if (!t) { toast('There is no text to paste.'); return; }
       ed.focus({ preventScroll: true }); if (range) khzRestoreRange(range);
-      document.execCommand('insertText', false, t.replace(/\r\n?/g, '\n'));
+      const tt = t.replace(/\r\n?/g, '\n');
+      if (activeEditor && activeEditor.el === ed && activeEditor.insertText) activeEditor.insertText(tt); else document.execCommand('insertText', false, tt);
     }) },
     { label: 'Delete', key: 'Del', disabled: !text, action: back(() => document.execCommand('delete')) },
     '-',
@@ -47544,7 +47839,7 @@ showNotifications = function (btn) {
       rows += `<div class="np-item ${n.read ? '' : 'unread'} ${goes ? 'click' : ''} ${isErr ? 'np-err' : ''}" data-id="${n.id}"><span class="np-ic k-${isErr ? 'error' : n.kind}"><span class="ic">${icon(NOTIF_IC[n.kind] || (isErr ? 'info' : 'bell'))}</span></span>
         <div class="np-txt"><div>${escapeHtml(n.text)}</div>${n.path ? `<div class="np-path" title="${escapeHtml(n.path)}">${escapeHtml(khzDirName(n.path))}</div>` : ''}
         ${btns.length ? `<div class="np-btns">${btns.map((b, i) => `<button class="np-btn" data-b="${i}">${escapeHtml(b.label)}</button>`).join('')}</div>` : ''}
-        <div class="np-time">${notifAgo(n.t)}</div></div>${n.read ? '' : '<span class="np-dot"></span>'}</div>`;
+        <div class="np-time">${notifAgo(n.t)}</div></div>${n.read ? '' : '<span class="np-dot"></span>'}<button class="np-x" title="Clear" aria-label="Clear this notification">${icon('cmb_x')}</button></div>`;
     });
     p.innerHTML = `<div class="hp-head"><b>Notifications</b><span>${list.length ? '<button class="hp-link" data-a="read">Mark all as read</button><button class="hp-link" data-a="clear">Clear all</button>' : ''}<button class="hp-link np-gear" data-a="set" title="Notification settings">${icon('gear')}</button></span></div>
       <div class="hp-list">${list.length ? rows : '<div class="hp-empty"><span class="ic">' + icon('bell') + '</span><div>You\'re all caught up</div><div class="np-time">Saved files, problems, updates and reminders show up here.</div></div>'}</div>`;
@@ -47555,6 +47850,8 @@ showNotifications = function (btn) {
     });
     p.querySelectorAll('.np-item').forEach(it => {
       const n0 = list.find(x => x.id === it.dataset.id);
+      // its own Clear (×, on pointing at it): just this one goes
+      it.querySelector('.np-x').onclick = e => { e.stopPropagation(); notifSave(notifList().filter(x => x.id !== it.dataset.id)); draw(p); };
       it.querySelectorAll('.np-btn').forEach(b => b.onclick = e => {
         e.stopPropagation();
         const btn = (n0.buttons || []).filter(khzBtnLive)[+b.dataset.b]; if (!btn) return;
@@ -47591,6 +47888,9 @@ showNotifications = function (btn) {
   .np-btns { display:flex; gap:6px; margin:6px 0 2px; flex-wrap:wrap; }
   .np-btn { font:inherit; font-size:12px; padding:3px 10px; border-radius:12px; border:1px solid #5a5a5a; background:transparent; color:inherit; cursor:pointer; }
   .np-btn:hover { background:#1473e6; border-color:#1473e6; color:#fff; }
+  .np-x { position:absolute; top:6px; right:8px; width:22px; height:22px; padding:0; border:0; border-radius:4px; background:none; color:inherit; opacity:0; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .np-x .ic, .np-x svg { width:12px; height:12px; } .np-x:hover { background:rgba(128,128,128,.3); }
+  .np-item:hover .np-x, .np-item:focus-within .np-x { opacity:.85; } .np-item:hover .np-dot, .np-item:focus-within .np-dot { visibility:hidden; }
   .np-ic.k-error { color:#e34850; } .np-item.np-err .np-txt > div:first-child { color:#ff8a8f; }
   .np-ic.k-cert { color:#2d9d78; } .np-ic.k-update { color:#4b9cf5; } .np-ic.k-print { color:#9a9a9a; } .np-ic.k-file { color:#f5a623; }
   .np-gear .ic, .np-gear svg { width:15px; height:15px; vertical-align:-3px; }
@@ -47728,6 +48028,10 @@ setTimeout(() => {
     const v = typeof APP_BUILD !== 'undefined' ? APP_BUILD : ''; if (!v) return;
     const was = localStorage.getItem('khz-last-version');
     localStorage.setItem('khz-last-version', v);
+    // "ready to install" / "is available" for this version or an older one is done once it runs: those notes go
+    const num = x => String(x).split('.').map(Number), le = (a, b) => { const A = num(a), B = num(b); for (let i = 0; i < Math.max(A.length, B.length); i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) < (B[i] || 0); } return true; };
+    const l = notifList(), keep = l.filter(n => !(n.key && /^upd:/.test(n.key) && le(n.key.slice(4), v)));
+    if (keep.length !== l.length) notifSave(keep);
     if (was && was !== v && getPref('genMessages', true) !== false) notify(`KHZ PDF was updated to ${v}.`, { kind: 'info', cat: 'update', key: 'updated:' + v, buttons: [{ label: "What's new", k: 'whatsnew', v } ] });
   } catch (e) {}
 }, 2500);
@@ -52044,7 +52348,7 @@ if (KHZ_DSK) {
       if (d && d.known && !d.isDefault && !sessionStorage.getItem('khz-asked-default')) {
         try { sessionStorage.setItem('khz-asked-default', '1'); } catch (e) {}
         esDialog('khz-defapp', 'KHZ PDF', `<div style="display:flex;gap:12px;align-items:flex-start;margin:4px 0 8px"><span class="art-i">i</span><div>KHZ PDF is not your default PDF application. Do you want to make it the default?<label class="pf-chk" style="margin-top:12px"><input type="checkbox" class="dfa-no"> Do not show this message again</label></div></div>`,
-          [{ label: 'Yes', primary: true, run: o => { if (o.querySelector('.dfa-no').checked) setPrefs({ genTellDefault: false }); KHZ_DSK.openDefaultApps(); } }, { label: 'No', run: o => { if (o.querySelector('.dfa-no').checked) setPrefs({ genTellDefault: false }); } }], 460);
+          [{ label: 'Yes', primary: true, run: o => { if (o.querySelector('.dfa-no').checked) setPrefs({ genTellDefault: false }); khzMakeDefault(); } }, { label: 'No', run: o => { if (o.querySelector('.dfa-no').checked) setPrefs({ genTellDefault: false }); } }], 460);
       }
     }
   }, 4000);
@@ -52054,9 +52358,17 @@ if (KHZ_DSK) {
   if (window.showOpenFilePicker) { const o = window.showOpenFilePicker; window.showOpenFilePicker = async opts => o(await startIn(opts, 'genOnlineOpen', false)); }
   if (window.showSaveFilePicker) { const s = window.showSaveFilePicker; window.showSaveFilePicker = async opts => s(await startIn(opts, 'genOnlineSave', true)); }
 }
-// pref action: "Select As Default PDF Handler" opens Windows' Default apps in the desktop app
+// "Select As Default PDF Handler": Windows opens its Default apps page (Windows lets only the user choose there);
+// a Mac makes KHZ PDF the default at once, like Acrobat on a Mac, and says whether it worked
+async function khzMakeDefault() {
+  const r = await KHZ_DSK.openDefaultApps();
+  if (r && r.mac) {
+    if (r.ok) toast('KHZ PDF is now your default PDF application.');
+    else alert('KHZ PDF could not be made the default PDF application.\n\nIn Finder, select a PDF, choose File \u203a Get Info, pick KHZ PDF under \u201cOpen with\u201d, then click Change All.');
+  }
+}
 pf2Action = (prev => async function (act) {
-  if (act === 'defHandler' && KHZ_DSK && KHZ_DSK.openDefaultApps) { KHZ_DSK.openDefaultApps(); return; }
+  if (act === 'defHandler' && KHZ_DSK && KHZ_DSK.openDefaultApps) { khzMakeDefault(); return; }
   return prev.apply(this, arguments);
 })(pf2Action);
 {
@@ -57076,6 +57388,17 @@ function khzRepairBar(name, found, log) {
     const r = await _lb.call(this, bytes, name, { ...opts, _quietFail: true });
     if (!state._khzLoadError) return r;
     const err = state._khzLoadError;
+    // the PDF reader itself didn't start (its helper script couldn't be loaded): not the file's fault — say so, and
+    // put what the app answered for that script in the report, to find the cause
+    if (/fake worker|module script|worker.*failed/i.test(String(err && err.message || err))) {
+      showLoading(false);
+      try {
+        const src = pdfjsLib.GlobalWorkerOptions.workerSrc, t0 = performance.now(), res = await fetch(src, { cache: 'no-store' });
+        console.error('PDF reader did not start', String(err && err.message || err), JSON.stringify({ src, status: res.status, type: res.headers.get('content-type'), acao: res.headers.get('access-control-allow-origin'), bytes: (await res.arrayBuffer()).byteLength, ms: Math.round(performance.now() - t0), origin: location.origin }));
+      } catch (e2) { console.error('PDF reader did not start', String(err && err.message || err), 'its script could not be fetched: ' + (e2 && e2.message || e2)); }
+      alert('The PDF reader could not start, so "' + name + '" was not opened. The file is fine.\n\nClose KHZ PDF and open it again. If it keeps happening, send a Developer report (Help \u203a Developer Mode).');
+      return;
+    }
     if (!found.length) { const r2 = await repairAndOpen(['the file could not be read as it is: ' + (err && err.message || err)]); if (r2) return r2 === true ? undefined : r2; }
     showLoading(false);
     alert('Error loading PDF: ' + (err && err.message ? err.message : err) + '\n\nThe file is damaged and could not be repaired.');
@@ -58212,6 +58535,9 @@ function oklch(L, C, H) {
 const lum = h => { const [r, g, b] = hex2rgb(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 function mixOk(a, b, k) { const A = toOklch(a), B = toOklch(b); let dh = B[2] - A[2]; if (dh > 180) dh -= 360; if (dh < -180) dh += 360; const ha = A[1] < 0.01 ? B[2] : B[1] < 0.01 ? A[2] : A[2] + dh * k; return oklch(A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, ha); }
+// how different two colours look (CIE76 ΔE in Lab: about 2 just noticeable, 40+ clearly different)
+const deltaE = (a, b) => { const lab = h => { const [r, g, bb] = hex2rgb(h).map(lin), X = (0.4124 * r + 0.3576 * g + 0.1805 * bb) / 0.95047, Y = 0.2126 * r + 0.7152 * g + 0.0722 * bb, Z = (0.0193 * r + 0.1192 * g + 0.9505 * bb) / 1.08883, F = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116; return [116 * F(Y) - 16, 500 * (F(X) - F(Y)), 200 * (F(Y) - F(Z))]; };
+  const p = lab(a), q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
 const alpha = (h, a) => { const [r, g, b] = hex2rgb(h).map(v => Math.round(v * 255)); return `rgba(${r},${g},${b},${a})`; };
 // lightness moved until the colour reaches a contrast against `bg` (keeps hue and chroma)
 function ensure(fg, bg, min, dirUp) {
@@ -58295,12 +58621,17 @@ function newTokens(t) {
   const accentText = ensure(accent, bg, 4.5, dark ? undefined : false);
   const onAccent = contrast('#ffffff', accent) >= contrast('#111111', accent) ? '#ffffff' : '#111111';
   const [aL, aC, aHH] = toOklch(accent);
-  const selected = cur.selected || (dark ? alpha(accent, 0.2) : alpha(accent, 0.13));
+  // (the selected tool must stand out from the others: a tint of the accent behind the accent-coloured icon does that
+  // when the accent differs clearly from the icons' own colour. Where it doesn't — Gunmetal's grey accent, Barbie's
+  // white, Nord's pale blue on near-white icons — the tile is the accent itself, solid, with the icon in the colour
+  // that reads on it, like a pressed button)
+  const weak = !hc && deltaE(accentText, icon) < 35;
+  const selected = weak ? accent : cur.selected || (dark ? alpha(accent, 0.2) : alpha(accent, 0.13));
   const hover = dark ? alpha(text, 0.085) : alpha(text, 0.065);
   const strip = cur.strip || (hc ? accent : vivid ? '#ffffff' : oklch(dark ? 0.72 : 0.62, 0.19, 350));   // Edit PDF's strip: the app's pink, set in the theme's light
   const sh = dark ? 'rgba(0,0,0,.55)' : 'rgba(30,25,40,.16)';
   return Object.assign(T, {
-    text, dim, icon, accent, accentText, onAccent, hover, selected, selLine: alpha(accent, dark ? 0.35 : 0.3), tabDivNew: alpha(text, 0.16),
+    text, dim, icon, accent, accentText, selText: weak ? onAccent : accentText, onAccent, hover, selected, selLine: weak ? alpha(onAccent, 0.25) : alpha(accent, dark ? 0.35 : 0.3), tabDivNew: alpha(text, 0.16),
     fieldBg: dark ? alpha('#000000', 0.18) : (T.fieldBg || alpha('#ffffff', 0.85)), fieldRing: dark ? alpha('#ffffff', 0.07) : alpha('#000000', 0.08),
     raisedGlass: hc ? T.raised : alpha(T.raised, dark ? 0.86 : 0.88), fieldLine: mixOk(bg, text, dark ? 0.32 : 0.38),
     tabText: mixOk(text, T.tabs, 0.22), tabR: '9px', tabShadow: dark ? '0 -1px 0 rgba(255,255,255,.04)' : '0 -1px 3px rgba(0,0,0,.05)',
@@ -58324,7 +58655,7 @@ khzThemeVars = function (t) {
   return { '--ac-bar': k.toolbar, '--ac-menu': k.tabs, '--ac-tabs': k.tabs, '--ac-panel': k.panel, '--ac-doc': k.canvas, '--ac-sep': k.line, '--ac-text': k.text,
     '--ac-ico': k.icon, '--ac-dim': k.dim, '--ac-blue': k.accent, '--ac-hover': k.hover, '--ac-tabhover': k.hover };
 };
-const KHZ_KT = ['rail', 'raised', 'raisedGlass', 'raisedLine', 'raisedSep', 'line', 'tabLine', 'tabText', 'tabDivNew', 'accentText', 'onAccent', 'selected', 'selLine', 'fieldBg', 'fieldRing', 'fieldLine',
+const KHZ_KT = ['selText', 'rail', 'raised', 'raisedGlass', 'raisedLine', 'raisedSep', 'line', 'tabLine', 'tabText', 'tabDivNew', 'accentText', 'onAccent', 'selected', 'selLine', 'fieldBg', 'fieldRing', 'fieldLine',
   'ctxStrip', 'closeLine', 'menuHover', 'menuHoverText', 'ddShadow', 'barShadow', 'pageShadow', 'scroll', 'btnShadow', 'canvas'];
 applyTheme = (prev => function (previewId) {
   const r = prev.apply(this, arguments);
@@ -58335,6 +58666,11 @@ applyTheme = (prev => function (previewId) {
   // (a painted tab bar, Taxi: its writing stays the colour chosen for it)
   const P = named && t[8] || {}, ps = document.getElementById('khz-theme-paint');
   if (ps && P.tabs) ps.textContent += `body.khz-th #tab-bar .tab:not(.active), body.khz-th #tab-bar .home-tab:not(.on) { color:${khzLum(P.tabs) > 0.55 ? '#141414' : '#f5f5f5'} !important; }`;
+  // (a painted toolbar, Bumblebee: the accent is the bar's own colour, so on it the accent-coloured icons and the selected
+  // tool would vanish — there they're in the bar's writing colour, and the selected tool is a tile of that colour with
+  // its icon in the bar's colour, like a pressed button)
+  if (ps && P.toolbar) { const fg = khzLum(P.toolbar) > 0.55 ? '#141414' : '#f5f5f5';
+    ps.textContent += `body.khz-th #main-toolbar, body.khz-th #context-toolbar { --ac-blue:${fg}; --kt-selected:${fg}; --kt-selText:${P.toolbar}; --kt-selLine:transparent; --kt-accentText:${fg}; }`; }
   return r;
 })(applyTheme);
 
@@ -58364,8 +58700,8 @@ applyTheme = (prev => function (previewId) {
   ${B} #tab-bar .home-tab.on { color:var(--ac-text); background:var(--ac-bar); }
   ${B} #main-toolbar { border-bottom:1px solid var(--kt-line) !important; box-shadow:var(--kt-barShadow); position:relative; z-index:3; }
   ${B} .tb-btn, ${B} .ctx-btn, ${B} .side-btn, ${B} .hdr-btn, ${B} .fp-btn, ${B} .cmp-tools button { border-radius:8px; }
-  ${B} .tb-btn.active, ${B} .ctx-btn.active, ${B} .ctx-btn.on, ${B} .ctx-btn.on.cm-tool, ${B} #cm-pin.on { background:var(--kt-selected) !important; box-shadow:inset 0 0 0 1px var(--kt-selLine) !important; color:var(--kt-accentText) !important; }
-  ${B} .tb-btn.active .ic, ${B} .ctx-btn.active .ic, ${B} .ctx-btn.on .ic { color:var(--kt-accentText) !important; }
+  ${B} .tb-btn.active, ${B} .ctx-btn.active, ${B} .ctx-btn.on, ${B} .ctx-btn.on.cm-tool, ${B} #cm-pin.on { background:var(--kt-selected) !important; box-shadow:inset 0 0 0 1px var(--kt-selLine) !important; color:var(--kt-selText) !important; }
+  ${B} .tb-btn.active .ic, ${B} .ctx-btn.active .ic, ${B} .ctx-btn.on .ic { color:var(--kt-selText) !important; }
   ${B} .tb-input, ${B} #page-input, ${B} #zoom-select { border-bottom:none !important; background-color:var(--kt-fieldBg) !important; border-radius:8px !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); color:var(--ac-text) !important; }
   ${B} .tb-input:focus, ${B} #page-input:focus { box-shadow:inset 0 0 0 1.5px var(--ac-blue); }
   ${B} #zoom-select option, ${B} .fp-sel option { background:var(--kt-raised); color:var(--ac-text); }
@@ -58375,7 +58711,7 @@ applyTheme = (prev => function (previewId) {
   ${B} .ctx-close { border:none !important; background:var(--ac-hover) !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); color:var(--ac-text) !important; }
   ${B} .ctx-close:hover { background:var(--kt-selected) !important; }
   ${B} #left-sidebar, ${B} #right-icon-sidebar { background:var(--kt-rail) !important; border-color:var(--kt-line) !important; }
-  ${B} .side-btn.active { background:var(--kt-selected) !important; color:var(--kt-accentText) !important; position:relative; }
+  ${B} .side-btn.active { background:var(--kt-selected) !important; color:var(--kt-selText) !important; position:relative; }
   ${B} .side-btn.active::before { content:""; position:absolute; left:-6px; top:8px; bottom:8px; width:3px; border-radius:0 3px 3px 0; background:var(--ac-blue); }
   ${B} #left-panel, ${B} #right-panel, ${B} #comment-panel { background:var(--ac-panel) !important; border-color:var(--kt-line) !important; color:var(--ac-text) !important; }
   ${B} #left-panel *, ${B} #right-panel *, ${B} #comment-panel * { border-color:var(--kt-line); }
@@ -58397,7 +58733,7 @@ applyTheme = (prev => function (previewId) {
   ${B} .tool-item .tool-icon .ic { width:19px !important; height:19px !important; color:var(--kt-tileFg, #fff) !important; }
   ${B} .fp-auto, ${B} .fp-sec { border-color:var(--kt-line) !important; }
   ${B} .fp-sel { border-bottom:none !important; background-color:var(--kt-fieldBg) !important; border-radius:8px !important; box-shadow:inset 0 0 0 1px var(--kt-fieldRing); padding:5px 8px !important; color:var(--ac-text) !important; }
-  ${B} .fp-btn.on { color:var(--kt-accentText) !important; background:var(--kt-selected) !important; }
+  ${B} .fp-btn.on { color:var(--kt-selText) !important; background:var(--kt-selected) !important; }
   ${B} .fp-btn.dis, ${B} .fp-lab.dis, ${B} .fp-split.dis, ${B} .fp-editusing.dis, ${B} .fp-check.dis, ${B} #rp-format.noobj .fp-btn.obj { color:var(--ac-dim) !important; }
   ${B} .fp-link:hover { color:var(--ac-text); }
   ${B} .cmp-head { border-color:var(--kt-line) !important; color:var(--ac-text); }
@@ -58620,6 +58956,90 @@ async function khzSelfTestShow() {
   live.textContent = lines[0] + ' — the results are also in the developer report.';
   out.textContent = lines.slice(1).join('\n'); out.style.display = '';
 }
+// ---------- the update panel: a new version downloading, ready, or failed (desktop app: Electron and Tauri) ----------
+// A small card at the bottom right, like Acrobat's update notice: it never stops you working (nothing to click
+// through), it can be made into a small pill (the − button; remembered), and closed until something new happens.
+//   downloading → a progress bar with MB and %      ready → Restart now / Later
+//   available (automatic installing off) → Download and install / Later      failed → the reason and Try again
+// Coloured like the theme's menus and dialogs (View › Display Theme).
+// Mac Electron app: Apple lets only paid-signed apps replace themselves, so it offers the download page instead.
+const khzUpd = { st: null, hidden: false };
+function khzUpdMB(n) { return n == null ? '' : (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB'; }
+function khzUpdRender() {
+  const u = khzUpd.st; let el = document.getElementById('khz-upd');
+  if (!u || khzUpd.hidden) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'khz-upd'; el.setAttribute('role', 'status');
+    el.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      const a = b.dataset.a, D = window.khzDesktop;
+      if (a === 'min') { setPrefs({ updPanelMin: !getPref('updPanelMin', false) }); khzUpdRender(); }
+      else if (a === 'x' || a === 'later') { khzUpd.hidden = true; khzUpdRender(); }
+      else if (a === 'restart' && D && D.restartToUpdate) D.restartToUpdate();
+      else if ((a === 'get' || a === 'retry') && D) {
+        const go = D.downloadUpdate ? D.downloadUpdate() : Promise.resolve(false);
+        Promise.resolve(go).then(ok => { if (!ok) { if (a === 'retry' && typeof checkForUpdates === 'function') checkForUpdates(); } }).catch(() => {});
+        khzUpd.st = { kind: 'downloading', version: u.version }; khzUpdRender();
+      }
+      else if (a === 'page' && D && D.openUrl) D.openUrl(u.url || 'https://github.com/BrandonAOG/PDF/releases/latest');
+    });
+    document.body.appendChild(el);
+  }
+  const min = getPref('updPanelMin', false), v = escapeHtml(u.version || '');
+  const pct = u.total ? Math.max(0, Math.min(100, Math.round(100 * (u.got || 0) / u.total))) : null;
+  let head = '', body = '', btns = '', pill = '';
+  if (u.kind === 'downloading' || u.kind === 'progress') {
+    head = `Downloading KHZ PDF ${v}`;
+    body = `<div class="ku-bar${pct == null ? ' ku-busy' : ''}"><i style="width:${pct == null ? 30 : pct}%"></i></div>
+      <div class="ku-sub">${pct == null ? (u.got ? khzUpdMB(u.got) + ' so far' : 'Starting…') : `${khzUpdMB(u.got)} of ${khzUpdMB(u.total)} · ${pct}%`}<br>Keep working: you’ll be asked to restart when it’s ready.</div>`;
+    pill = pct == null ? 'Downloading update…' : `Update ${pct}%`;
+  } else if (u.kind === 'ready') {
+    head = `KHZ PDF ${v} is ready`;
+    body = `<div class="ku-sub">Restart now to use it, or it installs the next time you close KHZ PDF. Save your work before restarting.</div>`;
+    btns = `<button data-a="restart" class="ku-p">Restart now</button><button data-a="later">Later</button>`;
+    pill = 'Update ready — restart';
+  } else if (u.kind === 'available') {
+    head = `KHZ PDF ${v} is available`;
+    body = `<div class="ku-sub">You have ${escapeHtml(u.have || APP_BUILD)}.${u.canDownload ? '' : ' Download it from the release page and install it over this one.'}</div>`;
+    btns = u.canDownload ? `<button data-a="get" class="ku-p">Download and install</button><button data-a="later">Later</button>` : `<button data-a="page" class="ku-p">Open download page</button><button data-a="later">Later</button>`;
+    pill = `KHZ PDF ${v} available`;
+  } else if (u.kind === 'error') {
+    head = `KHZ PDF ${v} could not be downloaded`;
+    body = `<div class="ku-sub">${escapeHtml(String(u.error || 'The download stopped').replace(/[.\s]+$/, ''))}.<br>Check the internet connection, then try again.</div>`;
+    btns = `<button data-a="retry" class="ku-p">Try again</button><button data-a="page">Download page</button>`;
+    pill = 'Update failed — details';
+  }
+  el.className = (min ? 'ku-min ' : '') + 'ku-' + u.kind;
+  el.style.zIndex = typeof topZ === 'function' ? topZ() : 9000;
+  el.innerHTML = min
+    ? `<button class="ku-pill" data-a="min" title="Show the update panel">${pct != null && (u.kind === 'progress') ? `<span class="ku-ring" style="--p:${pct}"></span>` : ''}${escapeHtml(pill)}</button>`
+    : `<div class="ku-h"><b>${head}</b><button data-a="min" title="Make small">−</button><button data-a="x" title="Close">×</button></div>${body}${btns ? `<div class="ku-btns">${btns}</div>` : ''}`;
+}
+function khzUpdSet(u) {
+  if (!u || !u.kind) return;
+  const prev = khzUpd.st;
+  // a new kind of news (ready, failed, available) shows again even if the panel was closed; progress doesn't reopen it
+  if (u.kind !== 'progress' && (!prev || prev.kind !== u.kind || prev.version !== u.version)) khzUpd.hidden = false;
+  khzUpd.st = { ...(prev && prev.version === u.version ? prev : {}), ...u };
+  khzUpdRender();
+}
+if (window.khzDesktop && window.khzDesktop.onUpdate) window.khzDesktop.onUpdate(khzUpdSet);
+(function () {
+  const css = document.createElement('style');
+  css.textContent = `#khz-upd{position:fixed;right:16px;bottom:16px;width:340px;max-width:calc(100vw - 32px);background:var(--kt-raised,var(--ac-panel,#fff));color:var(--ac-text,#222);border:1px solid var(--kt-raisedLine,rgba(128,128,128,.35));border-radius:10px;box-shadow:var(--kt-ddShadow,0 6px 24px rgba(0,0,0,.25));font-size:13px;padding:10px 12px 12px}
+#khz-upd .ku-h{display:flex;align-items:center;gap:6px;margin-bottom:6px}#khz-upd .ku-h b{flex:1;font-weight:600}
+#khz-upd .ku-h button{border:0;background:none;color:inherit;font-size:16px;line-height:1;width:24px;height:24px;border-radius:4px;cursor:pointer}#khz-upd .ku-h button:hover{background:var(--kt-menuHover,rgba(128,128,128,.2))}
+#khz-upd .ku-bar{height:8px;border-radius:4px;background:rgba(128,128,128,.25);overflow:hidden;margin:4px 0 6px}#khz-upd .ku-bar i{display:block;height:100%;background:var(--ac-blue,#1473e6);transition:width .25s}
+#khz-upd .ku-busy i{animation:kuBusy 1.2s linear infinite}@keyframes kuBusy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+#khz-upd .ku-sub{opacity:.8;line-height:1.4}#khz-upd.ku-error .ku-h b{color:#e5484d}
+#khz-upd .ku-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}#khz-upd .ku-btns button{padding:5px 14px;border-radius:14px;border:1px solid var(--kt-raisedLine,rgba(128,128,128,.5));background:none;color:inherit;cursor:pointer}
+#khz-upd .ku-btns .ku-p{background:var(--ac-blue,#1473e6);border-color:transparent;color:var(--kt-onAccent,#fff)}
+#khz-upd.ku-min{width:auto;padding:0;border-radius:18px}#khz-upd .ku-pill{display:flex;align-items:center;gap:8px;border:0;background:none;color:inherit;font:inherit;padding:7px 14px;cursor:pointer;border-radius:18px}
+#khz-upd.ku-min.ku-error .ku-pill{color:#e5484d}#khz-upd.ku-min.ku-ready .ku-pill{font-weight:600}
+#khz-upd .ku-ring{width:14px;height:14px;border-radius:50%;background:conic-gradient(var(--ac-blue,#1473e6) calc(var(--p)*1%),rgba(128,128,128,.3) 0)}
+@media print{#khz-upd{display:none}}`;
+  document.head.appendChild(css);
+})();
 </script>
 </body>
 </html>
