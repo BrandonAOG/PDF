@@ -5983,6 +5983,15 @@ async function getTextBlocks(n) {
         // has them. Lines of quite different sizes stay apart)
         const val = l => /^[+\-−±]?\s*\d[\d.,]*\s*[A-Za-zφΦØ%°²/]{0,5}$/.test(l.text.trim());
         if (val(L) || val(last)) return false;
+        // (a line in a table row cut into several cells — "Mini Split | 1 ton · 12k | CU: 1,200 VA | Heat: 0 VA" — is a
+        // cell: it doesn't join the line above or below, as Acrobat has it. A label with just its value beside it does)
+        // (the cells counted are those either side of it up to the row's value — a page with two tables side by side has the
+        // other table's row on the same line)
+        const cells = X => { let c = 0; const row = lines.filter(o => o !== X && Math.abs(o.base - X.base) < 0.4 * X.fh);
+          for (const o of row.filter(o => o.x > X.right).sort((p, q) => p.x - q.x)) { if (val(o)) break; c++; }
+          for (const o of row.filter(o => o.right < X.x).sort((p, q) => q.x - p.x)) { if (val(o)) break; c++; }
+          return c; };
+        if (cells(L) >= 2 || cells(last) >= 2) return false;
         const sizeOk = Math.abs(L.fh - last.fh) <= 0.2 * Math.max(L.fh, last.fh);
         const al = Math.abs(L.x - last.x) <= atol || Math.abs(L.right - last.right) <= atol;
         return !loose && dy > 0.5 * L.fh && dy < 1.75 * Math.max(L.fh, last.fh) && sizeOk && al;
@@ -6273,8 +6282,20 @@ function dragSelected(d, ps, vx, vy, e) {
     newV = [[x1, y1], [x2, y2]];
     if (a.type === 'text-block' && /[ns]/.test(dir)) a.boxH = true;   // a corner pulled diagonally: the box keeps the height you gave it
     if (a.type === 'text-block' && /[ew]/.test(dir) && !a.wrap) {   // width change: treat lines as one paragraph and re-flow (like Acrobat)
+      // (the lines as they were are remembered: pulled back to the width it had, the box gets them back exactly — each
+      // line where it was, with its spacing)
+      if (!a._preWrap || a._preWrap.text !== a.text) a._preWrap = { text: a.text, runs: a.runs ? JSON.parse(JSON.stringify(a.runs)) : null, w: (b.w) / ps.vp.scale, boxH: !!a.boxH };
       remapText(a, reflowJoin(a.text));
       a.wrap = true;
+      a._preWrap.joined = a.text;
+    }
+    // (only while the text is still what the re-flow made of it: typed in since, the lines as they were are gone)
+    if (a.type === 'text-block' && /[ew]/.test(dir) && a._preWrap && (a.text === a._preWrap.joined || a.text === a._preWrap.text)) {
+      const wPt = (x2 - x1) / ps.vp.scale, back = Math.abs(wPt - a._preWrap.w) <= Math.max(1.5, 0.02 * a._preWrap.w);
+      if (back) {   // (it snaps to the width it had)
+        const W = a._preWrap.w * ps.vp.scale; if (dir.includes('e')) x2 = x1 + W; else x1 = x2 - W; newV = [[x1, y1], [x2, y2]];
+        if (a.wrap) { a.text = a._preWrap.text; a.runs = a._preWrap.runs ? JSON.parse(JSON.stringify(a._preWrap.runs)) : null; a.wrap = false; if (!a._preWrap.boxH) delete a.boxH; }
+      } else if (!a.wrap) { remapText(a, reflowJoin(a.text)); a.wrap = true; }
     }
   }
   a.pts = toPdfPts(ps, newV);
@@ -12689,7 +12710,7 @@ async function ocrDesktopRecognize(c, k, gray, strips) {
   const W = c.width, H = c.height;
   gray = gray || khzOcrGray(c);
   const lang = (ocrDeskInfo && ocrDeskInfo.lang) || 'eng';
-  const read = (y0, y1) => window.khzDesktop.ocrRecognize({ width: W, height: y1 - y0, dpi: Math.round(k * 72), data: y0 === 0 && y1 === H ? gray : gray.slice(y0 * W, y1 * W) }, { psm: 11, lang });
+  const read = (y0, y1) => window.khzDesktop.ocrRecognize({ width: W, height: y1 - y0, dpi: Math.round(k * 72), data: y0 === 0 && y1 === H ? gray : gray.slice(y0 * W, y1 * W) }, { psm: 11, lang, ...(khzOcrSysVote() === false ? { vote: false } : {}) });
   // one page read by several engines at once (desktop: one Tesseract thread each): the page is cut across into
   // strips at its emptiest rows, each strip is read with ¾ inch of the next one beside it, and each line is kept from
   // the strip its middle falls in — so no line is cut in two and none is read twice
@@ -12801,7 +12822,7 @@ async function khzOcrRead(o) {
       let aiSide = null;
       if (aiRes && aiRes.lines) { const f = khzOcrFuse(found, aiRes, job.gray, c.width, c.height, await khzOcrDict()); found = f.words; aiSide = f.side; }
       // a 0 or O with a stroke through it: φ (phase: "1φ") or Ø, which neither engine reads (khzOcrSlashed)
-      found = khzOcrSlashed(found, job.gray || khzOcrGray(c), c.width, c.height);
+      { const g = job.gray || khzOcrGray(c); found = khzOcrSlashed(found, g, c.width, c.height); found = khzOcrPairs(found, g, c.width, c.height); }
       job.gray = null;
       const pageWords = await ocrSplitLines(worker, c, found);
       if (stop()) return { cancelled: true };
@@ -13105,6 +13126,82 @@ function khzOcrSlashed(words, gray, W, H) {
   seen.forEach(s => {
     if (!s.kind || (fontStyle && /[Øø]/.test(s.kind))) return;
     const chars = [...String(s.w.text)]; chars[s.i] = s.kind; s.w.text = chars.join('');
+  });
+  return words;
+}
+// an empty pair of brackets — a form's tick space "( )", "[ ]" — is read as one tiny word "()" or "(_)" with the box of
+// one bracket only, so the other bracket stayed on the scan and the text was squeezed into the one bracket's room
+// ("of ( ) physical" came out "of    ()physical"). The print shows where the other bracket is: the nearest tall, thin
+// mark beside it, before the next word. The word becomes "( )" over both.
+function khzOcrPairs(words, gray, W, H) {
+  if (!gray) return words;
+  const pair = /^([(\[{])[_\s]*([)\]}])$/;
+  words.forEach(w => {
+    const m = pair.exec(String(w.text || '').trim()); if (!m || !w.bbox) return;
+    const b = w.bbox, h = b.y1 - b.y0; if (h < 6 || b.x1 - b.x0 > 0.9 * h) return;   // (already as wide as a pair)
+    const y0 = Math.max(0, Math.floor(b.y0)), y1 = Math.min(H, Math.ceil(b.y1));
+    let mn = 255, mx = 0; for (let y = y0; y < y1; y++) for (let x = Math.max(0, Math.floor(b.x0 - 2 * h)); x < Math.min(W, Math.ceil(b.x1 + 2 * h)); x++) { const v = gray[y * W + x]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 60) return;
+    const thr = (mx + mn) / 2, ink = x => { let n = 0; for (let y = y0; y < y1; y++) if (gray[y * W + x] < thr) n++; return n; };
+    // (the words beside it on its line: the search stops at them)
+    const cy = (b.y0 + b.y1) / 2, near = words.filter(o => o !== w && o.bbox && Math.abs((o.bbox.y0 + o.bbox.y1) / 2 - cy) < 0.6 * h);
+    const leftStop = Math.max(0, ...near.filter(o => o.bbox.x1 <= b.x0 + 1).map(o => o.bbox.x1));
+    const rightStop = Math.min(W, ...near.filter(o => o.bbox.x0 >= b.x1 - 1).map(o => o.bbox.x0));
+    // a run of inked columns, tall (most of the box's height) and thin, between the stops
+    const find = (from, to, step) => { let a = -1, z = -1;
+      for (let x = from; step > 0 ? x < to : x > to; x += step) { const n = ink(x); if (n >= 0.55 * (y1 - y0)) { if (a < 0) a = x; z = x; } else if (a >= 0) break; }
+      return a >= 0 && Math.abs(z - a) <= 0.45 * h ? [Math.min(a, z), Math.max(a, z)] : null; };
+    // which bracket the box holds: the side of the box its ink leans to tells little, so look both ways — the other
+    // bracket is the nearer tall mark (a closing one sits to the right of an opening one)
+    // (the bracket may sit inside the next word's box — "online" read from the ")" before it — when a gap follows it there)
+    const L = find(Math.floor(b.x0) - 2, Math.max(0, Math.floor(Math.max(leftStop - 0.8 * h, b.x0 - 1.6 * h))), -1);
+    const R = find(Math.ceil(b.x1) + 2, Math.min(W - 1, Math.ceil(Math.min(rightStop + 0.8 * h, b.x1 + 1.6 * h))), 1);
+    // (past the bracket's own thin ends, a clear gap before the word's letters)
+    const gapAfter = (run, step) => { let x = step > 0 ? run[1] + 1 : run[0] - 1, k = 0; while (k < 0.3 * h && x > 0 && x < W - 1 && ink(x)) { x += step; k++; }
+      let e = 0; for (let j = 0; j < 4 && x >= 0 && x < W; x += step, j++) if (!ink(x)) e++; return e >= 2; };
+    const ok = (run, step) => run && ((step > 0 ? run[1] < rightStop : run[0] > leftStop) || gapAfter(run, step));
+    const L2 = ok(L, -1) ? L : null, R2 = ok(R, 1) ? R : null;
+    // (which bracket the box holds, from its shape: an opening one bows out to the left at its middle, a closing one to
+    // the right — the other one is on that side)
+    const shape = (() => { const xs0 = Math.max(0, Math.floor(b.x0)), xs1 = Math.min(W, Math.ceil(b.x1)), rowX = y => { let s = 0, n = 0; for (let x = xs0; x < xs1; x++) if (gray[y * W + x] < thr) { s += x; n++; } return n ? s / n : NaN; };
+      const mid = rowX(Math.round((y0 + y1) / 2)), ends = [rowX(y0 + Math.round(0.15 * (y1 - y0))), rowX(y1 - 1 - Math.round(0.15 * (y1 - y0)))].filter(Number.isFinite);
+      if (!Number.isFinite(mid) || !ends.length) return 0; const e = ends.reduce((p, q) => p + q, 0) / ends.length; return mid < e - 0.5 ? -1 : mid > e + 0.5 ? 1 : 0; })();
+    const pick = shape < 0 ? R2 : shape > 0 ? L2 : L2 && R2 ? (Math.floor(b.x0) - L2[1] <= R2[0] - Math.ceil(b.x1) ? L2 : R2) : L2 || R2;
+    if (!pick) return;
+    w.text = m[1] + ' ' + m[2];
+    w.bbox = { ...b, x0: Math.min(b.x0, pick[0]), x1: Math.max(b.x1, pick[1] + 1) };
+    // (and the word it was inside gives it up)
+    near.forEach(o => { if (pick === R2 && o.bbox.x0 <= pick[1] && o.bbox.x1 > pick[1] + 2 && o.bbox.x0 >= b.x1 - 1) { let x = pick[1] + 1; while (x < o.bbox.x1 && !ink(x)) x++; o.bbox = { ...o.bbox, x0: x }; }
+      if (pick === L2 && o.bbox.x1 >= pick[0] && o.bbox.x0 < pick[0] - 2 && o.bbox.x1 <= b.x0 + 1) { let x = pick[0] - 1; while (x > o.bbox.x0 && !ink(x)) x--; o.bbox = { ...o.bbox, x1: x + 1 }; } });
+  });
+  // an opening bracket read as the end of the word before it ("of(" then ")" — the readers put the "(" of an empty "( )"
+  // with the word before it): the bracket goes back to the closing one, as "( )" over both
+  const open = { '(': ')', '[': ']', '{': '}' };
+  words.slice().forEach(w => {
+    const t = String(w.text || ''), m = /^(.*[A-Za-z0-9.,:;'’])([(\[{])$/.exec(t); if (!m || !w.bbox) return;
+    const b = w.bbox, h = b.y1 - b.y0, cy = (b.y0 + b.y1) / 2;
+    const nx = words.filter(o => o !== w && o.bbox && o.bbox.x0 >= b.x1 - 2 && Math.abs((o.bbox.y0 + o.bbox.y1) / 2 - cy) < 0.6 * Math.max(h, o.bbox.y1 - o.bbox.y0)).sort((p, q) => p.bbox.x0 - q.bbox.x0)[0];
+    if (!nx || String(nx.text || '')[0] !== open[m[2]]) return;
+    const H0 = Math.max(h, nx.bbox.y1 - nx.bbox.y0), y0 = Math.max(0, Math.floor(Math.min(b.y0, nx.bbox.y0))), y1 = Math.min(H, Math.ceil(Math.max(b.y1, nx.bbox.y1)));
+    let mn = 255, mx = 0; for (let y = y0; y < y1; y++) for (let x = Math.max(0, Math.floor(b.x0)); x < Math.min(W, Math.ceil(nx.bbox.x1)); x++) { const v = gray[y * W + x]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 60) return;
+    const thr = (mx + mn) / 2, ink = x => { let n = 0; for (let y = y0; y < y1; y++) if (gray[y * W + x] < thr) n++; return n; };
+    // (the opening bracket: the nearest tall thin mark left of the closing one; the word's own letters end before it)
+    let a = -1, z = -1;
+    for (let x = Math.floor(nx.bbox.x0) - 1; x > b.x0; x--) { const n = ink(x); if (n >= 0.55 * (y1 - y0)) { if (z < 0) z = x; a = x; } else if (z >= 0) break; }
+    if (z < 0 || z - a > 0.45 * H0) return;
+    let e = a - 1; while (e > b.x0 && ink(e)) e--; while (e > b.x0 && !ink(e)) e--;
+    if (e <= b.x0) return;
+    w.text = m[1]; w.bbox = { ...b, x1: e + 1 };
+    if (nx.text.length === 1) { nx.text = m[2] + ' ' + nx.text; nx.bbox = { ...nx.bbox, x0: a }; }
+    else {   // (")physical": the pair is a word of its own, the rest keeps its own)
+      let c1 = Math.ceil(nx.bbox.x0); while (c1 < nx.bbox.x1 && !ink(c1)) c1++; while (c1 < nx.bbox.x1 && ink(c1)) c1++;
+      let r0 = c1; while (r0 < nx.bbox.x1 && !ink(r0)) r0++;
+      if (r0 >= nx.bbox.x1) return;
+      const pairW = { ...nx, text: m[2] + ' ' + nx.text[0], bbox: { ...nx.bbox, x0: a, x1: c1 } };
+      nx.text = nx.text.slice(1); nx.bbox = { ...nx.bbox, x0: r0 };
+      words.push(pairW); if (nx.line && nx.line.words) nx.line.words.push(pairW);
+    }
   });
   return words;
 }
@@ -16545,7 +16642,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1702';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.1705';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -16835,6 +16932,9 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.1705', ['Developer Mode \u203a Compare readers: the open page read with and without the system\u2019s own OCR (Windows\u2019 or Apple\u2019s, which KHZ asks for a second opinion), timed twice each, with the words that differ \u2014 and, on the C of C registration scan, how many words each got right. The result goes in the developer report.']],
+  ['2026.10.1704', ['Recognize Text: an opening bracket read as the end of the word before it (\u201cof(\u201d then \u201c)\u201d) goes back with its pair \u2014 \u201cof ( ) physical\u201d stays one line in Edit PDF instead of breaking into pieces at different heights.']],
+  ['2026.10.1703', ['Edit PDF: a text box made wider re-flows its lines as before; pulled back to the width it had, it snaps there and every line is back where it was, with its spacing.', 'Recognized scans: a table row cut into several cells (\u201cMini Split | 1 ton \u00b7 12k | CU: \u2026 | Heat: \u2026\u201d) keeps each cell its own box, like Acrobat.', 'Recognize Text: an empty pair of brackets \u2014 a form\u2019s \u201c( )\u201d \u2014 is read as \u201c( )\u201d over both brackets (it came out \u201c()\u201d squeezed into one bracket, and the other stayed on the scan).']],
   ['2026.10.1702', ['Edit PDF on a recognized scan groups text like Acrobat\u2019s converted pages: a heading and the reference beside it are one box, the lines of a column (labels, the site address, a note under its row) are one box; values stay one per line. Each part keeps its own colour, weight, size and letter spacing when you type. Preferences \u203a Content Editing \u203a Recognized Text turns it off.', 'Display themes: the selected tool always shows \u2014 where a theme\u2019s accent is too close to its icons (Gunmetal, Barbie, Nord, Stone, Ice, Bumblebee\u2019s yellow toolbar\u2026) it\u2019s a solid tile.']],
   ['2026.10.1701', ['Recognize Text / Edit PDF on a scan: bold print stays bold (\u201cService Demand\u201d, the totals) \u2014 it all came out plain.', 'The phase sign is recognized: \u201c1\u03c6\u201d / \u201c3\u03a6\u201d (and \u00d8) were read as \u201c10\u201d, \u201c30\u201d.', 'Letters Helvetica doesn\u2019t have (Greek, \u03c6) are written in a font that has them \u2014 they came out \u201c?\u201d.', '\u201c100 A\u201d keeps its space (was \u201c100A\u201d).', 'Recognize Text as a searchable image keeps each word\u2019s colour and weight, so editing it in Edit PDF later shows them as printed (a line came out all one colour and weight).']],
   ['2026.10.1607', ['Recognize Text / Edit PDF on a scan: a line with brackets or @ in it (\u201cDemand (first 10k@100%, rest@40%)\u201d, \u201c(NEC 220.61)\u201d) is the size it\u2019s printed \u2014 it came out about a third bigger and squeezed narrower.']],
@@ -55163,7 +55263,7 @@ function khzDevPanel() {
       <select class="kdv-settle">${[['', 'Normal (' + khzZoomSettleMs + ' ms)'], ['0', '0 ms'], ['40', '40 ms'], ['140', '140 ms'], ['300', '300 ms']].map(([v, l]) => `<option value="${v}" ${st === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <div class="kdv-g">Recent</div><div class="kdv-log"></div>
       <div class="kdv-dim" style="margin-top:5px">Press <b>F9</b> when something looks wrong: the moment is marked in the report.</div>
-      <div class="kdv-btns"><button class="kdv-test" title="Checks each part of KHZ PDF on this computer: reading, drawing and saving PDFs, files, printers, Recognize Text and more. Results go in the report.">Test everything</button><button class="kdv-info">This document…</button><button class="kdv-copy">Copy report</button><button class="kdv-save">Save report…</button><button class="kdv-clear">Clear logs</button></div>
+      <div class="kdv-btns"><button class="kdv-test" title="Checks each part of KHZ PDF on this computer: reading, drawing and saving PDFs, files, printers, Recognize Text and more. Results go in the report.">Test everything</button><button class="kdv-cmpread" title="Reads the open page twice — with and without the system’s own OCR (Windows’ or Apple’s) — and shows how long each took, which words differ and, on a page KHZ knows the right text of, how many words each got right.">Compare readers</button><button class="kdv-info">This document…</button><button class="kdv-copy">Copy report</button><button class="kdv-save">Save report…</button><button class="kdv-clear">Clear logs</button></div>
     </div>`;
   document.body.appendChild(p);
   p.style.zIndex = topZ();
@@ -55172,6 +55272,7 @@ function khzDevPanel() {
   p.querySelectorAll('input[name=kdv-eng]').forEach(r => r.onchange = () => khzDevEngine(r.value));
   p.querySelector('.kdv-settle').onchange = e => { khzDev.settle = e.target.value; khzDevSettle(); };
   p.querySelector('.kdv-test').onclick = () => khzSelfTestShow();
+  p.querySelector('.kdv-cmpread').onclick = () => khzOcrCompareReaders();
   p.querySelector('.kdv-info').onclick = () => esDialog('khz-dev-info', 'This document', `<pre class="kdv-pre">${escapeHtml(khzDevInfo())}</pre>`, [{ label: 'Close', primary: true }], 640);
   p.querySelector('.kdv-copy').onclick = async () => { try { await khzCopyText(khzDevReport()); toast('Developer report copied.'); } catch (e) { toast('Could not copy: ' + (e.message || e)); } };
   p.querySelector('.kdv-save').onclick = async () => downloadBlob(new Blob([await khzDevReport()], { type: 'text/plain' }), `KHZ PDF developer report ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`);
@@ -55565,6 +55666,7 @@ async function khzDevReport() {
   const stalls = khzDevPerf.long.slice(-30); if (stalls.length) L.push('', 'Main-thread stalls (last 30):', '  ' + stalls.map(s => `${t(s.at)} ${s.ms} ms`).join(', '));
   if (typeof khzOcrStats !== 'undefined' && khzOcrStats.length) L.push('', `Text recognition timings (ms; ${khzOcrStats.length}):`, ...khzOcrStats.map(x => '  ' + Object.entries(x).map(([k, v]) => k + ' ' + (typeof v === 'object' && v ? JSON.stringify(v) : v)).join(' · ')));
   if (typeof khzSelfTestLast !== 'undefined' && khzSelfTestLast) L.push('', ...khzSelfTestText());
+  if (typeof khzOcrCompareLast !== 'undefined' && khzOcrCompareLast) L.push('', 'Compare readers:', ...khzOcrCompareLast.map(x => '  ' + x));
   L.push('', `Warnings and errors (${khzDev.problems.length}):`, ...khzDev.problems.map(p => `  ${p.t} ${p.level}: ${p.text}`));
   return L.join('\n');
 }
@@ -58435,7 +58537,7 @@ function khzOcrKey(gray, W, H, k, lang, useAi) {
   let h = 2166136261 >>> 0;
   const step = Math.max(1, Math.floor(gray.length / 400000)) | 1;
   for (let i = 0; i < gray.length; i += step) { h ^= gray[i]; h = Math.imul(h, 16777619) >>> 0; }
-  return [W, H, k.toFixed(4), lang, useAi ? 1 : 0, h.toString(36), gray.length].join(':');
+  return [W, H, k.toFixed(4), lang, useAi ? 1 : 0, khzOcrSysVote() === false ? 'nv' : 'v', h.toString(36), gray.length].join(':');
 }
 function khzOcrReadings(c, k, gray, o) {
   const key = khzOcrKey(gray, c.width, c.height, k, o.lang, o.useAi);
@@ -59040,6 +59142,124 @@ if (window.khzDesktop && window.khzDesktop.onUpdate) window.khzDesktop.onUpdate(
 @media print{#khz-upd{display:none}}`;
   document.head.appendChild(css);
 })();
+// ================================================================
+//  The system's own OCR as a third reader (Windows' built-in OCR, Apple's on a Mac; ocrplus asks it for a second
+//  opinion on each page) — and Developer Mode › Compare readers: the open page read with and without it, how long each
+//  took and which words differ (and, on a page KHZ knows the right text of, how many words each got right).
+//  The system's OCR comes with the computer and differs from one computer to the next (Windows version, updates,
+//  language packs): two PCs read the same scan differently through it. The AI reader and Tesseract ship inside KHZ.
+// ================================================================
+// whether the system's OCR votes: undefined — as ocrplus does by itself (on where the computer has one); false — off.
+// (Compare readers sets it for its two readings.)
+let khzOcrVoteForce;
+function khzOcrSysVote() { return khzOcrVoteForce; }
+
+// the right text of pages KHZ has been tested on (to count right words): recognised by words only they have
+const KHZ_OCR_REFS = [
+  { name: 'C of C registration (City of Punta Gorda)', has: ['Qualifier’s', 'Notarization', 'Punta'], text: `CITY OF PUNTA GORDA
+Contractor Registration
+This Document Must Be Legibly Printed or Typed
+326 W. Marion Ave.
+Punta Gorda, FL 33950
+941-575-3324
+licensing@pgorda.us
+Provide the following with this completed form:
+Copy of your current State License or current County/City issued Certificate of Competency
+General Liability insurance certificate naming the City of Punta Gorda as the certificate holder
+Work Comp insurance certificate naming the City of Punta Gorda as the certificate holder or
+Worker’s Comp exemption card
+Clear copy of current Florida State Driver’s License or ID Card
+Check or Money Order in the amount of $100.00 (Applies to State Registered, Specialty and LP Gas Contractors only)
+Qualifier’s Name: Trade:
+Business Name: Telephone:
+Business Address:
+E-Mail Address:
+Qualifier’s Certification: (Please read prior to signing)
+I hereby apply for or renew a City of Punta Gorda Certificate of Competency in the above named trade. I will abide by
+the regulations adopted by the City of Punta Gorda regarding Certificates of Competency and will not allow my Certificate to be
+used by other persons or firms. I will be actively engaged in all work authorized under my Certificate of Competency and will
+supervise work at the job site. I certify all submitted information is true. I understand that this Certificate of Competency can be
+revoked if there has been any falsification of submitted information on this application.
+Qualifier’s Signature Qualifier’s Printed Name Date Signed
+Acknowledged before me by means of ( ) physical presence or ( ) online notarization this day of , 20 , by
+who is personally known to me or who has produced
+as identification.
+Signature of Notary Public-State of Florida Notary Seal:
+Attach a copy of current Florida State Driver’s License or ID Card below Office Use Only:
+Code:
+Copy of Local License/Certificate:
+General Liability Certificate:
+Work Comp Certificate:
+Work Comp Exemption:
+Copy of FL Driver’s License/ID Card:
+Payment Amount:
+Check Number:` },
+];
+// words compared as written, with ’/' and “”/" alike, lines of underscores and table rules dropped
+function khzOcrTokens(t) {
+  return String(t).replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/_+/g, ' ').replace(/\(\s+\)/g, '()').split(/\s+/).filter(w => w && !/^[|¦]+$/.test(w));
+}
+// how many of the right words a reading has (each word counted as often as it's on the page), and the extra ones
+function khzOcrScore(got, ref) {
+  const need = new Map(); ref.forEach(w => need.set(w, (need.get(w) || 0) + 1));
+  let right = 0; const extra = [];
+  got.forEach(w => { const n = need.get(w) || 0; if (n) { right++; need.set(w, n - 1); } else extra.push(w); });
+  const missed = []; need.forEach((n, w) => { for (let i = 0; i < n; i++) missed.push(w); });
+  return { right, total: ref.length, extra, missed };
+}
+async function khzOcrCompareReaders() {
+  if (!state.pdfDoc) { alert('Open the scan to compare on first.'); return; }
+  if (!(window.khzDesktop && window.khzDesktop.ocrRecognize)) { alert('Compare readers needs the desktop app.'); return; }
+  esDialog('khz-cmpread', 'Compare readers', `<div id="khz-cmpread-live" class="kdv-dim">Reading page ${state.currentPage} twice…</div><pre class="kdv-pre" id="khz-cmpread-out" style="display:none"></pre>`, [{ label: 'Close', primary: true }], 760);
+  const live = () => document.querySelector('#khz-cmpread-live'), out = () => document.querySelector('#khz-cmpread-out');
+  const n = state.currentPage, bytes = await buildOutputBytes({ commitOnly: true }), runs = [];
+  try {
+    // (a first reading that isn't timed: the engines started and warmed up, so neither timed one pays for that)
+    if (live()) live().textContent = `Reading page ${n}: getting the engines ready…`;
+    khzOcrVoteForce = undefined; await khzOcrRead({ pages: [n], bytes, lang: 'eng', mode: 'searchable', dpi: 300, progress: () => {}, stop: () => false });
+    if (typeof khzOcrReadCache !== 'undefined') khzOcrReadCache.clear();
+    // (each way read twice, taking turns, and the times averaged: one reading's time wobbles with whatever else the
+    // computer is doing)
+    const kinds = [['With the system’s OCR (as now)', undefined], ['Without the system’s OCR', false]];
+    kinds.forEach(([label]) => runs.push({ label, ms: [], tess: [], words: null }));
+    for (let round = 0; round < 2; round++) for (let i = 0; i < kinds.length; i++) {
+      const [label, v] = kinds[i];
+      if (typeof khzOcrReadCache !== 'undefined') khzOcrReadCache.clear();   // (each reading done afresh)
+      if (live()) live().textContent = `Reading page ${n}: ${label.toLowerCase()} (${round + 1} of 2)…`;
+      khzOcrVoteForce = v;
+      const t0 = performance.now();
+      const r = await khzOcrRead({ pages: [n], bytes, lang: 'eng', mode: 'searchable', dpi: 300, progress: () => {}, stop: () => false });
+      const R = runs[i]; R.ms.push(Math.round(performance.now() - t0));
+      const st = khzOcrStats[khzOcrStats.length - 1] || {}; R.tess.push(st.tesseract || 0);
+      const res = r && r.results && r.results[0], words = [];
+      if (res) res.lines.forEach(L => (L.list || []).forEach(p => words.push(p.txt)));
+      if (!R.words) R.words = khzOcrTokens(words.join(' '));
+    }
+    const avg = a => Math.round(a.reduce((p, q) => p + q, 0) / a.length);
+    runs.forEach(R => { R.msAll = R.ms; R.ms = avg(R.ms); R.tessAll = R.tess; R.tess = avg(R.tess); });
+  } catch (e) { if (out()) { out().textContent = 'Stopped: ' + (e.message || e) + (window.khzDev && e.stack ? '\n' + e.stack : ''); out().style.display = ''; } console.warn('compare readers', e); return; }
+  finally { khzOcrVoteForce = undefined; }
+  const [A, B] = runs, L = [];
+  const all = khzOcrTokens(A.words.join(' ') + ' ' + B.words.join(' ')), ref = KHZ_OCR_REFS.find(R => R.has.every(w => all.some(x => x.toLowerCase() === khzOcrTokens(w)[0].toLowerCase())));
+  L.push(`Page ${n} of ${state.fileName || 'document'} · ${navigator.platform}`);
+  runs.forEach(R => L.push(`${R.label}: ${(R.ms / 1000).toFixed(2)} s a page (${R.msAll.map(x => (x / 1000).toFixed(2)).join(' and ')} s) · its Tesseract part, where the system's OCR runs: ${(R.tess / 1000).toFixed(2)} s (${R.tessAll.map(x => (x / 1000).toFixed(2)).join(' and ')} s) · ${R.words.length} words`));
+  L.push(`Without the system's OCR the page takes ${A.ms - B.ms >= 0 ? (A.ms - B.ms) + ' ms less' : (B.ms - A.ms) + ' ms more'}; its Tesseract part ${A.tess - B.tess >= 0 ? (A.tess - B.tess) + ' ms less' : (B.tess - A.tess) + ' ms more'} (the AI reader is the same both ways)`);
+  if (ref) {
+    const rt = khzOcrTokens(ref.text);
+    L.push('', `Right words (this page's right text is known: ${ref.name}, ${rt.length} words):`);
+    runs.forEach(R => { const s = khzOcrScore(R.words, rt); L.push(`  ${R.label}: ${s.right} of ${s.total} right (${(100 * s.right / s.total).toFixed(1)} %) · ${s.extra.length} extra`);
+      if (s.missed.length) L.push(`    missed: ${s.missed.slice(0, 40).join('  ')}`); if (s.extra.length) L.push(`    extra: ${s.extra.slice(0, 40).join('  ')}`); });
+  } else L.push('', '(This page isn’t one KHZ knows the right text of, so only the differences are shown.)');
+  // the words one reading has and the other hasn't
+  const d = khzOcrScore(B.words, A.words);
+  L.push('', `Differences: ${d.extra.length + d.missed.length ? '' : 'none — the same words both ways'}`);
+  if (d.missed.length) L.push(`  only with the system's OCR: ${d.missed.slice(0, 60).join('  ')}`);
+  if (d.extra.length) L.push(`  only without it: ${d.extra.slice(0, 60).join('  ')}`);
+  khzOcrCompareLast = L;
+  if (live()) live().textContent = 'Done — this is also in the developer report.';
+  if (out()) { out().textContent = L.join('\n'); out().style.display = ''; }
+}
+let khzOcrCompareLast = null;
 </script>
 </body>
 </html>
