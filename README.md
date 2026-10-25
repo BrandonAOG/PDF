@@ -15,20 +15,29 @@
 
 From the [latest release](https://github.com/BrandonAOG/PDF/releases/latest):
 
-| | File | |
-|---|---|---|
-| **Windows** | `KHZ-PDF-Tauri-Setup.exe` | Recommended |
-| **Mac, Apple M chip** | `KHZ-PDF-Tauri-Mac-M-chip-<version>.zip` | Recommended |
-| **Mac, Intel** | `KHZ-PDF-Tauri-Mac-Intel-<version>.zip` | Recommended |
-| Windows (classic app) | `KHZ-PDF-Setup-<version>.exe` | |
-| Mac (classic app) | `KHZ PDF for Mac (arm64).zip` / `(intel).zip` | |
+| Computer | File |
+|---|---|
+| **Windows** | `KHZ-PDF-Tauri-Setup.exe` |
+| **Mac, Apple M chip** | `KHZ-PDF-Tauri-Mac-M-chip-<version>.zip` |
+| **Mac, Intel** | `KHZ-PDF-Tauri-Mac-Intel-<version>.zip` |
 
-**KHZ PDF Tauri** is the newer desktop app: a smaller download that uses less memory. The classic app (Electron) works the same way. Both update themselves.
+The `…update-only….app.tar.gz` and `latest-tauri.json` files on the release are for the app's own automatic updates. You don't need to download them.
 
-- **Windows:** if Windows says "Windows protected your PC", click **More info**, then **Run anyway**.
-- **Mac:** not sure which Mac you have? Apple menu › About This Mac. Unzip the file and move the app to Applications. The first time you open it, right-click it and choose **Open**, then **Open** again (it isn't from the App Store).
+- **Windows:** run the setup. If Windows says "Windows protected your PC", click **More info**, then **Run anyway**.
+- **Mac:** not sure which Mac you have? Apple menu › About This Mac (Chip: Apple M… or Processor: Intel). Unzip the file and move **KHZ PDF Tauri** to Applications. The first time you open it, right-click it and choose **Open**, then **Open** again (it isn't from the App Store).
 
-No install needed for the web version: open **https://brandonaog.github.io/PDF/** in Chrome, Edge, Safari or Firefox. In Chrome or Edge, click the install icon in the address bar to keep it as an app.
+**Updates are automatic.** KHZ PDF checks this page when it opens and installs a new version when you say yes. Help › About KHZ PDF shows the version you have.
+
+**Web version, no install:** open **https://brandonaog.github.io/PDF/** in Chrome, Edge, Safari or Firefox. In Chrome or Edge, click the install icon in the address bar to keep it as an app.
+
+### Coming from the old "KHZ PDF" app?
+
+The original desktop app (built on Electron, files named `KHZ-PDF-Setup-….exe` and `KHZ PDF for Mac (…).zip`) is discontinued and no longer updated. Install **KHZ PDF Tauri** from the table above, then uninstall the old app:
+
+- **Windows:** Settings › Apps › Installed apps › KHZ PDF › Uninstall.
+- **Mac:** drag the old **KHZ PDF** app from Applications to the Trash.
+
+Your PDF files aren't affected.
 
 ## What it does
 
@@ -52,11 +61,11 @@ No server, no account, no tracking. Files are opened and edited on your own comp
 
 ## Text recognition
 
-The desktop app reads a scanned page with two engines that ship inside KHZ PDF, **Tesseract** and an **AI reader** (PaddleOCR). Where they disagree, the likelier word wins. On Windows and Mac, the computer's own OCR is asked for a second opinion too. Everything runs on your computer, offline. The web version uses Tesseract.
+The desktop app reads a scanned page with two engines that ship inside KHZ PDF, **Tesseract** and an **AI reader** (PaddleOCR). Where they disagree, the likelier word wins. The computer's own OCR (Windows' or Apple's) can be asked for a second opinion too; it is off by default, and when turned on (Developer Mode) it only breaks ties between the two. Everything runs on your computer, offline. The web version uses Tesseract.
 
 ## Built with
 
-PDF.js, pdf-lib (Cantoo) and fontkit, PDFium, Little CMS, qpdf, node-forge, Tesseract (Leptonica, tessdata_best), PaddleOCR PP-OCRv5 on ONNX Runtime, SheetJS, mammoth, PptxGenJS, JSZip, Typo.js, bwip-js, polygon-clipping, the PdfCraft accessibility rules, veraPDF, Tabula with Apache PDFBox, Eclipse Temurin, Nodemailer, word-list (SCOWL), Koffi, and the Arimo, Tinos, Cousine and Carlito fonts. The desktop apps are built with [Tauri](https://tauri.app/) (Rust, WebView2 / WebKit) and [Electron](https://www.electronjs.org/) with electron-updater.
+PDF.js, pdf-lib (Cantoo) and fontkit, PDFium, Little CMS, qpdf, node-forge, Tesseract (Leptonica, tessdata_best), PaddleOCR PP-OCRv6 on ONNX Runtime, SheetJS, mammoth, PptxGenJS, JSZip, Typo.js, bwip-js, polygon-clipping, the PdfCraft accessibility rules, veraPDF, Tabula with Apache PDFBox, Eclipse Temurin, Nodemailer, word-list (SCOWL), Koffi, and the Arimo, Tinos, Cousine and Carlito fonts. The desktop app is built with [Tauri](https://tauri.app/) (Rust, WebView2 / WebKit).
 
 Every component, with its version and license, is listed in **Help › About Plug-Ins**.
 
