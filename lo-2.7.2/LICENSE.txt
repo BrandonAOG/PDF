@@ -1,1 +1,5 @@
-LibreOffice MPL-2.0
+LibreOffice compiled to WebAssembly — @matbee/libreoffice-converter 2.7.2
+Licensed under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/), as LibreOffice is.
+Source: https://github.com/matbeedotcom/libreoffice-document-converter and https://www.libreoffice.org/about-us/source-code/
+The two big files (soffice.wasm, soffice.data) are stored gzip-compressed in parts (.gz.0, .gz.1, …); KHZ PDF joins
+and uncompresses them in the browser.
