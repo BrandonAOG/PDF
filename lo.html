@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KHZ PDF — LibreOffice</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<style>
+  body { margin: 0; background: #1e1e1e; color: #ddd; font: 14px "Segoe UI", Arial, sans-serif; display: flex; height: 100vh; align-items: center; justify-content: center; text-align: center; }
+  .b { max-width: 380px; padding: 16px; } .t { font-weight: 600; margin-bottom: 8px; } .s { color: #aaa; }
+</style>
+</head>
+<body>
+<div class="b"><div class="t">KHZ PDF — converting with LibreOffice</div><div class="s" id="s">Getting ready…</div></div>
+<script>
+// (2709) The small window KHZ PDF opens to turn Office files into PDFs where its own page can't run LibreOffice (Safari,
+// or before the offline helper is installed). The offline helper (sw.js) makes this page "cross-origin isolated", which
+// LibreOffice needs; the first time, the page installs the helper and reloads itself. Talks to KHZ PDF over a
+// BroadcastChannel and closes itself a minute after its last file.
+const BASE = new URL('lo-2.7.2/', location.href).href, say = t => { document.getElementById('s').textContent = t; };
+const ch = new BroadcastChannel('khz-lo');
+let conv = null, idle = null;
+async function parts(file, n, onBytes) {
+  const list = [];
+  for (let i = 0; i < n; i++) { const r = await fetch(BASE + file + '.gz.' + i); if (!r.ok) throw new Error('LibreOffice could not be downloaded (' + r.status + ').'); list.push(await r.arrayBuffer()); onBytes(list.reduce((a, p) => a + p.byteLength, 0)); }
+  const ds = new Blob(list).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Blob([await new Response(ds).arrayBuffer()], { type: file.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream' });
+}
+async function start() {
+  let a = 0, b = 0; const show = () => say(`Downloading LibreOffice (first time only): ${Math.round((a + b) / 1e6)} of 77 MB…`);
+  const [wasm, data] = await Promise.all([parts('soffice.wasm', 3, x => { a = x; show(); }), parts('soffice.data', 2, x => { b = x; show(); })]);
+  say('Starting LibreOffice…');
+  const m = await import(BASE + 'browser.js');
+  const c = new m.WorkerBrowserConverter({ sofficeJs: BASE + 'soffice.js', sofficeWorkerJs: BASE + 'soffice.worker.js', browserWorkerJs: BASE + 'browser.worker.global.js', sofficeWasm: URL.createObjectURL(wasm), sofficeData: URL.createObjectURL(data) });
+  await c.initialize();
+  return c;
+}
+(async () => {
+  if (!self.crossOriginIsolated) {
+    if (!('serviceWorker' in navigator)) { say('This browser can’t run LibreOffice. Use the KHZ PDF app for Office files.'); return; }
+    if (sessionStorage.getItem('khz-lo-reloaded')) { say('This browser can’t run LibreOffice here. Use the KHZ PDF app for Office files.'); ch.postMessage({ type: 'error', id: '*', error: 'This browser can’t run LibreOffice.' }); return; }
+    say('Installing the offline helper…');
+    await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+    sessionStorage.setItem('khz-lo-reloaded', '1'); location.reload(); return;
+  }
+  sessionStorage.removeItem('khz-lo-reloaded');
+  let jobs = Promise.resolve();
+  ch.onmessage = e => {
+    const m = e.data || {};
+    if (m.type === 'hello') ch.postMessage({ type: 'ready' });
+    if (m.type !== 'convert') return;
+    clearTimeout(idle);
+    jobs = jobs.then(async () => {
+      try {
+        if (!conv) conv = start();
+        const c = await conv;
+        say(`Converting ${m.name}…`); ch.postMessage({ type: 'progress', id: m.id, text: `Converting ${m.name} with LibreOffice…` });
+        const r = await c.convert(new Uint8Array(m.bytes), { outputFormat: 'pdf' }, m.name);
+        const pdf = new Uint8Array(r.data || r);
+        ch.postMessage({ type: 'result', id: m.id, pdf }, );
+        say(`Done: ${m.name}`);
+      } catch (er) { conv = null; ch.postMessage({ type: 'error', id: m.id, error: String(er && er.message || er) }); say('Could not convert: ' + (er && er.message || er)); }
+      idle = setTimeout(() => window.close(), 60000);
+    });
+  };
+  ch.postMessage({ type: 'ready' });
+  say('Ready.');
+})();
+</script>
+</body>
+</html>

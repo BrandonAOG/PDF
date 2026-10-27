@@ -1,8 +1,9 @@
 // KHZ PDF offline support. Change VERSION when you upload a new khz-pdf.html to refresh the saved copy sooner.
-const VERSION = 'khz-pdf-v6';
+const VERSION = 'khz-pdf-v7';
 // libraries keep their version in the address, so they live in their own cache that survives app updates
 const LIBCACHE = 'khz-pdf-libs';
-const SHELL = ['./', './khz-pdf.html', './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
+const LOCACHE = 'khz-pdf-libreoffice';
+const SHELL = ['./', './khz-pdf.html', './index.html', './lo.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 const LIBS = [
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/legacy/build/pdf.worker.min.mjs',
   'https://cdn.jsdelivr.net/npm/@cantoo/pdf-lib@2.11.1/dist/pdf-lib.min.js',
@@ -49,7 +50,7 @@ self.addEventListener('install', e => {
   ]).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== LIBCACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== LIBCACHE && k !== LOCACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())
     .then(() => saveMissing(LIBCACHE, EXTRA)));
 });
 self.addEventListener('fetch', e => {
@@ -65,9 +66,29 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (new URL(url).origin !== location.origin) return;
+  // LibreOffice (lo-<version>/): big, never changes under its folder name — saved the first time it's used
+  if (/\/lo-[\d.]+\//.test(url)) {
+    e.respondWith(caches.open(LOCACHE).then(c => c.match(req).then(hit => hit || fetch(req).then(res => { if (res && res.ok) c.put(req, res.clone()); return res; }))).then(iso));
+    return;
+  }
   // the app itself: newest from the web when online, saved copy when offline
   e.respondWith(fetch(req).then(res => {
     if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
     return res;
-  }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? caches.match('./khz-pdf.html') : undefined))));
+  }).catch(() => caches.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? caches.match('./khz-pdf.html') : undefined))).then(iso));
 });
+// (2709) "Cross-origin isolated" pages: LibreOffice's threads need it (Office files to PDF). GitHub Pages can't send these
+// headers, so this helper adds them to the site's own pages and scripts. COEP "credentialless" lets the libraries from
+// the CDNs load as before; Safari doesn't support it, so there the page stays as it was and the small LibreOffice window
+// (lo.html, which loads only the site's own files) is isolated instead.
+const SAFARI = /Safari\//.test(self.navigator.userAgent) && !/Chrome|Chromium|Edg|Firefox|OPR/.test(self.navigator.userAgent);
+function iso(res) {
+  if (!res || res.status === 0 || res.type === 'opaque' || res.type === 'opaqueredirect') return res;
+  const lo = /\/lo\.html(\?|$)|\/lo-[\d.]+\//.test(res.url || '');
+  if (SAFARI && !lo) return res;
+  const h = new Headers(res.headers);
+  h.set('Cross-Origin-Embedder-Policy', SAFARI ? 'require-corp' : 'credentialless');
+  h.set('Cross-Origin-Opener-Policy', 'same-origin');
+  h.set('Cross-Origin-Resource-Policy', 'same-origin');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
