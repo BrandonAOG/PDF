@@ -2446,7 +2446,7 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
         </div>
         <div class="fp-row">
           <span class="fp-lab" title="Horizontal scaling (%)"><span class="ic" data-ic="hscale"></span></span><select id="fp-hscale" class="fp-sel sm" onchange="fpHScale(+this.value)" title="Horizontal scaling"></select>
-          <span class="fp-lab" title="Character spacing"><span class="ic" data-ic="charsp"></span></span><select id="fp-charsp" class="fp-sel sm" onchange="fpSet('charSp', +this.value)"></select>
+          <span class="fp-lab" title="Character spacing"><span class="ic" data-ic="charsp"></span></span><select id="fp-charsp" class="fp-sel sm" onchange="fpCharSpacing(+this.value)"></select>
         </div>
       </div>
       <div class="fp-sec">
@@ -7569,6 +7569,7 @@ function onTextEdge(a, ps, vx, vy) {
 // the pointer is in — the frame reaches a little past the letters
 function editHitTest(n, vx, vy) {
   const ps = state.pages[n]; if (!ps) return null;
+  if (typeof khzOcrPageLocked === 'function' && khzOcrPageLocked(n)) return null;   // (being converted: app157)
   // a text comment sits on top of the page and can be clicked into from Edit PDF (like Acrobat)
   const tc = state.annotations.slice().reverse().find(x => x.page === n && (x.type === 'text-comment' || x.type === 'callout' || (x.type === 'textbox' && !x.editAdded)) && !x.locked && (() => { const b = annotBBox(x, ps.vp); return b && vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h; })());
   if (tc) return { annot: tc, box: annotBBox(tc, ps.vp) };
@@ -11633,6 +11634,8 @@ setActiveTool = function (tool) {
 };
 
 // ---------- Format pane (Edit PDF) ----------
+// Character Spacing chosen or typed in points: each text keeps it as a share of its own size
+function fpCharSpacing(pt) { const a = fpTarget(); if (!a) return; fpSet('charSp', +(pt / (a.fontSize || 12)).toFixed(5)); }
 function fpTarget() {
   const a = state.annotations.find(x => x.id === state.selectedId);
   return a || null;
@@ -11658,14 +11661,18 @@ function updateFormatPanel() {
   $('fp-italic').classList.toggle('on', !!(isText && cur.italic));
   const al = isText && a.type === 'text-block' ? (a.align || 'left') : '';
   ['left', 'center', 'right'].forEach(k => $('fp-al-' + k).classList.toggle('on', al === k));
-  const mult = isText && a.type === 'text-block' && a.lineH ? a.lineH / (a.fontSize * 1.2) : 1;
-  const mults = [0.8, 1, 1.15, 1.5, 2];
-  const mClose = mults.reduce((p, q) => Math.abs(q - mult) < Math.abs(p - mult) ? q : p, 1);
-  $('fp-linesp').innerHTML = mults.map(m => `<option value="${m}" ${m === mClose ? 'selected' : ''}>${m.toFixed(2)}</option>`).join('');
-  const cs = isText ? (a.charSp || 0) : 0;
-  const css = [-0.05, -0.02, 0, 0.02, 0.05, 0.1, 0.2];
-  if (!css.some(v => Math.abs(v - cs) < 0.001)) css.push(+cs.toFixed(3));
-  $('fp-charsp').innerHTML = css.sort((x, y) => x - y).map(v => `<option value="${v}" ${Math.abs(v - cs) < 0.001 ? 'selected' : ''}>${Math.round(v * 1000)}</option>`).join('');
+  // (2806) line spacing as Acrobat shows it: the distance from line to line over the font size (12 pt lines of 10 pt
+  // text are 1.20), with Acrobat's choices — the block's own value added when it isn't one of them. Before, it was a
+  // multiple of 1.2 × the size rounded to the nearest of five, so the same text showed 1.00
+  const mult = isText && a.type === 'text-block' ? Math.round((a.lineH || a.fontSize * 1.2) / a.fontSize * 100) / 100 : 1.2;
+  const mults = [1, 1.15, 1.5, 2, 2.5, 3];
+  if (!mults.some(m => Math.abs(m - mult) < 0.005)) mults.push(mult);
+  $('fp-linesp').innerHTML = mults.sort((p, q) => p - q).map(m => `<option value="${m}" ${Math.abs(m - mult) < 0.005 ? 'selected' : ''}>${m.toFixed(2)}</option>`).join('');
+  // (Character Spacing in points between letters, as Acrobat's (−10 to 10); kept as a share of the size, a.charSp)
+  const cs = isText ? Math.round((a.charSp || 0) * (a.fontSize || 12) * 100) / 100 : 0;
+  const css = [-1, -0.5, 0, 0.5, 1, 2, 5];
+  if (!css.some(v => Math.abs(v - cs) < 0.005)) css.push(cs);
+  $('fp-charsp').innerHTML = css.sort((x, y) => x - y).map(v => `<option value="${v}" ${Math.abs(v - cs) < 0.005 ? 'selected' : ''}>${+v.toFixed(2)}</option>`).join('');
   $('fp-boxes').checked = !!state.showBoxes;
 }
 function fpSet(key, value) {
@@ -11691,7 +11698,7 @@ function fpAlign(al) {
 function fpLineSpacing(m) {
   const a = fpTarget();
   if (!a || a.type !== 'text-block') return;
-  const go = () => { if (!touchNative(a)) return; a.lineH = a.fontSize * 1.2 * m; renderPageAnnots(a.page); pushHistory(); updateFormatPanel(); };
+  const go = () => { if (!touchNative(a)) return; a.lineH = a.fontSize * m; renderPageAnnots(a.page); pushHistory(); updateFormatPanel(); };   // (m: line to line over the size, as Acrobat's)
   if (activeEditor && activeEditor.annotId === a.id) { activeEditor.finish(true); setTimeout(go, 0); } else go();
 }
 function fpArrange() {
@@ -13225,6 +13232,14 @@ function ocrWordsOf(data) {
 // small address block on the right). Small print read that way comes out wrong ("Nackman Ra" for "Nackman Rd") and
 // with the heading's size. So each line is split where the words are far apart or change size, and a piece that
 // was read as part of a much taller line (and isn't clearly read) is read again on its own (as one line).
+// (2717) one Tesseract reading at a given page segmentation mode (web version): asked one at a time, so another reading
+// asked meanwhile — the next page's — can't change the mode between the setting and the reading (the line pieces were
+// sometimes read as a whole page, and what came out depended on timing). The finishing thread (app282) asks the window.
+function khzTessRead(worker, psm, img, o1, o2) {
+  if (worker.read) return worker.read(psm, img, o1, o2);
+  const run = async () => { if (worker.__psm !== psm) { await worker.setParameters({ tessedit_pageseg_mode: psm }); worker.__psm = psm; } return worker.recognize(img, o1, o2); };
+  const p = (worker.__q || Promise.resolve()).then(run, run); worker.__q = p.catch(() => {}); return p;
+}
 async function ocrSplitLines(worker, canvas, words) {
   const med = a => { const q = a.slice().sort((x, y) => x - y); return q.length ? q[q.length >> 1] : 0; };
   const hOf = w => w.bbox.y1 - w.bbox.y0;
@@ -13266,7 +13281,6 @@ async function ocrSplitLines(worker, canvas, words) {
   // they're read in batches: the strips are stacked one under another on a small sheet (strips of a similar print
   // size together) and read in one go, each word going back to its strip — far quicker than one reading per strip
   again.sort((p, q) => p.h - q.h);
-  let psm = null;
   for (let i = 0; i < again.length;) {
     const batch = []; let H = 0, W = 0;
     while (i < again.length && batch.length < 40) {
@@ -13276,11 +13290,10 @@ async function ocrSplitLines(worker, canvas, words) {
     }
     H += Math.round(batch[batch.length - 1].h * 1.2);
     try {
-      if (psm !== '6') { await worker.setParameters({ tessedit_pageseg_mode: '6' }); psm = '6'; }
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
       batch.forEach(sg => { const gap = Math.round(sg.h * 1.2); g.drawImage(canvas, sg.rect.left, sg.rect.top, sg.rect.width, sg.rect.height, gap, sg.off, sg.rect.width, sg.rect.height); });
-      const { data } = await worker.recognize(cv, {}, { blocks: true, text: false });
+      const { data } = await khzTessRead(worker, '6', cv, {}, { blocks: true, text: false });
       const got = ocrWordsOf(data).filter(q => String(q.text || '').trim());
       batch.forEach(sg => {
         const gap = Math.round(sg.h * 1.2), h = sg.h;
@@ -13408,6 +13421,7 @@ async function khzOcrRead(o) {
   // the desktop app has its own engine for English (Tesseract 5.5.3 with page clean-up, straightening and, on
   // Windows, a second reading by Windows' own OCR); other languages and the web version use the one below
   const desk = await ocrDesktopEngine(lang);
+  if (typeof khzFinishThread === 'function') khzFinishThread();   // (2717: the finishing thread gets ready while the first page is read)
   const T = desk ? null : await loadTesseract();
   if (stop()) return { cancelled: true };
   progress('Loading language data…', 0.05);
@@ -13466,11 +13480,10 @@ async function khzOcrRead(o) {
     let clean = null;
     const readings = desk ? khzOcrReadings(c, k, gray, { lang, useAi, strips, page: n }) : (async () => {
       state.ocrPageFrac = f => progress(`Recognizing text on page ${n} of ${N}…`, (finished + 0.1 + 0.85 * f) / pages.length);
-      await worker.setParameters({ tessedit_pageseg_mode: '11' });
       // (the page cleaned up first, for Tesseract only: app216)
       clean = khzOcrWebClean(rc);
       // (a page scanned at a slant read straightened, its words put back where they are on the page: app216)
-      const sk = khzOcrWebDeskew(clean), words = ocrWordsOf((await worker.recognize(sk ? sk.cv : clean, {}, { blocks: true, text: false })).data);
+      const sk = khzOcrWebDeskew(clean), words = ocrWordsOf((await khzTessRead(worker, '11', sk ? sk.cv : clean, {}, { blocks: true, text: false })).data);
       return { found: sk ? khzOcrWebUnskew(words, sk) : words, aiRes: null };
     })();
     readings.catch(() => {});
@@ -13511,180 +13524,197 @@ async function khzOcrRead(o) {
       if (sys && sys.words && sys.words.length) khzOcrSysBreak(found, aiRes, sys);   // (app230)
       if (o.oneAtATime) fill();
       lap('reading');
-      if (stop()) return { cancelled: true };
-      // the two readings combined word by word (khzOcrFuse); text on its side comes from the AI engine's reading
-      let aiSide = null;
-      if (aiRes && aiRes.lines) { const f = await khzOcrFuse(found, aiRes, job.gray, c.width, c.height, await khzOcrDict()); found = f.words; aiSide = f.side; await khzTick(); }
-      lap('combine');
-      // a 0 or O with a stroke through it: φ (phase: "1φ") or Ø, which neither engine reads (khzOcrSlashed)
-      { const g = job.gray || khzOcrGray(c); found = khzOcrSlashed(found, g, c.width, c.height); found = khzOcrPairs(found, g, c.width, c.height); }
+      // (2717) the finishing off — combining the readings, the marks, the measuring, the scan's letters taken out, the
+      // lines — runs in a background thread when it can (app282), so the window scrolls and zooms while it works
+      const fin = await khzOcrFinish({ n, k, mode, desk: !!desk, worker, c, cx, rc: job.rc, gray: job.gray, clean: job.clean, scan: job.scan, found, aiRes, sys, down: o.down, stop, lap, st });
       job.gray = null;
-      await khzTick(); lap('φ');   // (the window keeps answering between the steps: each takes a moment on a full page)
-      const pageWords = await ocrSplitLines(worker, job.clean || c, found);
-      if (stop()) return { cancelled: true };
-      const placed = khzOcrPlace(pageWords, null);
-      await khzTick();
-      // (the same print read twice — two words in the same place, most of each one's width over the other: "×" and
-      // "÷" both read over one mark ran into each other — the surer reading stays; a short word inside a long one's
-      // box, as "A" beside "100" in a loose box, isn't a double)
-      khzOcrRaised(placed);
-      if (mode === 'editable') khzOcrDropDoubles(placed);   // (searchable text keeps both: either may be the right one to find)
-      // (a letter or two read far bigger than the page's print — a logo's swoosh read as "a" — isn't text)
-      { const al = p => (p.txt.match(/[A-Za-z0-9]/g) || []).length, sz = placed.map(p => p.sizePx).sort((p, q) => p - q), med = sz.length ? sz[sz.length >> 1] : 0;
-        for (let i = placed.length - 1; i >= 0; i--) { const p = placed[i]; if (med && al(p) <= 2 && p.conf < 95 && p.sizePx > 3 * med) placed.splice(i, 1); } }
-      lap('lines');
-      // the page's other marks (Acrobat reads these too): text running up or down the page is read with the page
-      // turned on its side, and pictures (logos, photos, signatures) stay pictures — the words printed in them
-      // aren't text (Brandon: text that is part of a picture doesn't need to be recognized)
-      await khzTick();
-      const look = khzOcrInk(job.clean || c, k);   // (the web version: the page as Tesseract was shown it, cleaned up — a poor copy's grain isn't print)
-      // (only words read with some confidence count as read here: text on its side read across comes out as doubtful
-      // scraps — "na", "Won" — which the reading turned replaces below)
-      await khzTick();
-      const sure = placed.filter(p => p.conf >= 90);
-      khzOcrMask(look, sure, k);
-      await khzTick();
-      const readTurned = cv => desk ? ocrDesktopRecognize(cv, k) : (async () => { await worker.setParameters({ tessedit_pageseg_mode: '11' }); return ocrWordsOf((await worker.recognize(khzOcrWebClean(cv), {}, { blocks: true, text: false })).data); })();
-      let side = aiSide ? khzOcrAiSide(aiSide, c.width, c.height) : await khzOcrTurned(c, k, look, sure, placed.filter(p => p.conf < 90), readTurned, worker, stop);
-      // (and with the AI engine's text on its side, what it left: small labels on their side in a drawing's title block —
-      // "SCALE: 1/2" = 1'-0"" between the frame's lines — that it passed over are read with the page turned too)
-      if (aiSide && !stop()) {
-        const have = sure.concat(side); khzOcrMask(look, have, k);
-        const more = await khzOcrTurned(c, k, look, have, placed.filter(p => p.conf < 90), readTurned, worker, stop);
-        const lap2 = (a, b) => Math.min(a.x1, b.x1) > Math.max(a.x0, b.x0) && Math.min(a.y1, b.y1) > Math.max(a.y0, b.y0);
-        const add = more.filter(p => !side.some(q => lap2(p.pb, q.pb))), regions = (side.regions || []).concat(more.regions || []);
-        side = side.concat(add); side.regions = regions;
-      }
-      // (a word on its side read twice over — "Bo" inside "Bordeaux", "vays" inside "Always": two overlapping pieces read,
-      // or both readings — is the longer one's)
-      { const cov = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) / Math.max(1, (a.x1 - a.x0) * (a.y1 - a.y0));
-        const regions = side.regions; side = side.filter(p => !side.some(q => q !== p && [...q.txt].length > [...p.txt].length && cov(p.pb, q.pb) >= 0.7)); side.regions = regions; }
-      // (a word on its side with no area — a reading of nothing, its box a line: PP-OCRv6 gives some — isn't a word; with
-      //  it every word read across overlapped it "enough" (0 ≥ 0) and a whole page's text was thrown out)
-      { const regions = side.regions; side = side.filter(p => p.pb && p.pb.x1 - p.pb.x0 >= 1 && p.pb.y1 - p.pb.y0 >= 1 && String(p.txt || '').trim()); side.regions = regions; }
-      if (stop()) return { cancelled: true };
-      if (side.length) {
-        // a word read across the page where text on its side was read is a misreading of it
-        // (covered by the words read turned — a scrap read across spans several turned lines, each covering only a bit of
-        // it — or a doubtful word inside a piece of the page that read as text on its side)
-        const cut = (a, b) => { const ix = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), iy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0); return ix > 0 && iy > 0 ? ix * iy : 0; };
-        const inside = (p, r) => { const cx = (p.pb.x0 + p.pb.x1) / 2, cy = (p.pb.y0 + p.pb.y1) / 2; return cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h; };
-        for (let i = placed.length - 1; i >= 0; i--) {
-          const p = placed[i], area = (p.pb.x1 - p.pb.x0) * (p.pb.y1 - p.pb.y0), got = side.reduce((a, q) => a + cut(p.pb, q.pb), 0);
-          if (got >= 0.3 * area || side.some(q => { const c = cut(p.pb, q.pb); return c > 0 && c >= 0.3 * (q.pb.x1 - q.pb.x0) * (q.pb.y1 - q.pb.y0); }) || (p.conf < 90 && side.regions.some(r => inside(p, r)))) placed.splice(i, 1);
-        }
-        placed.push(...side);
-      }
-      khzOcrMask(look, placed, k);
-      lap('sideways');
-      // (a figure or letter standing alone — a table's quantity column of "1"s — that neither reading took for a word:
-      // read again on its own, khzOcrLoneMarks)
-      { const lone = await khzOcrLoneMarks(c, k, look, placed, cv => desk ? ocrDesktopRecognize(cv, k) : (async () => { await worker.setParameters({ tessedit_pageseg_mode: '11' }); return ocrWordsOf((await worker.recognize(khzOcrWebClean(cv), {}, { blocks: true, text: false })).data); })(), stop);
-        if (lone.length) { placed.push(...lone); khzOcrMask(look, lone, k); } }
-      // (light print on a dark band — a table's header row, white on navy — that neither reader read: khzOcrDarkBands)
-      { const dark = await khzOcrDarkBands(c, k, look, placed, cv => desk ? ocrDesktopRecognize(cv, k) : (async () => { await worker.setParameters({ tessedit_pageseg_mode: '6' }); return ocrWordsOf((await worker.recognize(khzOcrWebClean(cv), {}, { blocks: true, text: false })).data); })(), stop);
-        if (dark.length) { placed.push(...dark); khzOcrMask(look, dark, k); } }
-      if (stop()) return { cancelled: true };
-      await khzTick();
-      // (a stamp lifted for reading stays in the page picture, with the words read under it written over it: not a
-      // picture of its own, which would hold the scanned letters under it too)
-      const stampBoxes = (job.rc && job.rc !== c && job.rc._stamps) || [];
-      // (words under a stamp: a stamp is set at a slant, and its letters stay the stamp's — khzOcrSymbols)
-      placed.forEach(p => { if (p.pb && stampBoxes.some(s => Math.min(s.x1, p.pb.x1) - Math.max(s.x0, p.pb.x0) > 0 && Math.min(s.y1, p.pb.y1) - Math.max(s.y0, p.pb.y0) > 0)) p.inStamp = true; });
-      const pics = khzOcrPictures(look, placed, k).filter(g => !stampBoxes.some(s => Math.min(s.x1, (g.x1 + 1) * k) - Math.max(s.x0, g.x0 * k) > 0 && Math.min(s.y1, (g.y1 + 1) * k) - Math.max(s.y0, g.y0 * k) > 0));
-      await khzTick();
-      const inPic = p => pics.some(r => { const b = p.pb, ix = Math.min(b.x1, r.x1 * k) - Math.max(b.x0, r.x0 * k), iy = Math.min(b.y1, r.y1 * k) - Math.max(b.y0, r.y0 * k); return ix > 0 && iy > 0 && ix * iy >= 0.6 * (b.x1 - b.x0) * (b.y1 - b.y0); });
-      for (let i = placed.length - 1; i >= 0; i--) if (inPic(placed[i])) placed.splice(i, 1);
-      lap('marks');
-      // (the page's pixels are read once for all its words: reading them word by word took seconds on a full page)
-      // (searchable output too: its invisible text carries each word's colour and weight, so editing it later in
-      // Edit PDF shows a bold orange heading and the grey reference after it as they're printed, not all one style)
-      const px = placed.length ? cx.getImageData(0, 0, c.width, c.height) : null;
-      if (px && typeof khzOcrFrameEdges === 'function') khzOcrFrameEdges(placed, px);   // (a box's sides read as brackets, app218)
-      // (a word under a lifted stamp is measured on the page without the stamp: its ink is black, not the stamp's red)
-      const sbx = (job.rc && job.rc !== c && job.rc._stamps) || [], altPx = sbx.length && px ? job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) : null;
-      const pxOf = p => altPx && p.pb && sbx.some(s => p.pb.x1 > s.x0 && p.pb.x0 < s.x1 && p.pb.y1 > s.y0 && p.pb.y0 < s.y1) ? altPx : px;
-      if (px) { { const got = typeof khzOcrPoolRun === 'function' ? await khzOcrPoolRun('measure', px, altPx, placed.map(p => ({ pb: p.pb, sizePx: p.sizePx, turned: !!p.frame, alt: pxOf(p) !== px }))) : null;   // (in background threads when the page has them, app223)
-        if (got) placed.forEach((p, i) => { p.colors = got[i].colors; p.stroke = got[i].stroke; p.slant = got[i].slant; });
-        else for (const p of placed) { p.colors = khzOcrColors(pxOf(p), p.pb); p.stroke = khzOcrStroke(pxOf(p), p.pb, p.colors, p.sizePx, !!p.frame); p.slant = khzOcrSlant(px, p.pb, p.colors); await khzTick(); } } if (typeof khzOcrIconTrim === 'function') { khzOcrJoinPieces(placed); if (mode === 'editable') { khzOcrIcons(placed, px, k, pics, true); khzOcrIconTrim(placed, px, k, pics); } } khzOcrLineSizes(placed, px); lap('colours'); if (await khzOcrFacesReady()) await khzOcrTypeface(placed, px); khzOcrMonoCheck(placed, px); lap('typeface'); if (typeof khzOcrPoolRun === 'function' && khzOcrPoolRun.last) st.threads = khzOcrPoolRun.last.threads + 1; { const blur = { c: khzOcrBlurPx(placed), floor: khzOcrStrokeFloor(placed) }; KHZ_OCR_FAMS.forEach(f => khzOcrBold(placed.filter(p => (p.family || 'sans') === f), blur)); } khzOcrItalic(placed); lap('bold'); khzOcrDashedRules(placed); khzOcrUnoverlap(placed, px); khzOcrInkWords(placed, px); khzOcrTmQuotes(placed, px); if (typeof khzOcrSymbols === 'function') await khzOcrSymbols(placed, px, look.loneLeft || [], desk ? await khzOcrDict() : null); if (typeof khzOcrMidDots === 'function') { khzOcrMidDots(placed, px); khzOcrLoneYen(placed); } khzOcrTimes(placed, px); khzOcrScripts(placed, px); if (typeof khzOcrCase === 'function') khzOcrCase(placed, px); if (typeof khzOcrStops === 'function') { khzOcrStops(placed, px); khzOcrMissedStops(placed, px); khzOcrQuotePairs(placed, px); khzOcrDollar(placed, px); khzOcrForeignStrokes(placed, px); khzOcrLookalikes(placed, px); khzOcrFractions(placed, px); } if (typeof khzOcrIcons === 'function') khzOcrIcons(placed, px, k, mode === 'editable' ? pics : []); if (typeof khzOcrSpellFix === 'function') await khzOcrSpellFix(placed, desk ? await khzOcrDict() : null, px); lap('symbols'); }   // (bold told apart within each typeface: serif print's strokes are thinner than sans-serif's, and on a page of both a plain sans word measured as bold beside the serif ones)
-      // a scanned page made editable (like Acrobat's "Editable Text and Images"): the scanned letters are taken out
-      // of the page picture itself, so moving or changing a word leaves clean paper, not the old print. Other pages
-      // (drawn text, pictures in pieces) keep their drawing, with each word covered in its background colour.
-      // Each picture on the scan becomes a picture of its own (moved, resized or deleted on its own in Edit PDF).
-      // (words that are not text after all — specks, icons, marks left at a line's end — are let go before the letters are
-      // taken out of the scan: their ink stays in the page picture, as Acrobat leaves print it couldn't read, app248)
-      if (typeof khzOcrPreErase === 'function') { try { await khzOcrPreErase(placed, px); } catch (e) { console.warn('OCR pre-erase', e); } }
-      let clean = null, pieces = [];
-      if (mode === 'editable' && job.scan >= 0.8 && placed.length) {
-        pieces = await khzOcrPieces(c, px, k, pics, look);
-        // (a rubber stamp — "REVIEWED" in red over "Subtotal" — becomes a picture of its own under the words read through
-        // it, like a stamp in Acrobat: moved, resized or deleted on its own. Only its ink goes in the picture; the black
-        // letters it crossed are written as text over it, khzOcrStampPieces)
-        if (stampBoxes.length) pieces.push(...await khzOcrStampPieces(px, job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height), stampBoxes, k, look.paper));
-        lap('pictures');
-        { // (a word's print reaches as far as either reading saw its letters, khzOcrFuse — the page's own pixels, as pb)
-          // (no further than half a letter past the word's own box: a reading that ran on over marks nobody read — an AI word
-          // over a whole run of punctuation, of which only part was kept — took them off the page with it)
-          const eb = p => { const w = p.w && p.w.wide; if (!w || p.frame || p.sym) return p.pb; const m = 0.5 * (p.sizePx || (p.pb.y1 - p.pb.y0)); return { x0: Math.max(p.pb.x0 - m, Math.min(p.pb.x0, w.x0)), y0: Math.max(p.pb.y0 - m, Math.min(p.pb.y0, w.y0)), x1: Math.min(p.pb.x1 + m, Math.max(p.pb.x1, w.x1)), y1: Math.min(p.pb.y1 + m, Math.max(p.pb.y1, w.y1)) }; };   // (nor up or down: a reading of "AI" six lines tall took a stamp's letter above the line off the page)
-          const alt = stampBoxes.length ? job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) : null;
-          const boxes = placed.map(eb); for (let i = 0; i < placed.length; i++) { khzOcrErase(px, boxes[i], boxes, alt && stampBoxes.some(s => boxes[i].x1 > s.x0 && boxes[i].x0 < s.x1 && boxes[i].y1 > s.y0 && boxes[i].y0 < s.y1) ? alt : null); await khzTick(); } }
-        lap('erase');
-        cx.putImageData(px, 0, 0);
-        clean = await khzOcrPaperPicture(c, k, o.down || 600);
-        lap('scan picture');
-      }
-      // one line of the scan = one line of text in the page (like Acrobat): the same size and baseline for all its
-      // words, so a heading with dashes and dots in it ("SIZING — COPPER · NEC") stays one line when edited
-      const byLine = new Map();
-      placed.forEach(p => { const key = p.w.line || p.w; if (!byLine.has(key)) byLine.set(key, []); byLine.get(key).push(p); });
-      const med = a => { const q = a.slice().sort((x, y) => x - y); return q[q.length >> 1]; };
-      const lines = [];
-      // (a reader's "line" that is really a column — a table's Qty "1"s read one under another — is cut into its rows
-      // first: written on one baseline, the three "1"s landed on top of each other)
-      for (const [key, all] of [...byLine]) {
-        if (all.length < 2 || all[0].frame || (key && (key.tilt || (key.parent && key.parent.tilt)))) continue;
-        const rows = []; all.slice().sort((p, q) => p.pb.y0 - q.pb.y0).forEach(p => { const r = rows.find(r => Math.min(r.y1, p.pb.y1) - Math.max(r.y0, p.pb.y0) > 0); if (r) { r.list.push(p); r.y0 = Math.min(r.y0, p.pb.y0); r.y1 = Math.max(r.y1, p.pb.y1); } else rows.push({ y0: p.pb.y0, y1: p.pb.y1, list: [p] }); });   // (rows: words whose boxes share some height; a raised or small mark beside its word stays with it)
-        if (rows.length > 1) { byLine.delete(key); rows.forEach((r, i) => byLine.set(i ? { parent: key && key.parent, split: i } : key, r.list)); }
-      }
-      for (const [key, list] of byLine) {
-        list.sort((p, q) => p.b.x0 - q.b.x0);
-        const lettered = list.filter(p => p.letters);
-        lines.push({ parent: key && key.parent, ai: key ? (key.ai ? key : key.parent && key.parent.ai ? key.parent : null) : null, frame: list[0].frame, sizePx: med((lettered.length ? lettered : list).map(p => p.sizePx)), basePx: med((lettered.length ? lettered : list).map(p => p.basePx)), list });
-      }
-      khzOcrTiltLines(lines);
-      // pieces of one printed line — the sparse-text reading often gives each word of a justified line on its own, and
-      // lines are split where words are far apart — are one line again when they sit on the same baseline with letters
-      // the same size and only a word gap between them (a gap of 1.8 letter sizes or more is the next column: at 3.5 a
-      // two-column form's values ran into the next column's labels — "9,000 VA   Base loads")
-      const order = lines.slice().sort((p, q) => p.basePx - q.basePx || p.list[0].b.x0 - q.list[0].b.x0);
-      order.forEach(a => {
-        if (!a.list.length) return;
-        for (;;) {
-          const end = a.list[a.list.length - 1].b.x1;
-          const c = order.filter(c => c !== a && c.frame === a.frame && c.list.length && Math.abs(c.basePx - a.basePx) < 0.3 * Math.min(a.sizePx, c.sizePx) && Math.max(a.sizePx, c.sizePx) / Math.min(a.sizePx, c.sizePx) < 1.25 && c.list[0].b.x0 >= end - 1 && c.list[0].b.x0 - end < 1.8 * a.sizePx)
-            .sort((p, q) => p.list[0].b.x0 - q.list[0].b.x0)[0];
-          if (!c) break;
-          const n0 = a.list.length, n1 = c.list.length;
-          a.basePx = (a.basePx * n0 + c.basePx * n1) / (n0 + n1); a.sizePx = (a.sizePx * n0 + c.sizePx * n1) / (n0 + n1);
-          a.list.push(...c.list); c.list = [];
-        }
-      });
-      for (let i = lines.length - 1; i >= 0; i--) if (!lines[i].list.length) lines.splice(i, 1);
-      khzOcrRunOnLines(lines);
+      if (fin.cancelled) return { cancelled: true };
+      const { clean, pieces, lines } = fin;
       if (job.rc && job.rc !== c) job.rc.width = job.rc.height = 0;
       c.width = c.height = 0;   // (the page picture's memory goes now, not when the whole run ends)
       finished++;
-      const res = { n, rot: job.rot, vp, k, mode, clean, pieces, lines, words: placed.length, hidden: job.hidden, lang };
+      const res = { n, rot: job.rot, vp, k, mode, clean, pieces, lines, words: fin.words, hidden: job.hidden, lang };
       results.push(res);
       if (job.fkey) { try { khzOcrKeptPut('done', job.fkey, khzOcrKeptPack(res), khzOcrKeptSize(res)); } catch (e) { console.warn('keeping a converted page', e); } }
       lap('layout');
       if (o.onPage) await o.onPage(res);
       if (o.onPage) lap('write');
-      st.total = Math.round(performance.now() - t00); st.pauses = khzTickStat.n - tk0.n; st.paused = Math.round(khzTickStat.ms - tk0.ms); st.words = placed.length;
+      st.total = Math.round(performance.now() - t00); st.pauses = khzTickStat.n - tk0.n; st.paused = Math.round(khzTickStat.ms - tk0.ms); st.words = fin.words;
       if (typeof khzOcrStat === 'function') khzOcrStat(st);
     }
   } finally { view.destroy(); done(); state.ocrPageFrac = null; }
   return { results, skipped };
+}
+
+// (2717) one page finished off after its reading — everything between the engines' readings and the page's lines of
+// words (with, for a scan made editable, the paper picture without its letters and the pictures on it). The same work
+// as before, moved here from khzOcrRead unchanged, so it can run in the window or in the background thread (app282):
+// J = { n, k, mode, desk, worker, c, cx, rc, gray, clean, scan, found, aiRes, sys, down, stop, lap, st }
+// → { clean, pieces, lines, words } or { cancelled: true }
+async function khzOcrFinishHere(J) {
+  const job = J, { n, k, mode, desk, worker, c, cx, stop, lap, st } = J;
+  let { found, aiRes } = J;
+  if (stop()) return { cancelled: true };
+  // the two readings combined word by word (khzOcrFuse); text on its side comes from the AI engine's reading
+  let aiSide = null;
+  if (aiRes && aiRes.lines) { const f = await khzOcrFuse(found, aiRes, job.gray, c.width, c.height, await khzOcrDict()); found = f.words; aiSide = f.side; await khzTick(); }
+  lap('combine');
+  // a 0 or O with a stroke through it: φ (phase: "1φ") or Ø, which neither engine reads (khzOcrSlashed)
+  { const g = job.gray || khzOcrGray(c); found = khzOcrSlashed(found, g, c.width, c.height); found = khzOcrPairs(found, g, c.width, c.height); }
+  job.gray = null;
+  await khzTick(); lap('φ');   // (the window keeps answering between the steps: each takes a moment on a full page)
+  const pageWords = await ocrSplitLines(worker, job.clean || c, found);
+  if (stop()) return { cancelled: true };
+  const placed = khzOcrPlace(pageWords, null);
+  await khzTick();
+  // (the same print read twice — two words in the same place, most of each one's width over the other: "×" and
+  // "÷" both read over one mark ran into each other — the surer reading stays; a short word inside a long one's
+  // box, as "A" beside "100" in a loose box, isn't a double)
+  khzOcrRaised(placed);
+  if (mode === 'editable') khzOcrDropDoubles(placed);   // (searchable text keeps both: either may be the right one to find)
+  // (a letter or two read far bigger than the page's print — a logo's swoosh read as "a" — isn't text)
+  { const al = p => (p.txt.match(/[A-Za-z0-9]/g) || []).length, sz = placed.map(p => p.sizePx).sort((p, q) => p - q), med = sz.length ? sz[sz.length >> 1] : 0;
+    for (let i = placed.length - 1; i >= 0; i--) { const p = placed[i]; if (med && al(p) <= 2 && p.conf < 95 && p.sizePx > 3 * med) placed.splice(i, 1); } }
+  lap('lines');
+  // the page's other marks (Acrobat reads these too): text running up or down the page is read with the page
+  // turned on its side, and pictures (logos, photos, signatures) stay pictures — the words printed in them
+  // aren't text (Brandon: text that is part of a picture doesn't need to be recognized)
+  await khzTick();
+  const look = khzOcrInk(job.clean || c, k);   // (the web version: the page as Tesseract was shown it, cleaned up — a poor copy's grain isn't print)
+  // (only words read with some confidence count as read here: text on its side read across comes out as doubtful
+  // scraps — "na", "Won" — which the reading turned replaces below)
+  await khzTick();
+  const sure = placed.filter(p => p.conf >= 90);
+  khzOcrMask(look, sure, k);
+  await khzTick();
+  const readTurned = cv => desk ? ocrDesktopRecognize(cv, k) : (async () => ocrWordsOf((await khzTessRead(worker, '11', khzOcrWebClean(cv), {}, { blocks: true, text: false })).data))();
+  let side = aiSide ? khzOcrAiSide(aiSide, c.width, c.height) : await khzOcrTurned(c, k, look, sure, placed.filter(p => p.conf < 90), readTurned, worker, stop);
+  // (and with the AI engine's text on its side, what it left: small labels on their side in a drawing's title block —
+  // "SCALE: 1/2" = 1'-0"" between the frame's lines — that it passed over are read with the page turned too)
+  if (aiSide && !stop()) {
+    const have = sure.concat(side); khzOcrMask(look, have, k);
+    const more = await khzOcrTurned(c, k, look, have, placed.filter(p => p.conf < 90), readTurned, worker, stop);
+    const lap2 = (a, b) => Math.min(a.x1, b.x1) > Math.max(a.x0, b.x0) && Math.min(a.y1, b.y1) > Math.max(a.y0, b.y0);
+    const add = more.filter(p => !side.some(q => lap2(p.pb, q.pb))), regions = (side.regions || []).concat(more.regions || []);
+    side = side.concat(add); side.regions = regions;
+  }
+  // (a word on its side read twice over — "Bo" inside "Bordeaux", "vays" inside "Always": two overlapping pieces read,
+  // or both readings — is the longer one's)
+  { const cov = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0)) / Math.max(1, (a.x1 - a.x0) * (a.y1 - a.y0));
+    const regions = side.regions; side = side.filter(p => !side.some(q => q !== p && [...q.txt].length > [...p.txt].length && cov(p.pb, q.pb) >= 0.7)); side.regions = regions; }
+  // (a word on its side with no area — a reading of nothing, its box a line: PP-OCRv6 gives some — isn't a word; with
+  //  it every word read across overlapped it "enough" (0 ≥ 0) and a whole page's text was thrown out)
+  { const regions = side.regions; side = side.filter(p => p.pb && p.pb.x1 - p.pb.x0 >= 1 && p.pb.y1 - p.pb.y0 >= 1 && String(p.txt || '').trim()); side.regions = regions; }
+  if (stop()) return { cancelled: true };
+  if (side.length) {
+    // a word read across the page where text on its side was read is a misreading of it
+    // (covered by the words read turned — a scrap read across spans several turned lines, each covering only a bit of
+    // it — or a doubtful word inside a piece of the page that read as text on its side)
+    const cut = (a, b) => { const ix = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), iy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0); return ix > 0 && iy > 0 ? ix * iy : 0; };
+    const inside = (p, r) => { const cx = (p.pb.x0 + p.pb.x1) / 2, cy = (p.pb.y0 + p.pb.y1) / 2; return cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h; };
+    for (let i = placed.length - 1; i >= 0; i--) {
+      const p = placed[i], area = (p.pb.x1 - p.pb.x0) * (p.pb.y1 - p.pb.y0), got = side.reduce((a, q) => a + cut(p.pb, q.pb), 0);
+      if (got >= 0.3 * area || side.some(q => { const c = cut(p.pb, q.pb); return c > 0 && c >= 0.3 * (q.pb.x1 - q.pb.x0) * (q.pb.y1 - q.pb.y0); }) || (p.conf < 90 && side.regions.some(r => inside(p, r)))) placed.splice(i, 1);
+    }
+    placed.push(...side);
+  }
+  khzOcrMask(look, placed, k);
+  lap('sideways');
+  // (a figure or letter standing alone — a table's quantity column of "1"s — that neither reading took for a word:
+  // read again on its own, khzOcrLoneMarks)
+  { const lone = await khzOcrLoneMarks(c, k, look, placed, cv => desk ? ocrDesktopRecognize(cv, k) : (async () => ocrWordsOf((await khzTessRead(worker, '11', khzOcrWebClean(cv), {}, { blocks: true, text: false })).data))(), stop);
+    if (lone.length) { placed.push(...lone); khzOcrMask(look, lone, k); } }
+  // (light print on a dark band — a table's header row, white on navy — that neither reader read: khzOcrDarkBands)
+  { const dark = await khzOcrDarkBands(c, k, look, placed, cv => desk ? ocrDesktopRecognize(cv, k) : (async () => ocrWordsOf((await khzTessRead(worker, '6', khzOcrWebClean(cv), {}, { blocks: true, text: false })).data))(), stop);
+    if (dark.length) { placed.push(...dark); khzOcrMask(look, dark, k); } }
+  if (stop()) return { cancelled: true };
+  await khzTick();
+  // (a stamp lifted for reading stays in the page picture, with the words read under it written over it: not a
+  // picture of its own, which would hold the scanned letters under it too)
+  const stampBoxes = (job.rc && job.rc !== c && job.rc._stamps) || [];
+  // (words under a stamp: a stamp is set at a slant, and its letters stay the stamp's — khzOcrSymbols)
+  placed.forEach(p => { if (p.pb && stampBoxes.some(s => Math.min(s.x1, p.pb.x1) - Math.max(s.x0, p.pb.x0) > 0 && Math.min(s.y1, p.pb.y1) - Math.max(s.y0, p.pb.y0) > 0)) p.inStamp = true; });
+  const pics = khzOcrPictures(look, placed, k).filter(g => !stampBoxes.some(s => Math.min(s.x1, (g.x1 + 1) * k) - Math.max(s.x0, g.x0 * k) > 0 && Math.min(s.y1, (g.y1 + 1) * k) - Math.max(s.y0, g.y0 * k) > 0));
+  await khzTick();
+  const inPic = p => pics.some(r => { const b = p.pb, ix = Math.min(b.x1, r.x1 * k) - Math.max(b.x0, r.x0 * k), iy = Math.min(b.y1, r.y1 * k) - Math.max(b.y0, r.y0 * k); return ix > 0 && iy > 0 && ix * iy >= 0.6 * (b.x1 - b.x0) * (b.y1 - b.y0); });
+  for (let i = placed.length - 1; i >= 0; i--) if (inPic(placed[i])) placed.splice(i, 1);
+  lap('marks');
+  // (the page's pixels are read once for all its words: reading them word by word took seconds on a full page)
+  // (searchable output too: its invisible text carries each word's colour and weight, so editing it later in
+  // Edit PDF shows a bold orange heading and the grey reference after it as they're printed, not all one style)
+  const px = placed.length ? cx.getImageData(0, 0, c.width, c.height) : null;
+  if (px && typeof khzOcrFrameEdges === 'function') khzOcrFrameEdges(placed, px);   // (a box's sides read as brackets, app218)
+  // (a word under a lifted stamp is measured on the page without the stamp: its ink is black, not the stamp's red)
+  const sbx = (job.rc && job.rc !== c && job.rc._stamps) || [], altPx = sbx.length && px ? job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) : null;
+  const pxOf = p => altPx && p.pb && sbx.some(s => p.pb.x1 > s.x0 && p.pb.x0 < s.x1 && p.pb.y1 > s.y0 && p.pb.y0 < s.y1) ? altPx : px;
+  if (px) { { const got = typeof khzOcrPoolRun === 'function' ? await khzOcrPoolRun('measure', px, altPx, placed.map(p => ({ pb: p.pb, sizePx: p.sizePx, turned: !!p.frame, alt: pxOf(p) !== px }))) : null;   // (in background threads when the page has them, app223)
+    if (got) placed.forEach((p, i) => { p.colors = got[i].colors; p.stroke = got[i].stroke; p.slant = got[i].slant; });
+    else for (const p of placed) { p.colors = khzOcrColors(pxOf(p), p.pb); p.stroke = khzOcrStroke(pxOf(p), p.pb, p.colors, p.sizePx, !!p.frame); p.slant = khzOcrSlant(px, p.pb, p.colors); await khzTick(); } } if (typeof khzOcrIconTrim === 'function') { khzOcrJoinPieces(placed); if (mode === 'editable') { khzOcrIcons(placed, px, k, pics, true); khzOcrIconTrim(placed, px, k, pics); } } khzOcrLineSizes(placed, px); lap('colours'); await khzTick(); if (await khzOcrFacesReady()) await khzOcrTypeface(placed, px); khzOcrMonoCheck(placed, px); lap('typeface'); await khzTick(); if (typeof khzOcrPoolRun === 'function' && khzOcrPoolRun.last) st.threads = khzOcrPoolRun.last.threads + 1; { const blur = { c: khzOcrBlurPx(placed), floor: khzOcrStrokeFloor(placed) }; KHZ_OCR_FAMS.forEach(f => khzOcrBold(placed.filter(p => (p.family || 'sans') === f), blur)); } khzOcrItalic(placed); lap('bold'); await khzTick(); khzOcrDashedRules(placed); khzOcrUnoverlap(placed, px); await khzTick(); khzOcrInkWords(placed, px); khzOcrTmQuotes(placed, px); await khzTick(); if (typeof khzOcrSymbols === 'function') await khzOcrSymbols(placed, px, look.loneLeft || [], desk ? await khzOcrDict() : null); await khzTick(); if (typeof khzOcrMidDots === 'function') { khzOcrMidDots(placed, px); khzOcrLoneYen(placed); } khzOcrTimes(placed, px); khzOcrScripts(placed, px); await khzTick(); if (typeof khzOcrCase === 'function') khzOcrCase(placed, px); await khzTick(); if (typeof khzOcrStops === 'function') { khzOcrStops(placed, px); khzOcrMissedStops(placed, px); await khzTick(); khzOcrQuotePairs(placed, px); khzOcrDollar(placed, px); await khzTick(); khzOcrForeignStrokes(placed, px); await khzTick(); khzOcrLookalikes(placed, px); await khzTick(); khzOcrFractions(placed, px); await khzTick(); } if (typeof khzOcrIcons === 'function') khzOcrIcons(placed, px, k, mode === 'editable' ? pics : []); await khzTick(); if (typeof khzOcrSpellFix === 'function') await khzOcrSpellFix(placed, desk ? await khzOcrDict() : null, px); lap('symbols'); }   // (bold told apart within each typeface: serif print's strokes are thinner than sans-serif's, and on a page of both a plain sans word measured as bold beside the serif ones)
+  // a scanned page made editable (like Acrobat's "Editable Text and Images"): the scanned letters are taken out
+  // of the page picture itself, so moving or changing a word leaves clean paper, not the old print. Other pages
+  // (drawn text, pictures in pieces) keep their drawing, with each word covered in its background colour.
+  // Each picture on the scan becomes a picture of its own (moved, resized or deleted on its own in Edit PDF).
+  // (words that are not text after all — specks, icons, marks left at a line's end — are let go before the letters are
+  // taken out of the scan: their ink stays in the page picture, as Acrobat leaves print it couldn't read, app248)
+  if (typeof khzOcrPreErase === 'function') { try { await khzOcrPreErase(placed, px); } catch (e) { console.warn('OCR pre-erase', e); } }
+  let clean = null, pieces = [];
+  if (mode === 'editable' && job.scan >= 0.8 && placed.length) {
+    pieces = await khzOcrPieces(c, px, k, pics, look);
+    // (a rubber stamp — "REVIEWED" in red over "Subtotal" — becomes a picture of its own under the words read through
+    // it, like a stamp in Acrobat: moved, resized or deleted on its own. Only its ink goes in the picture; the black
+    // letters it crossed are written as text over it, khzOcrStampPieces)
+    if (stampBoxes.length) pieces.push(...await khzOcrStampPieces(px, job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height), stampBoxes, k, look.paper));
+    lap('pictures');
+    { // (a word's print reaches as far as either reading saw its letters, khzOcrFuse — the page's own pixels, as pb)
+      // (no further than half a letter past the word's own box: a reading that ran on over marks nobody read — an AI word
+      // over a whole run of punctuation, of which only part was kept — took them off the page with it)
+      const eb = p => { const w = p.w && p.w.wide; if (!w || p.frame || p.sym) return p.pb; const m = 0.5 * (p.sizePx || (p.pb.y1 - p.pb.y0)); return { x0: Math.max(p.pb.x0 - m, Math.min(p.pb.x0, w.x0)), y0: Math.max(p.pb.y0 - m, Math.min(p.pb.y0, w.y0)), x1: Math.min(p.pb.x1 + m, Math.max(p.pb.x1, w.x1)), y1: Math.min(p.pb.y1 + m, Math.max(p.pb.y1, w.y1)) }; };   // (nor up or down: a reading of "AI" six lines tall took a stamp's letter above the line off the page)
+      const alt = stampBoxes.length ? job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) : null;
+      const boxes = placed.map(eb); for (let i = 0; i < placed.length; i++) { khzOcrErase(px, boxes[i], boxes, alt && stampBoxes.some(s => boxes[i].x1 > s.x0 && boxes[i].x0 < s.x1 && boxes[i].y1 > s.y0 && boxes[i].y0 < s.y1) ? alt : null); await khzTick(); } }
+    lap('erase');
+    cx.putImageData(px, 0, 0);
+    clean = await khzOcrPaperPicture(c, k, J.down || 600);
+    lap('scan picture');
+  }
+  // one line of the scan = one line of text in the page (like Acrobat): the same size and baseline for all its
+  // words, so a heading with dashes and dots in it ("SIZING — COPPER · NEC") stays one line when edited
+  const byLine = new Map();
+  placed.forEach(p => { const key = p.w.line || p.w; if (!byLine.has(key)) byLine.set(key, []); byLine.get(key).push(p); });
+  const med = a => { const q = a.slice().sort((x, y) => x - y); return q[q.length >> 1]; };
+  const lines = [];
+  // (a reader's "line" that is really a column — a table's Qty "1"s read one under another — is cut into its rows
+  // first: written on one baseline, the three "1"s landed on top of each other)
+  for (const [key, all] of [...byLine]) {
+    if (all.length < 2 || all[0].frame || (key && (key.tilt || (key.parent && key.parent.tilt)))) continue;
+    const rows = []; all.slice().sort((p, q) => p.pb.y0 - q.pb.y0).forEach(p => { const r = rows.find(r => Math.min(r.y1, p.pb.y1) - Math.max(r.y0, p.pb.y0) > 0); if (r) { r.list.push(p); r.y0 = Math.min(r.y0, p.pb.y0); r.y1 = Math.max(r.y1, p.pb.y1); } else rows.push({ y0: p.pb.y0, y1: p.pb.y1, list: [p] }); });   // (rows: words whose boxes share some height; a raised or small mark beside its word stays with it)
+    if (rows.length > 1) { byLine.delete(key); rows.forEach((r, i) => byLine.set(i ? { parent: key && key.parent, split: i } : key, r.list)); }
+  }
+  for (const [key, list] of byLine) {
+    list.sort((p, q) => p.b.x0 - q.b.x0);
+    const lettered = list.filter(p => p.letters);
+    lines.push({ parent: key && key.parent, ai: key ? (key.ai ? key : key.parent && key.parent.ai ? key.parent : null) : null, frame: list[0].frame, sizePx: med((lettered.length ? lettered : list).map(p => p.sizePx)), basePx: med((lettered.length ? lettered : list).map(p => p.basePx)), list });
+  }
+  khzOcrTiltLines(lines);
+  // pieces of one printed line — the sparse-text reading often gives each word of a justified line on its own, and
+  // lines are split where words are far apart — are one line again when they sit on the same baseline with letters
+  // the same size and only a word gap between them (a gap of 1.8 letter sizes or more is the next column: at 3.5 a
+  // two-column form's values ran into the next column's labels — "9,000 VA   Base loads")
+  const order = lines.slice().sort((p, q) => p.basePx - q.basePx || p.list[0].b.x0 - q.list[0].b.x0);
+  order.forEach(a => {
+    if (!a.list.length) return;
+    for (;;) {
+      const end = a.list[a.list.length - 1].b.x1;
+      const c = order.filter(c => c !== a && c.frame === a.frame && c.list.length && Math.abs(c.basePx - a.basePx) < 0.3 * Math.min(a.sizePx, c.sizePx) && Math.max(a.sizePx, c.sizePx) / Math.min(a.sizePx, c.sizePx) < 1.25 && c.list[0].b.x0 >= end - 1 && c.list[0].b.x0 - end < 1.8 * a.sizePx)
+        .sort((p, q) => p.list[0].b.x0 - q.list[0].b.x0)[0];
+      if (!c) break;
+      const n0 = a.list.length, n1 = c.list.length;
+      a.basePx = (a.basePx * n0 + c.basePx * n1) / (n0 + n1); a.sizePx = (a.sizePx * n0 + c.sizePx * n1) / (n0 + n1);
+      a.list.push(...c.list); c.list = [];
+    }
+  });
+  for (let i = lines.length - 1; i >= 0; i--) if (!lines[i].list.length) lines.splice(i, 1);
+  khzOcrRunOnLines(lines);
+  return { clean, pieces, lines, words: placed.length };
 }
 // lines printed at a slant (the AI reading's line lies at 1.5° to 25°): written along the slant, turned as printed. The
 // line's own frame runs along it from the reading's line corner (u along the line, v across it, down); each word goes
@@ -14887,6 +14917,16 @@ async function khzOcrStampPieces(px, alt, boxes, k, paper) {
     out.push({ x, y, w, h, png: true, icon: true, stamp: true, bytes: new Uint8Array(await blob.arrayBuffer()) });
     // (the page picture: the unstamped copy there — paper where the stamp was, the letters under it as they read)
     for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { const i = yy * w + xx; if (!m[i] && !(closed[i] && od[i * 4 + 3])) continue; const q = ((y + yy) * W + x + xx) * 4; D[q] = A[q]; D[q + 1] = A[q + 1]; D[q + 2] = A[q + 2]; }
+    // (2718) and the stamp's soft edge — the pale fringe a scan leaves round its strokes, too faint to count as the
+    // stamp's ink — taken out too, filled with the paper round it: a faint outline of the stamp stayed on the page
+    // under the stamp's own picture. (Letters under the edge stay: only paper-light pixels round it are averaged.)
+    { const Rf = Math.max(1, Math.round(k * 0.6)), core = closed.map((v, i) => (v || m[i]) ? 1 : 0);
+      const grown = khzOcrGrow(core, w, h, Rf);
+      const ch = [0, 1, 2].map(c => { const a = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) a[i] = D[(((y + ((i / w) | 0)) * W) + x + i % w) * 4 + c]; return a; });
+      const paperish = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) paperish[i] = !grown[i] && L(ch[0][i], ch[1][i], ch[2][i]) >= stampL ? 1 : 0;
+      const bm = khzOcrBoxMean(ch, paperish, w, h, Math.max(3, 2 * Rf + 2)), mean = bm.out;
+      if (bm.any) for (let i = 0; i < w * h; i++) if (bm.miss[i]) for (let c = 0; c < 3; c++) mean[c][i] = ch[c][i];
+      for (let i = 0; i < w * h; i++) { if (!grown[i] || core[i]) continue; const q = (((y + ((i / w) | 0)) * W) + x + i % w) * 4; if (L(D[q], D[q + 1], D[q + 2]) < stampL - 35) continue; D[q] = mean[0][i]; D[q + 1] = mean[1][i]; D[q + 2] = mean[2][i]; } }
   }
   return out;
 }
@@ -15088,6 +15128,169 @@ async function khzOcrScanCover(pg) {
     return best;
   } catch (e) { return 0; }
 }
+// (2718) what's under the print: the picture with every dark mark narrower than 2r+1 pixels closed over — the
+// brightest pixel within r, then the darkest of those within r (a grey-scale closing; for light print on a dark band
+// the other way round). Letters go; a shaded band, a watermark's broad strokes and the paper stay. The pixels are
+// packed (khzOcrPack): shade in the top 8 bits, colour below, so brightest and darkest go by the shade and each place
+// keeps a whole pixel's own colour — the band's, the watermark's — from one closing, rather than one per colour.
+// Each pass keeps a running best a block of 2r+1 at a time (van Herk / Gil-Werman), so it costs the same whatever r
+// is; the passes down the picture go a whole row at a time, so they read the memory in order. → a new array
+function khzOcrBackdrop(a, w, h, r, lightPaper) {
+  const k = 2 * r + 1, n = w + 2 * r, m2 = h + 2 * r, tmp = new Uint32Array(a.length), out = new Uint32Array(a.length);
+  const buf = new Uint32Array(n), g = new Uint32Array(n), hh = new Uint32Array(n), G = new Uint32Array(m2 * w), HH = new Uint32Array(m2 * w);
+  // (the brightest is taken of the values as they are, the darkest of them turned over: one loop does both)
+  const across = (src, dst, flip) => {
+    const f = flip ? 0xFFFFFFFF : 0;
+    for (let y = 0; y < h; y++) {
+      const R = y * w; buf.fill(0, 0, r); for (let i = 0; i < w; i++) buf[r + i] = (src[R + i] ^ f) >>> 0; buf.fill(0, r + w, n);
+      for (let s = 0; s < n; s += k) { const e = Math.min(n, s + k); let m = buf[s]; g[s] = m;
+        for (let i = s + 1; i < e; i++) { const v = buf[i]; if (v > m) m = v; g[i] = m; }
+        m = buf[e - 1]; hh[e - 1] = m; for (let i = e - 2; i >= s; i--) { const v = buf[i]; if (v > m) m = v; hh[i] = m; } }
+      for (let i = 0; i < w; i++) { const p = hh[i], q = g[i + 2 * r]; dst[R + i] = ((p > q ? p : q) ^ f) >>> 0; }
+    }
+  };
+  const down = (src, dst, flip) => {
+    const f = flip ? 0xFFFFFFFF : 0;
+    for (let s = 0; s < m2; s += k) { const e = Math.min(m2, s + k);
+      for (let t = s; t < e; t++) { const o = t * w, y = t - r;
+        if (y < 0 || y >= h) { if (t === s) G.fill(0, o, o + w); else G.copyWithin(o, o - w, o); continue; }
+        const S = y * w; if (t === s) for (let x = 0; x < w; x++) G[o + x] = (src[S + x] ^ f) >>> 0; else for (let x = 0; x < w; x++) { const v = (src[S + x] ^ f) >>> 0, m = G[o - w + x]; G[o + x] = v > m ? v : m; } }
+      for (let t = e - 1; t >= s; t--) { const o = t * w, y = t - r;
+        if (y < 0 || y >= h) { if (t === e - 1) HH.fill(0, o, o + w); else HH.copyWithin(o, o + w, o + 2 * w); continue; }
+        const S = y * w; if (t === e - 1) for (let x = 0; x < w; x++) HH[o + x] = (src[S + x] ^ f) >>> 0; else for (let x = 0; x < w; x++) { const v = (src[S + x] ^ f) >>> 0, m = HH[o + w + x]; HH[o + x] = v > m ? v : m; } } }
+    for (let y = 0; y < h; y++) { const o = y * w, q = (y + 2 * r) * w; for (let x = 0; x < w; x++) { const u = HH[o + x], v = G[q + x]; dst[o + x] = ((u > v ? u : v) ^ f) >>> 0; } }
+  };
+  // (light paper: brightest, then darkest; dark paper: the other way round — across, then down, each time)
+  across(a, tmp, !lightPaper); down(tmp, out, !lightPaper);
+  across(out, tmp, lightPaper); down(tmp, out, lightPaper);
+  return out;
+}
+// (2718) the pixels of columns x0..x1, rows y0..y1 of P (W wide) packed for khzOcrBackdrop: shade (0.3 red + 0.59
+// green + 0.11 blue) in the top 8 bits, then red, green, blue → a new array
+function khzOcrPack(P, W, x0, y0, x1, y1) {
+  const w = x1 - x0, a = new Uint32Array(w * (y1 - y0));
+  for (let Y = y0; Y < y1; Y++) for (let X = x0, j = (Y - y0) * w, q = (Y * W + X) * 4; X < x1; X++, j++, q += 4) {
+    const r = P[q], g = P[q + 1], b = P[q + 2]; a[j] = (((r * 0.3 + g * 0.59 + b * 0.11) | 0) * 16777216) + (r << 16 | g << 8 | b); }
+  return a;
+}
+// (2718) the marks in m grown by r pixels across and down (each row, then each column: within r of a mark) → a new array
+function khzOcrGrow(m, w, h, r) {
+  const t = new Uint8Array(m.length), out = new Uint8Array(m.length);
+  for (let y = 0; y < h; y++) { let last = -1e9; for (let x = 0; x < w; x++) { if (m[y * w + x]) last = x; if (x - last <= r) t[y * w + x] = 1; } last = 1e9; for (let x = w - 1; x >= 0; x--) { if (m[y * w + x]) last = x; if (last - x <= r) t[y * w + x] = 1; } }
+  for (let x = 0; x < w; x++) { let last = -1e9; for (let y = 0; y < h; y++) { if (t[y * w + x]) last = y; if (y - last <= r) out[y * w + x] = 1; } last = 1e9; for (let y = h - 1; y >= 0; y--) { if (t[y * w + x]) last = y; if (last - y <= r) out[y * w + x] = 1; } }
+  return out;
+}
+// (2718) for each of the arrays in list, the average of its values marked in m within r pixels across and down (a box,
+// summed a row and then a column at a time; how many are marked worked out once for all of them) → { out: the
+// averages, miss: 1 where none were marked (their average left 0), any: whether there were such places }
+function khzOcrBoxMean(list, m, w, h, r) {
+  const n = w * h, mv = new Uint8Array(n), rs = new Int32Array(n), cnt = new Int32Array(n), tot = new Int32Array(n), cc = new Int32Array(w);
+  // (the box's total round each pixel of a: along each row, then down — a running total per column, a whole row at a time)
+  const box = (a, sv) => {
+    for (let y = 0; y < h; y++) { const R = y * w; let v = 0;
+      for (let x = 0; x < r && x < w; x++) v += a[R + x];
+      for (let x = 0; x < w; x++) { const i = x + r, o = x - r - 1; if (i < w) v += a[R + i]; if (o >= 0) v -= a[R + o]; rs[R + x] = v; } }
+    cc.fill(0);
+    for (let y = 0; y < r && y < h; y++) { const R = y * w; for (let x = 0; x < w; x++) cc[x] += rs[R + x]; }
+    for (let y = 0; y < h; y++) { const i = y + r, o = y - r - 1;
+      if (i < h) { const I = i * w; for (let x = 0; x < w; x++) cc[x] += rs[I + x]; }
+      if (o >= 0) { const O = o * w; for (let x = 0; x < w; x++) cc[x] -= rs[O + x]; }
+      sv.set(cc, y * w); }
+  };
+  for (let j = 0; j < n; j++) mv[j] = m[j] ? 1 : 0;
+  box(mv, cnt); const miss = new Uint8Array(n); let any = false;
+  for (let j = 0; j < n; j++) if (cnt[j] <= 0) { miss[j] = 1; any = true; }
+  const out = list.map(a => { for (let j = 0; j < n; j++) mv[j] = m[j] ? a[j] : 0; box(mv, tot);
+    const o = new Uint8Array(n); for (let j = 0; j < n; j++) { const c = cnt[j]; if (c > 0) o[j] = (tot[j] + (c >> 1)) / c; } return o; });
+  return { out, miss, any };
+}
+// (2718) the print on rows ey0..ey1, columns ex0..ex1 of P (W wide), against what's under it there. The closing
+// (close, khzOcrBackdrop of them packed) reaches the paper's lightest grain, so it only tells the plain print — well
+// off it, 24 shades — from the rest; what's under the print is the average of the rest close by (within r), and print
+// is 12 shades off that (where none of the rest is close, off the closing) → { print, sure: the plain print }
+function khzOcrPrintOff(P, W, ex0, ey0, ex1, ey1, close, r, lightPaper) {
+  const ew = ex1 - ex0, n = ew * (ey1 - ey0), lum = new Uint8Array(n), sure = new Uint8Array(n), plain = new Uint8Array(n), print = new Uint8Array(n);
+  for (let Y = ey0; Y < ey1; Y++) for (let X = ex0, j = (Y - ey0) * ew, q = (Y * W + X) * 4; X < ex1; X++, j++, q += 4) {
+    const v = (P[q] * 0.3 + P[q + 1] * 0.59 + P[q + 2] * 0.11) | 0, c = close[j] >>> 24; lum[j] = v;
+    if ((lightPaper ? c - v : v - c) > 24) sure[j] = 1; else plain[j] = 1; }
+  const bm = khzOcrBoxMean([lum], plain, ew, ey1 - ey0, r), back = bm.out[0], miss = bm.miss;
+  for (let j = 0; j < n; j++) { const u = miss[j] ? close[j] >>> 24 : back[j]; if ((lightPaper ? u - lum[j] : lum[j] - u) > 12) print[j] = 1; }
+  return { print, sure };
+}
+// (2803) the lines drawn across a w by h mask m (1 = print), as a hand draws them: long thin strokes — no thicker than
+// T pixels from edge to edge — followed column by column as they drift up or down a pixel at a time, through the
+// letters they cross or run along (there the column is thicker), and longer than minLen, smooth (over any span pixels
+// it bends by no more than wob), unbroken (a row of letters has gaps between them) and thin for most of its length (a
+// row of joined-up writing goes up and down with every letter). → 1 on each line's pixels and, where it is on its own,
+// the pixel above and below (a scan's soft edge)
+function khzOcrThinLines(m, w, h, T, minLen, wob, span) {
+  const out = new Uint8Array(w * h); let live = [];
+  const finish = c => {
+    let segs = c.segs; while (segs.length && !segs[segs.length - 1][3]) segs.pop();
+    if (!segs.length) return;
+    const len = segs[segs.length - 1][0] - segs[0][0] + 1, thin = segs.filter(g => g[3]).length;
+    if (len <= minLen || thin < 0.6 * len || (c.gaps || 0) > Math.max(2, 0.02 * len)) return;
+    // smooth: over any stretch of span pixels it bends by no more than wob — a pen line may bow a little over its
+    // length; a row of joined-up writing goes up and down with every letter
+    const x0 = segs[0][0], cy = new Float64Array(len).fill(NaN);
+    segs.forEach(g => { if (g[3]) cy[g[0] - x0] = (g[1] + g[2]) / 2; });
+    for (let i = 0, last = -1; i < len; i++) if (!isNaN(cy[i])) { if (last >= 0) for (let j = last + 1; j < i; j++) cy[j] = cy[last] + (cy[i] - cy[last]) * (j - last) / (i - last); last = i; }
+    const sp = Math.max(4, Math.round(span));
+    for (let i = sp; i + sp < len; i += Math.max(1, sp >> 1)) if (Math.abs(cy[i + sp] - 2 * cy[i] + cy[i - sp]) > wob) return;
+    // (where it crosses or runs along a letter: the rows it would be on there, between its thin parts either side, as
+    // thick as it is elsewhere — the rows it had last bumped up or down over the letter; and no pixel more: that left
+    // ticks of the letters' stems on the line)
+    const thin2 = segs.filter(g => g[3]), tk = Math.max(1, Math.round(thin2.reduce((t, g) => t + g[2] - g[1] + 1, 0) / thin2.length));
+    segs.forEach(g => { if (!g[3]) { g[1] = Math.round(cy[g[0] - x0] - (tk - 1) / 2); g[2] = g[1] + tk - 1; } });
+    segs.forEach(g => { const e = g[3] ? 1 : 0; for (let y = Math.max(0, g[1] - e); y <= Math.min(h - 1, g[2] + e); y++) out[y * w + g[0]] = 1; });
+  };
+  for (let x = 0; x < w; x++) {
+    const runs = []; for (let y = 0; y < h;) { if (!m[y * w + x]) { y++; continue; } let e = y; while (e < h && m[e * w + x]) e++; runs.push([y, e - 1, false]); y = e; }
+    const next = [];
+    for (const c of live) {
+      const r = runs.find(q => q[1] >= c.a - 1 && q[0] <= c.b + 1);
+      if (r && r[1] - r[0] + 1 <= T) { r[2] = true; c.a = r[0]; c.b = r[1]; c.thinX = c.lastX = x; c.segs.push([x, r[0], r[1], true]); next.push(c); }
+      else if (r) { c.lastX = x; c.segs.push([x, c.a, c.b, false]); next.push(c); }   // (through the letters it crosses or runs along)
+      else if (!r && x - c.lastX <= 2) { c.gaps = (c.gaps || 0) + 1; next.push(c); }   // (a pixel or two the scan lost)
+      else finish(c);
+    }
+    for (const r of runs) if (!r[2] && r[1] - r[0] + 1 <= T && !next.some(c => c.lastX === x && c.a === r[0] && c.b === r[1])) next.push({ a: r[0], b: r[1], thinX: x, lastX: x, segs: [[x, r[0], r[1], true]] });
+    // (two strokes run into one: followed once, from where the longer one began)
+    live = next.filter((c, i) => !next.some((d, j) => j !== i && d.lastX === c.lastX && d.a === c.a && d.b === c.b && (d.segs[0][0] < c.segs[0][0] || (d.segs[0][0] === c.segs[0][0] && j < i))));
+  }
+  live.forEach(finish);
+  return out;
+}
+// (2718) the print in a w by h area: lighter or darker than what's under it (pr: khzOcrPrintOff's, ew wide, the area
+// starting at ox, oy in it), or another colour than what's round it — orange print is hardly darker than cream paper
+// (sc: the colours, bc: their averages round about, aw wide, the area starting at ax, ay) → 1 for print
+function khzOcrPrintMask(pr, ew, ox, oy, sc, bc, aw, ax, ay, w, h) {
+  const ink = new Uint8Array(w * h), s0 = sc[0], s1 = sc[1], s2 = sc[2], k0 = bc[0], k1 = bc[1], k2 = bc[2];
+  for (let yy = 0; yy < h; yy++) for (let xx = 0, i = (ay + yy) * aw + ax, j = (oy + yy) * ew + ox, t = yy * w; xx < w; xx++, i++, j++, t++) {
+    if (pr[j]) { ink[t] = 1; continue; }
+    const a = s0[i] - k0[i], b = s1[i] - k1[i], c = s2[i] - k2[i];
+    if ((a < 0 ? -a : a) + (b < 0 ? -b : b) + (c < 0 ? -c : c) > 60) ink[t] = 1; }
+  return ink;
+}
+// (2718) the colour under the print round each pixel of an area aw by ah (dc: its three colours; cl: it closed over
+// the print, khzOcrBackdrop; sure: its plain print, plain: the rest): the band's grey, the watermark's grey, a coloured
+// paper's grain evened. The closing keeps a watermark's or a band's edge where it is — an average across the edge bit
+// a pale notch out of the watermark — but reaches the lightest grain of the paper: it is brought back by how far it
+// stands off the bare paper round about, on average. The bare paper is the paper with the print grown by a few pixels
+// — a coloured letter's pale fringe left the fill tinted in its shape. Where none of the bare paper is close, how far
+// the closing stands off the rest of what isn't print; where none of that either, nothing. → the three colours
+function khzOcrUnderColours(dc, cl, sure, plain, aw, ah, rb, lightPaper) {
+  const n = aw * ah, d0 = dc[0], d1 = dc[1], d2 = dc[2], bare = khzOcrGrow(sure, aw, ah, Math.max(2, Math.round(rb / 3)));
+  for (let j = 0; j < n; j++) bare[j] = 1 - bare[j];
+  const offL = new Uint8Array(n); for (let j = 0; j < n; j++) { const o = (cl[j] >>> 24) - ((d0[j] * 0.3 + d1[j] * 0.59 + d2[j] * 0.11) | 0); offL[j] = o < 0 ? -o : o; }
+  const bs = khzOcrBoxMean([offL], bare, aw, ah, rb), bias = bs.out[0];
+  if (bs.any) { const b2 = khzOcrBoxMean([offL], plain, aw, ah, rb), m2 = b2.miss, o2 = b2.out[0], m1 = bs.miss;
+    for (let j = 0; j < n; j++) if (m1[j]) bias[j] = m2[j] ? offL[j] : o2[j]; }
+  const f0 = new Uint8Array(n), f1 = new Uint8Array(n), f2 = new Uint8Array(n), sg = lightPaper ? -1 : 1;
+  for (let j = 0; j < n; j++) { const c = cl[j], b = sg * bias[j], r = ((c >>> 16) & 255) + b, g = ((c >>> 8) & 255) + b, u = (c & 255) + b;
+    f0[j] = r < 0 ? 0 : r > 255 ? 255 : r; f1[j] = g < 0 ? 0 : g > 255 ? 255 : g; f2[j] = u < 0 ? 0 : u > 255 ? 255 : u; }
+  return [f0, f1, f2];
+}
 // the printed letters of a word taken out of the page picture: only the letters, painted in the colour under them, so
 // shading and the paper's own texture stay (a box painted over the word left grey patches on shaded rows)
 function khzOcrErase(px, b0, others, alt) {
@@ -15148,25 +15351,55 @@ function khzOcrErase(px, b0, others, alt) {
   const bg = [0, 1, 2].map(c => mode.reduce((a, v) => a + v[c], 0) / mode.length), bl = bg[0] * 0.3 + bg[1] * 0.59 + bg[2] * 0.11;
   // print: darker than the paper (lighter on dark paper) — and the faint ringing a JPEG scan has round its letters
   // (the white paper round a highlight is lighter, not print)
-  const dark = bl >= 128, ink = new Uint8Array(n);
-  for (let i = 0; i < n; i++) { const q = i * 4, v = d[q] * 0.3 + d[q + 1] * 0.59 + d[q + 2] * 0.11; if (dark ? bl - v > 12 : v - bl > 12) ink[i] = 1; }
+  const dark = bl >= 128;
+  // (2718) what's under the print round here — the page with its letters closed over (khzOcrBackdrop): print is what
+  // stands out from that, not from one paper shade. On a faint watermark (a grey "DRAFT" behind the text) or a shaded
+  // band the letters were measured against the white paper, so the watermark round them counted as print too: a
+  // letter touching it was one mark with the whole watermark, mostly outside the word, and stayed on the page
+  // ("p", "co", "na" of a signature over the "D"); and the band or watermark under the letters was painted paper-white.
+  const lineH = (() => { const hs = (others || []).filter(o => o !== b0 && Math.abs((o.y0 + o.y1) / 2 - (b0.y0 + b0.y1) / 2) < Math.max(o.y1 - o.y0, bh) * 0.6 && Math.abs((o.x0 + o.x1) / 2 - (b0.x0 + b0.x1) / 2) < 30 * Math.max(bh, o.y1 - o.y0)).map(o => o.y1 - o.y0).sort((p, q) => p - q); return hs.length ? Math.max(bh, hs[hs.length >> 1]) : bh; })();
+  const RL = Math.max(12, Math.round(lineH * 2.2)), rb = Math.max(3, Math.min(30, Math.round(bh * 0.3)));
+  // (looked at as far round the word as the ruled lines are, below)
+  const ex0 = Math.max(0, x0 - RL), ey0 = Math.max(0, y0 - RL), ex1 = Math.min(W, x1 + RL), ey1 = Math.min(H, y1 + RL), ew = ex1 - ex0, eh = ey1 - ey0;
+  const close = khzOcrBackdrop(khzOcrPack(SRC, W, ex0, ey0, ex1, ey1), ew, eh, rb, dark), { print, sure } = khzOcrPrintOff(SRC, W, ex0, ey0, ex1, ey1, close, rb, dark);
+  const inkAt = (X, Y) => print[(Y - ey0) * ew + X - ex0] === 1;
+  // (the colours are looked at only on the word's own area and a little round it — the ruled lines round about need
+  // only the shade)
+  const ax0 = Math.max(ex0, x0 - rb), ay0 = Math.max(ey0, y0 - rb), ax1 = Math.min(ex1, x1 + rb), ay1 = Math.min(ey1, y1 + rb), aw = ax1 - ax0, ah = ay1 - ay0;
+  const sureA = new Uint8Array(aw * ah);
+  for (let Y = ay0; Y < ay1; Y++) sureA.set(sure.subarray((Y - ey0) * ew + ax0 - ex0, (Y - ey0) * ew + ax1 - ex0), (Y - ay0) * aw);
+  const plainA = sureA.map(v => 1 - v);
+  // (the area's three colours, each as its own array)
+  const chans = P => { const c = [0, 1, 2].map(() => new Uint8Array(aw * ah)); for (let Y = ay0; Y < ay1; Y++) for (let X = ax0, i = (Y - ay0) * aw, q = (Y * W + X) * 4; X < ax1; X++, i++, q += 4) { c[0][i] = P[q]; c[1][i] = P[q + 1]; c[2][i] = P[q + 2]; } return c; };
+  const sc = chans(SRC), bc = khzOcrBoxMean(sc, plainA, aw, ah, rb), backC = bc.out;
+  if (bc.any) for (let j = 0; j < aw * ah; j++) if (bc.miss[j]) for (let c = 0; c < 3; c++) backC[c][j] = sc[c][j];
+  // (print: lighter or darker than what's round it, or another colour — orange print is hardly darker than cream paper)
+  const ink = khzOcrPrintMask(print, ew, x0 - ex0, y0 - ey0, sc, backC, aw, x0 - ax0, y0 - ay0, w, h);
   // ruled lines (fill-in lines, table and box borders) stay, even where they run through the word's box: ink in a
   // straight run longer than 2.2 line heights across or down (looked for on the page round the box, not only in it)
   // (measured against the line's letters, not the word's own box: a dash or underscore on its own is only a few pixels
   //  tall, so its own stroke counted as a ruled line and stayed on the page beside the new dash — "GENERATOR — PROPANE"
   //  had two dashes)
-  const lineH = (() => { const hs = (others || []).filter(o => o !== b0 && Math.abs((o.y0 + o.y1) / 2 - (b0.y0 + b0.y1) / 2) < Math.max(o.y1 - o.y0, bh) * 0.6 && Math.abs((o.x0 + o.x1) / 2 - (b0.x0 + b0.x1) / 2) < 30 * Math.max(bh, o.y1 - o.y0)).map(o => o.y1 - o.y0).sort((p, q) => p - q); return hs.length ? Math.max(bh, hs[hs.length >> 1]) : bh; })();
-  const rule = new Uint8Array(n), RL = Math.max(12, Math.round(lineH * 2.2));
-  // (darker than the paper: on a highlighted label the white paper round the highlight isn't a line, and letters touching it aren't either)
-  const inkAt = (X, Y) => { const q = (Y * W + X) * 4, v = SRC[q] * 0.3 + SRC[q + 1] * 0.59 + SRC[q + 2] * 0.11; return dark ? bl - v > 12 : v - bl > 12; };
+  const rule = new Uint8Array(n);
+  // (print against what's round it, inkAt: on a highlighted label the white paper round the highlight isn't a line, and
+  // letters touching it aren't either)
   for (let yy = 0; yy < h; yy++) {
-    const Y = y0 + yy, a = Math.max(0, x0 - RL), e = Math.min(W, x1 + RL);
+    const Y = y0 + yy, a = ex0, e = ex1;
     for (let X = a; X < e;) { if (!inkAt(X, Y)) { X++; continue; } let E = X; while (E < e && inkAt(E, Y)) E++; if (E - X > RL) for (let q = Math.max(X, x0); q < Math.min(E, x1); q++) rule[yy * w + q - x0] = 1; X = E; }
   }
   for (let xx = 0; xx < w; xx++) {
-    const X = x0 + xx, a = Math.max(0, y0 - RL), e = Math.min(H, y1 + RL);
+    const X = x0 + xx, a = ey0, e = ey1;
     for (let Y = a; Y < e;) { if (!inkAt(X, Y)) { Y++; continue; } let E = Y; while (E < e && inkAt(X, E)) E++; if (E - Y > RL) for (let q = Math.max(Y, y0); q < Math.min(E, y1); q++) rule[(q - y0) * w + xx] = 1; Y = E; }
   }
+  // (2803) and lines drawn by hand — a pen line crossing words out, an underline — which are never quite straight, so
+  // the straight runs above only found pieces of them: the rest was one mark with the letters it crossed, reaching
+  // past the word, and the letters stayed on the page with it ("ANDI" crossed out kept; bits of "DETAIL" kept on the
+  // line). A line is a long thin stroke, about straight: it stays, drawn over the new text; the letters it crossed go.
+  { const T = Math.max(3, Math.round(lineH * 0.12)), wob = Math.max(2, lineH * 0.2);
+    const across = khzOcrThinLines(print, ew, eh, T, RL, wob, lineH / 2);
+    const tr = new Uint8Array(ew * eh); for (let y = 0; y < eh; y++) for (let x = 0; x < ew; x++) tr[x * eh + y] = print[y * ew + x];
+    const down = khzOcrThinLines(tr, eh, ew, T, RL, wob, lineH / 2);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { const X = x0 + xx - ex0, Y = y0 + yy - ey0; if (across[Y * ew + X] || down[X * eh + Y]) rule[yy * w + xx] = 1; } }
   // what goes: the marks mostly inside the word's box, and marks just past its ends that belong to it. A mark mostly
   // outside the box stays whole, even where the box grazes it: the box of "Approved" took the right side of the ☐
   // before it, and a reader's box running on past its word took marks nobody read (the Qty "1"s of a table)
@@ -15220,9 +15453,21 @@ function khzOcrErase(px, b0, others, alt) {
     for (let xx = 0; xx < w; xx++) { if (xx + R < w) c += kill[r + xx + R]; if (xx - R - 1 >= 0) c -= kill[r + xx - R - 1]; hk[r + xx] = c > 0 ? 1 : 0; } }
   for (let xx = 0; xx < w; xx++) { let c = 0; for (let yy = 0; yy < Math.min(h, R); yy++) c += hk[yy * w + xx];
     for (let yy = 0; yy < h; yy++) { if (yy + R < h) c += hk[(yy + R) * w + xx]; if (yy - R - 1 >= 0) c -= hk[(yy - R - 1) * w + xx]; nearM[yy * w + xx] = c > 0 ? 1 : 0; } }
+  // (filled with the colour under the print round each pixel — the band's grey, the watermark's grey, a coloured
+  // paper's grain evened — each colour closed over the letters the same way; where a stamp lay under the letters its
+  // colour, stampAt)
+  // (not from the print's own soft edge either — a coloured letter's pale fringe left the fill tinted in its shape — so
+  // the print is grown by a few pixels for this)
+  // (the closing of the page itself where a stamp was lifted for reading the letters)
+  let clA; if (alt) clA = khzOcrBackdrop(khzOcrPack(D, W, ax0, ay0, ax1, ay1), aw, ah, rb, dark);
+  else { clA = new Uint32Array(aw * ah); for (let Y = ay0; Y < ay1; Y++) clA.set(close.subarray((Y - ey0) * ew + ax0 - ex0, (Y - ey0) * ew + ax1 - ex0), (Y - ay0) * aw); }
+  const fc = khzOcrUnderColours(alt ? chans(D) : sc, clA, sureA, plainA, aw, ah, rb, dark);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const near = nearM[yy * w + xx];
-    if (near && !rule[yy * w + xx] && (ink[yy * w + xx] || inBox(yy * w + xx))) { const q = ((y0 + yy) * W + x0 + xx) * 4; const f = alt ? stampAt(x0 + xx, y0 + yy) : null; const c = f || bg; D[q] = c[0]; D[q + 1] = c[1]; D[q + 2] = c[2]; }
+    if (near && !rule[yy * w + xx] && (ink[yy * w + xx] || inBox(yy * w + xx))) {
+      const X = x0 + xx, Y = y0 + yy, q = (Y * W + X) * 4, j = (Y - ay0) * aw + X - ax0, f = alt ? stampAt(X, Y) : null;
+      if (f) { D[q] = f[0]; D[q + 1] = f[1]; D[q + 2] = f[2]; } else { D[q] = fc[0][j]; D[q + 1] = fc[1][j]; D[q + 2] = fc[2][j]; }
+    }
   }
 }
 // a word's paper and ink colours from the page's pixels (as wordColors, which reads them from the canvas)
@@ -15555,11 +15800,19 @@ const khzTickWait = (() => {
   const msg = () => new Promise(r => { q.push(r); ch.port2.postMessage(0); });
   return msg;
 })();
-// (khzTickHold: work done in the background, not asked for — a scanned page made ready when the document opens, app224
-// — waits here while you scroll or zoom, so the page keeps up with you)
-let khzTickHold = null;
+// (khzUserBusy: while you scroll, zoom, drag or type, the work waits here — (2715) any text recognition, not only the
+// background making-ready of scanned pages (app224): Recognize Text finishing four pages made scrolling stop for
+// 0.1–1.8 s at a time, about 100 times in 40 s. It carries on half a second after you stop.)
+let khzUserAt = -1e9;
+{
+  const mark = () => { khzUserAt = performance.now(); };
+  ['wheel', 'pointerdown', 'keydown', 'touchmove'].forEach(t => window.addEventListener(t, mark, { capture: true, passive: true }));
+  window.addEventListener('pointermove', e => { if (e.buttons) mark(); }, { capture: true, passive: true });
+  document.addEventListener('scroll', mark, { capture: true, passive: true });
+}
+const khzUserBusy = (ms = 500) => performance.now() - khzUserAt < ms;
 function khzTick() {
-  if (khzTickHold && khzTickHold()) return (async () => { const t0 = performance.now(); while (khzTickHold && khzTickHold()) await new Promise(r => setTimeout(r, 100)); khzTickAt = performance.now(); khzTickStat.n++; khzTickStat.ms += khzTickAt - t0; })();
+  if (khzUserBusy()) return (async () => { const t0 = performance.now(); while (khzUserBusy()) await new Promise(r => setTimeout(r, 100)); khzTickAt = performance.now(); khzTickStat.n++; khzTickStat.ms += khzTickAt - t0; })();
   const t = performance.now(); if (t - khzTickAt < 20) return null;
   return khzTickWait().then(() => { khzTickAt = performance.now(); khzTickStat.n++; khzTickStat.ms += khzTickAt - t; });
 }
@@ -18491,7 +18744,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.2712';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.2807';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -18757,7 +19010,7 @@ async function generateSystemReport() {
     <fieldset><legend>Installed Plug-ins</legend><pre>${escapeHtml(r.plugins)}</pre></fieldset></div>`,
     [{ label: 'OK', primary: true }, { label: 'Save Report\u2026', run: () => {
       const txt = (r.sys + '\n\nInstalled plug-ins\n' + r.plugins + '\n').replace(/\n/g, '\r\n');
-      downloadBlob(new Blob([txt], { type: 'text/plain' }), 'System Report ' + new Date().toISOString().slice(0, 10) + '.txt');
+      downloadBlob(new Blob([txt], { type: 'text/plain' }), 'System Report ' + khzLocalTime().slice(0, 10) + '.txt');
       toast('System report saved.'); return false; } }], 760);
 }
 
@@ -18817,6 +19070,18 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.2807', ['Edit PDF \u203a Format: with a colour theme on (yellow, black, pink\u2026), the old number no longer shows under what you type in the Font Size, Line Spacing, Paragraph Spacing, Horizontal Scaling and Character Spacing boxes.']],
+  ['2026.10.2806', ['Edit PDF: text on a page the file turns sideways (a drawing saved landscape) keeps its width when you change it \u2014 a block of several short lines was squeezed (to 63%) or stretched the first time it was edited.', 'Edit PDF › Format: Line Spacing shows the text\u2019s own spacing as Acrobat does (12 pt lines of 10 pt text are 1.20; it showed 1.00), with Acrobat\u2019s choices, and Line Spacing, Paragraph Spacing, Horizontal Scaling and Character Spacing can be typed into like the font size. A value out of range gets Acrobat\u2019s message (\u201cThe value must be between 1 and 5.\u201d) and the box goes back to what it was; the font size box too (0.01 to 1296). Character Spacing is now in points between letters like Acrobat\u2019s (\u221210 to 10), Horizontal Scaling takes 0.01 to 6400% and Paragraph Spacing 0 to 1584 pt.']],
+  ['2026.10.2805', ['PDF/A files: the read-only bar is a strip across the window under the toolbar, as in Acrobat (it showed as a light-blue panel down half the window; so did the Protected View, review and repaired-file bars), and Enable Editing first warns that editing will cause the PDF to no longer comply with PDF/A \u2014 OK makes it editable, Cancel leaves it read-only.', 'Print: when a page is bigger than the paper (Actual size, or a Custom Scale), the preview shows the whole page with the paper outlined in pink and what won\u2019t print greyed, like Acrobat.']],
+  ['2026.10.2804', ['Edit PDF: changing recognized text on a scanned page is quick again \u2014 the old words are taken out of the scan in the background (it took 5 seconds and more on a 600 dpi scan, with the window standing still) and the same way a converted page\u2019s are, so shading, watermarks and pen lines round them stay.', 'Edit PDF: a page that is still being converted to editable text can\u2019t be edited until it goes in, like Acrobat \u2014 a click on it says so. Before, its old recognized text could be clicked into, and the converted page then waited for you to leave the text box, so it looked stuck.']],
+  ['2026.10.2803', ['Edit PDF on a scan: words crossed out or underlined by hand come off the page completely \u2014 the pen line stays, drawn over the new text (before, the letters it crossed stayed on the page with it, and parts of the line went).']],
+  ['2026.10.2802', ['Desktop app: a picture, Word, Excel, PowerPoint, web page, text or PostScript file opened from File Explorer or Finder (Open with \u203a KHZ PDF) opens as a new, unsaved PDF, like Acrobat \u2014 before, nothing opened.', 'Windows: right-click files in File Explorer for Convert to KHZ PDF (each opens as a PDF) and Combine files in KHZ PDF\u2026 (adds them to the Combine Files list), like Acrobat\u2019s. On Windows 11 they are under Show more options, where Acrobat\u2019s are.']],
+  ['2026.10.2801', ['Recognize Text and Edit PDF on a scan take the old letters off the page picture more cleanly: letters on a shaded table row, over a grey watermark (“DRAFT”) or touching it, and on coloured or highlighted paper go completely, the shading and watermark under them stay as they were (no white patches or notches), and a rubber stamp lifted into its own picture leaves no faint outline behind.']],
+  ['2026.10.2717', ['Recognize Text and Edit PDF on a scan finish off each page in a background thread on the computer\u2019s other cores, so the window scrolls and zooms freely while it works, and the recognizing no longer waits while you scroll (2715 paused it). Pages come out the same; where a computer can\u2019t run the thread, the page is finished in the window as before.', 'Web version: a scanned page\u2019s line pieces read again by Tesseract are always read as single lines (another page being read at the same time could make them be read as a whole page).']],
+  ['2026.10.2716', ['Times are in your computer\u2019s own time everywhere KHZ PDF shows or names them: the KHZ Scans folders, the troubleshooting and developer logs, Developer Mode\u2019s readings, the System Report and developer report file names, and Send for Comments\u2019 due date (some were in UTC, 4 hours ahead in the evening).']],
+  ['2026.10.2715', ['Scrolling stays smooth while Recognize Text works: the work waits while you scroll, zoom, drag or type and carries on half a second after (finishing four pages used to make scrolling stop for up to 1.8 s at a time). The page text it makes is the same.', 'Scan: the scanner is asked for its settings once while the Scan screen is open (an Epson was asked 3 times in 4 seconds and then reported busy).', 'Troubleshooting log: every line is in your computer\u2019s own time (some scanner lines were in UTC, 4 hours off).']],
+  ['2026.10.2714', ['Right-click KHZ PDF on the Windows taskbar (or its Dock icon on a Mac) for Scan with KHZ PDF, Create PDF, Combine Files, New Blank PDF and Open a File\u2026, like Acrobat. They work with KHZ PDF closed or already open. Windows keeps your Recent files above them.']],
+  ['2026.10.2713', ['Windows: KHZ PDF now shows in Settings \u203a Apps \u203a Default apps, so it can be chosen as the app for PDF files (Edit \u203a Preferences \u203a General \u203a Select as Default PDF Handler opens that page).']],
   ['2026.10.2712', ['Mac: Scan & OCR lists your scanners by name (the ones in System Settings \u203a Printers & Scanners, like your Epson) and scans inside KHZ PDF with your settings \u2014 glass or feeder, both sides, colour, resolution, paper size. \u201cShow scanner\u2019s user interface\u201d or the Image Capture entry still use Apple\u2019s Image Capture.', 'Fixed: the Scan & OCR screen (and the XFA form view) stayed dark in light themes, so its writing couldn\u2019t be read.']],
   ['2026.10.2711', ['The KHZ PDF website asks search engines (Google, Bing\u2026) not to list it.']],
   ['2026.10.2710', ['Fixed: Recent replaced a file with another of the same name from a different folder (for example two \u201cPermit Electric\u201d files from two job folders). Each folder\u2019s file now keeps its own row; starred files carry over.']],
@@ -21114,7 +21379,7 @@ async function prBuild(opts = {}) {
     return autoRot && k1 > k0 * 1.0001 ? { k: k1, turn: true, W: r.H, H: r.W } : { k: k0, turn: false, W: r.W, H: r.H };
   };
   const paperFor = (w, h) => { const land = P.orient === 'landscape' || (P.orient === 'auto' && w > h); return land ? [Math.max(pw0, ph0), Math.min(pw0, ph0)] : [Math.min(pw0, ph0), Math.max(pw0, ph0)]; };
-  let firstScale = null;
+  let firstScale = null, cut = null;
   if (P.mode === 'size' && P.paperBySize) {
     // Choose paper source by PDF page size: every sheet is the page's own size, at 100% with no margins
     for (const n of pages) { const r = await embedOf(n); if (firstScale === null) firstScale = 1; await place(out.addPage([r.W, r.H]), r, 0, 0, 1); }
@@ -21124,8 +21389,15 @@ async function prBuild(opts = {}) {
       const fit = Math.min(aw / r.W, ah / r.H);
       const k = P.fit === 'fit' ? fit : P.fit === 'shrink' ? Math.min(1, fit) : P.fit === 'custom' ? P.custom / 100 : 1;
       if (firstScale === null) firstScale = k;
-      const sheet = out.addPage([sw, sh]);
-      await place(sheet, r, ml + (aw - r.W * k) / 2, mb + (ah - r.H * k) / 2, k);
+      const sheet = out.addPage([sw, sh]), px = ml + (aw - r.W * k) / 2, py = mb + (ah - r.H * k) / 2;
+      await place(sheet, r, px, py, k);
+      // (2805) the preview of a page bigger than the paper (Actual size, a Custom Scale): the whole page, the paper
+      // outlined on it and what's off the paper greyed, as Acrobat shows it. The sheet in the preview is made as big
+      // as the page reaches; only the preview's copy — the sheets printed are the paper's size
+      if (preview && preview === out.getPageCount()) {
+        const pw = r.W * k, ph = r.H * k, ux = Math.min(0, px), uy = Math.min(0, py), uw = Math.max(sw, px + pw) - ux, uh = Math.max(sh, py + ph) - uy;
+        if (uw > sw + 0.5 || uh > sh + 0.5) { sheet.setMediaBox(ux, uy, uw, uh); cut = { x: -ux / uw, y: (uy + uh - sh) / uh, w: sw / uw, h: sh / uh }; }
+      }
       // fixed-size watermark: at its own size, centred the same way, whatever the page was scaled to
       const hi = src.__fixedWM && src.__fixedWM[n - 1];
       if (hi !== undefined) { const rw = await embedOf(hi + 1); await place(sheet, rw, ml + (aw - rw.W) / 2, mb + (ah - rw.H) / 2, 1); }
@@ -21217,7 +21489,7 @@ async function prBuild(opts = {}) {
   let single = await out.save();
   // grayscale, save ink and Advanced › Print As Image: the sheets go out as pictures (one copy is enough; the copies reuse them)
   if (P.gray || P.saveInk || P.printAsImage) single = await prRaster(single, P, preview);
-  if (preview) return { bytes: single, single, order: null, perCopy: one, scale: firstScale || 1, sheets: one, preview };
+  if (preview) return { bytes: single, single, order: null, perCopy: one, scale: firstScale || 1, sheets: one, preview, cut };
   // copies: collated 1,2,3,1,2,3 or not 1,1,2,2,3,3 — order[i] is the sheet of the single copy that sheet i repeats
   const copies = Math.max(1, P.copies | 0), idx = Array.from({ length: one }, (_, i) => i);
   const order = copies === 1 ? idx : P.collate ? Array.from({ length: copies }, () => idx).flat() : idx.flatMap(i => Array(copies).fill(i));
@@ -21263,7 +21535,7 @@ async function prRebuild() {
     let r = await prBuild({ preview: want });
     if (gen !== prState.gen) return;
     if (want > r.sheets) { prState.sheet = r.sheets || 1; r = await prBuild({ preview: prState.sheet }); if (gen !== prState.gen) return; }
-    prState.scale = r.scale; prState.viewFor = r.preview; prState.ok = true;
+    prState.scale = r.scale; prState.viewFor = r.preview; prState.cut = r.cut || null; prState.ok = true;
     if (prState.view) { try { prState.view.destroy(); } catch (e) {} }
     const view = await pdfjsLib.getDocument({ data: r.bytes.slice() }).promise;
     if (gen !== prState.gen) { try { view.destroy(); } catch (e) {} return; }
@@ -21303,6 +21575,13 @@ async function prPreview() {
   const k = Math.min((box.clientWidth - 16) / vp1.width, (box.clientHeight - 16) / vp1.height), vp = pg.getViewport({ scale: k * (window.devicePixelRatio || 1) });
   const c = box.querySelector('canvas'); c.width = vp.width; c.height = vp.height; c.style.width = (vp1.width * k) + 'px'; c.style.height = (vp1.height * k) + 'px';
   try { await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; } catch (e) { return; }   // closed or rebuilt meanwhile
+  // (2805) a page bigger than the paper: what's off the paper greyed and the paper outlined in pink, as in Acrobat
+  const C = prState.cut;
+  if (C && prState.viewFor === n) {
+    const g = c.getContext('2d'), W = c.width, H = c.height, x = C.x * W, y = C.y * H, w = C.w * W, h = C.h * H, d = window.devicePixelRatio || 1;
+    g.save(); g.fillStyle = 'rgba(0,0,0,0.38)'; g.beginPath(); g.rect(0, 0, W, H); g.rect(x, y, w, h); g.fill('evenodd');
+    g.strokeStyle = '#ba61ba'; g.lineWidth = d; g.strokeRect(x + d / 2, y + d / 2, w - d, h - d); g.restore();
+  }
   const wait = box.querySelector('.pr-wait'); if (wait) wait.style.display = 'none';
 }
 async function prGo() {
@@ -29157,7 +29436,9 @@ function ocrFitWidth(a) {
   if (a.hScale) return;
   const lines = String(a.text || '').split('\n'), fs = a.fontSize || 10, fam = a.family || 'sans';
   const tw = Math.max(0, ...lines.map(l => textWidth(l, fs, a.bold, fam, a.charSp || 0)));
-  const xs = a.origPts.map(p => p[0]), ow = Math.max(...xs) - Math.min(...xs);
+  // (2806) along the lines: on a page the file turns a quarter they run up or down its own height (app225 the same)
+  const pr = ((((state.pages[a.page] || {}).origPage || {}).rotate || 0) % 360 + 360) % 360, ax = pr === 90 || pr === 270 ? 1 : 0;
+  const xs = a.origPts.map(p => p[ax]), ow = Math.max(...xs) - Math.min(...xs);
   if (tw > 0 && ow > 0) { const r = Math.round(ow / tw * 100); if (Math.abs(r - 100) > 4) a.hScale = Math.max(50, Math.min(150, r)); }
 }
 // the scanned words under an edited block are taken out of the scan picture itself (app158): nothing is drawn
@@ -44872,7 +45153,21 @@ if (window.khzDesktop && window.khzDesktop.isDesktop) (() => {
       finally { showLoading(false); }
     }
   }
-  D.onOpenFiles(paths => openPaths(paths));
+  // (2802) one hand-over at a time: Explorer starts the app once for each file chosen (several pictures sent with
+  // Convert to KHZ PDF at once), and two files opening together got in each other's way
+  let openQ = Promise.resolve();
+  const queued = fn => paths => { openQ = openQ.then(() => fn(paths)).catch(e => console.error(e)); return openQ; };
+  // (2802) Explorer's "Combine files in KHZ PDF…": the files go into the Combine Files list, like Acrobat's — added to
+  // the list already open, as Explorer hands them over one by one
+  async function combinePaths(paths) {
+    const files = [];
+    for (const p of paths) { try { files.push(await new KhzFileHandle(p).getFile()); } catch (e) { toast('Could not open ' + baseOf(p) + ': ' + (e.message || e)); } }
+    if (!files.length) return;
+    if (!(state.cmb && state.cmb.open)) showCombineFiles();
+    window.focus(); await cmbAddFiles(files);
+  }
+  D.onOpenFiles(queued(openPaths));
+  if (D.onCombineFiles) D.onCombineFiles(queued(combinePaths));
   window.khzOpenPaths = openPaths;
 
   // ---- dragged in from Explorer: remember where the file lives ----
@@ -50625,7 +50920,7 @@ setTimeout(() => {
     pkMyIds().forEach(id => {
       const end = id.notAfter ? Date.parse(id.notAfter) : NaN; if (!isFinite(end)) return;
       const days = Math.ceil((end - now) / 86400000), when = new Date(end).toLocaleDateString();
-      const day = new Date().toISOString().slice(0, 10);
+      const day = khzLocalTime().slice(0, 10);
       if (days < 0) notify(`Your Digital ID "${id.name}" expired on ${when}. New signatures made with it won't be trusted.`, { kind: 'warn', cat: 'cert', key: 'idexp:' + id.fp, buttons: [{ label: 'Digital IDs', k: 'ids' }] });
       else if (days <= 30) notify(`Your Digital ID "${id.name}" expires in ${days} day${days === 1 ? '' : 's'} (${when}).`, { kind: 'warn', cat: 'cert', key: 'idsoon:' + id.fp + ':' + (days <= 7 ? day : 'm'), buttons: [{ label: 'Digital IDs', k: 'ids' }] });
     });
@@ -50872,7 +51167,7 @@ function khzOcrBar(onStop) {
 }
 async function khzRecognizeForEdit() {
   if (khzOcrEdit || typeof khzOcrRead !== 'function') return;
-  const tab = state.activeTabId, run = khzOcrEdit = { stop: false, ready: [], applied: 0 };
+  const tab = state.activeTabId, run = khzOcrEdit = { stop: false, ready: [], applied: 0, pending: new Set() };
   const stopNow = () => run.stop || state.activeTabId !== tab || !state.pdfDoc;
   const bar = khzOcrBar(() => { run.stop = true; });
   let total = 0, converted = 0;
@@ -50891,13 +51186,13 @@ async function khzRecognizeForEdit() {
     const lang = ($('ocr-lang') && $('ocr-lang').value) || 'eng';
     // (the page you’re on and the next two may have been made ready already, in the background when the document opened: app224)
     const pre = typeof khzOcrPrepTake === 'function' ? await khzOcrPrepTake(lang) : [];
-    for (const r of pre) if (!stopNow() && todo.includes(r.n)) { todo.splice(todo.indexOf(r.n), 1); run.ready.push(r); converted++; bar.set(`Page ${r.n}: Converting scanned page to editable text and images`, converted / total); }
+    for (const r of pre) if (!stopNow() && todo.includes(r.n)) { todo.splice(todo.indexOf(r.n), 1); run.ready.push(r); run.pending.add(r.n); converted++; bar.set(`Page ${r.n}: Converting scanned page to editable text and images`, converted / total); }
     if (run.ready.length) await khzOcrEditApply(run, false, stopNow);
     if (todo.length && !stopNow()) await khzOcrRead({
       pages: todo, lang, mode: 'editable', dpi: 300, down: 150, stop: stopNow, visibleOnly: true, oneAtATime: true,
       pick: rest => rest.includes(state.currentPage) ? state.currentPage : rest[0],
-      progress: (msg, f) => { const m = /page (\d+)/i.exec(msg); if (m) reading = +m[1]; bar.set(m ? `Page ${reading}: Converting scanned page to editable text and images` : msg, (converted + Math.min(0.95, f * total - converted)) / total); },
-      onPage: async res => { if (res.words) run.ready.push(res); converted++; bar.set(`Page ${res.n}: Converting scanned page to editable text and images`, converted / total); await khzOcrEditApply(run, false, stopNow); },
+      progress: (msg, f) => { const m = /page (\d+)/i.exec(msg); if (m) { reading = +m[1]; khzOcrLockPage(run, reading); } bar.set(m ? `Page ${reading}: Converting scanned page to editable text and images` : msg, (converted + Math.min(0.95, f * total - converted)) / total); },
+      onPage: async res => { if (res.words) run.ready.push(res); else run.pending.delete(res.n); converted++; bar.set(`Page ${res.n}: Converting scanned page to editable text and images`, converted / total); await khzOcrEditApply(run, false, stopNow); },
     });
     if (!stopNow()) await khzOcrEditApply(run, true, stopNow);
   } catch (e) { console.warn('recognize text', e); toast('Text recognition stopped: ' + (e && e.message || e)); }
@@ -50908,6 +51203,26 @@ async function khzRecognizeForEdit() {
     if (state.totalPages <= 20 && !state._khzLazyImg && typeof khzEditPrepRest === 'function') khzEditPrepRest().catch(() => {});
     if (run.applied) { khzOcrDone.add(khzDocKey()); toast(`Converted ${run.applied} scanned page${run.applied > 1 ? 's' : ''} to editable text and images.`); }
   }
+}
+// (2804) a page being converted can't be edited until it goes in, like Acrobat: text an earlier Recognize Text left
+// on it (drawn invisibly over the scan) could be clicked into meanwhile — the converted page then waited for you to
+// leave the text box, so the page looked stuck, and a word changed there was taken out of the scan on its own. Now
+// a click on it says it's being converted; it goes in as soon as it's ready, and its text is edited then.
+function khzOcrLockPage(run, n) {
+  if (!n || run.pending.has(n)) return;
+  run.pending.add(n);
+  // (a text box open on it is finished first, as clicking away would: what was typed is kept)
+  try { const a = activeEditor && (state.annotations || []).find(x => x.id === activeEditor.annotId); if (a && a.page === n) activeEditor.finish(true); } catch (e) {}
+}
+function khzOcrPageLocked(n) { return !!(khzOcrEdit && khzOcrEdit.pending && khzOcrEdit.pending.has(n)); }
+{
+  let said = 0;
+  window.addEventListener('pointerdown', e => {
+    if (state.activeTool !== 'edit-text' || !khzOcrEdit) return;
+    const w = e.target && e.target.closest && e.target.closest('.page-wrapper'); if (!w) return;
+    const n = +w.dataset.page; if (!khzOcrPageLocked(n)) return;
+    if (Date.now() - said > 4000) { said = Date.now(); toast(`Page ${n} is being converted to editable text — you can edit it as soon as it’s in.`); }
+  }, true);
 }
 // put the converted pages that are ready into the document — never in the middle of typing in a text box. Asking for
 // it doesn't wait (run.final asks for the last ones and waits): converting goes on with the next pages while you type,
@@ -50953,6 +51268,7 @@ async function khzOcrApplyLoop(run, stopNow) {
     await khzApplyInPlace(bytes, { update: list.map(r => r.n) });   // (only the converted pages change on screen)
     area.scrollLeft = sx; area.scrollTop = sy;
     run.applied += list.length;
+    list.forEach(r => run.pending.delete(r.n));
     if (editing && state.activeTool !== 'edit-text') startEditMode();
     // like Acrobat: after recognition the text blocks are shown with their dashed boxes (Show bounding boxes on)
     if (editing) { state.showBoxes = true; const fb = $('fp-boxes'); if (fb) fb.checked = true; }   // (only in Edit PDF: the dialog's Recognize Text leaves it as it was)
@@ -51036,15 +51352,15 @@ runOCR = khzWhileWorking(async function () {
   // (Downsample To, as in Acrobat's Recognize Text settings: the page picture kept with the text is at most this
   // resolution — 600 dpi, Acrobat's own choice, leaves a scan as scanned; the pages are read at 300 dpi)
   const lang = $('ocr-lang').value, mode = $('ocr-output').value, dpi = 300, down = +(($('ocr-down') || {}).value) || 600;
-  const tab = state.activeTabId, run = khzOcrEdit = { stop: false, ready: [], applied: 0 };
+  const tab = state.activeTabId, run = khzOcrEdit = { stop: false, ready: [], applied: 0, pending: new Set() };
   const stopNow = () => run.stop || state.activeTabId !== tab || !state.pdfDoc;
   const bar = khzOcrBar(() => { run.stop = true; });
   let done = 0, words = 0, skipped = [];
   try {
     const r = await khzOcrRead({
       pages, lang, mode, dpi, down, stop: stopNow,
-      progress: (msg, f) => bar.set(msg, f),
-      onPage: async res => { if (res.words) { run.ready.push(res); words += res.words; } done++; bar.set(`Page ${res.n}: recognizing text`, done / pages.length); await khzOcrEditApply(run, false, stopNow); },
+      progress: (msg, f) => { const m = /page (\d+)/i.exec(msg); if (m) khzOcrLockPage(run, +m[1]); bar.set(msg, f); },
+      onPage: async res => { if (res.words) { run.ready.push(res); words += res.words; } else run.pending.delete(res.n); done++; bar.set(`Page ${res.n}: recognizing text`, done / pages.length); await khzOcrEditApply(run, false, stopNow); },
     });
     skipped = (r && r.skipped) || [];
     if (!stopNow()) await khzOcrEditApply(run, true, stopNow);
@@ -51059,8 +51375,9 @@ runOCR = khzWhileWorking(async function () {
 //  in the on-screen copy of the document and in the saved file. So it sits at the very bottom of the page, can't be
 //  moved, can't cover neighbouring words, and the old words aren't hiding underneath anything.
 //
-//  Only the letters of the edited words are removed: each connected mark that belongs to the words' box goes, and
-//  is filled from the paper right beside it. Ruled lines and table borders running through are kept, and marks
+//  Only the letters of the edited words are removed, the same way Recognize Text and Edit PDF take a converted page's
+//  words out (khzOcrErase, app16): the marks that belong to the words' box go, filled with what's under them (the
+//  paper, a shaded band, a watermark). Ruled lines, table borders and pen lines running through are kept, and marks
 //  belonging to the lines above and below are left alone.
 // ================================================================
 
@@ -51144,87 +51461,18 @@ function khzScanRect(im, W, H, A) {
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }
 
-// take the words in box B (picture pixels) out of the pixels in g
-function khzScanErase(g, W, H, B) {
-  const bw = B.x1 - B.x0, bh = B.y1 - B.y0; if (bw < 1 || bh < 1) return;
-  const hpx = Math.max(bh, 1), m = Math.max(3, Math.round(hpx * 0.45));
-  const X0 = Math.max(0, Math.floor(B.x0) - m), Y0 = Math.max(0, Math.floor(B.y0) - m), X1 = Math.min(W, Math.ceil(B.x1) + m), Y1 = Math.min(H, Math.ceil(B.y1) + m);
-  const w = X1 - X0, h = Y1 - Y0; if (w < 2 || h < 2) return;
-  const im = g.getImageData(X0, Y0, w, h), d = im.data, N = w * h;
-  // the paper: the most common colour in the area
-  const bins = new Map();
-  for (let i = 0; i < d.length; i += 4) { const k = (d[i] >> 3) << 10 | (d[i + 1] >> 3) << 5 | (d[i + 2] >> 3); let e = bins.get(k); if (!e) bins.set(k, e = [0, 0, 0, 0]); e[0]++; e[1] += d[i]; e[2] += d[i + 1]; e[3] += d[i + 2]; }
-  let best = null; for (const e of bins.values()) if (!best || e[0] > best[0]) best = e;
-  const bg = [best[1] / best[0], best[2] / best[0], best[3] / best[0]];
-  const dist = new Float32Array(N); let mx = 0;
-  for (let j = 0, i = 0; j < N; j++, i += 4) { const v = Math.max(Math.abs(d[i] - bg[0]), Math.abs(d[i + 1] - bg[1]), Math.abs(d[i + 2] - bg[2])); dist[j] = v; if (v > mx) mx = v; }
-  if (mx < 30) return;   // nothing printed there
-  const T = Math.max(28, mx * 0.3), ink = new Uint8Array(N);
-  for (let j = 0; j < N; j++) ink[j] = dist[j] > T ? 1 : 0;
-  // ruled lines: long straight runs of ink (much longer than a letter)
-  const rule = new Uint8Array(N), runMax = Math.max(hpx * 2.2, 12);
-  for (let y = 0; y < h; y++) { let x = 0; while (x < w) { if (!ink[y * w + x]) { x++; continue; } let e = x; while (e < w && ink[y * w + e]) e++; if (e - x > runMax) for (let q = x; q < e; q++) rule[y * w + q] = 1; x = e; } }
-  for (let x = 0; x < w; x++) { let y = 0; while (y < h) { if (!ink[y * w + x]) { y++; continue; } let e = y; while (e < h && ink[e * w + x]) e++; if (e - y > runMax) for (let q = y; q < e; q++) rule[q * w + x] = 1; y = e; } }
-  // marks: connected ink that isn't a rule
-  const lab = new Int32Array(N).fill(-1), comps = [], stack = [];
-  for (let j = 0; j < N; j++) {
-    if (!ink[j] || rule[j] || lab[j] >= 0) continue;
-    const c = { x0: w, y0: h, x1: -1, y1: -1, px: [] }; lab[j] = comps.length; stack.push(j);
-    while (stack.length) {
-      const p = stack.pop(), px = p % w, py = (p / w) | 0; c.px.push(p);
-      if (px < c.x0) c.x0 = px; if (px > c.x1) c.x1 = px; if (py < c.y0) c.y0 = py; if (py > c.y1) c.y1 = py;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const qx = px + dx, qy = py + dy; if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
-        const q = qy * w + qx; if (ink[q] && !rule[q] && lab[q] < 0) { lab[q] = comps.length; stack.push(q); }
-      }
-    }
-    comps.push(c);
-  }
-  // a mark belongs to the words when its middle is inside the words' box; marks reaching well outside it
-  // (a letter of the next line touching this one) only lose the part inside the box
-  const bx0 = B.x0 - X0, by0 = B.y0 - Y0, bx1 = B.x1 - X0, by1 = B.y1 - Y0;
-  const kill = new Uint8Array(N);
-  for (const c of comps) {
-    // (the recognized text's box can stop a little short of the last mark at either end of the line, like the ")"
-    // of "(75°C)": up to 0.4 of the line height either side still counts; the next words along are further away)
-    const cx = (c.x0 + c.x1 + 1) / 2, cy = (c.y0 + c.y1 + 1) / 2, ex = hpx * 0.4;
-    if (cx < bx0 - ex || cx > bx1 + ex || cy < by0 || cy > by1) continue;
-    const inside = c.x0 >= bx0 - ex - m * 0.8 && c.x1 <= bx1 + ex + m * 0.8 && c.y0 >= by0 - m * 0.8 && c.y1 <= by1 + m * 0.8;
-    for (const p of c.px) { if (inside) kill[p] = 1; else { const px = p % w, py = (p / w) | 0; if (px >= bx0 - ex && px <= bx1 + ex && py >= by0 && py <= by1) kill[p] = 1; } }
-  }
-  // the soft edge around each letter (anti-aliasing, scanner and JPEG halo) goes with it: everything next to the
-  // letters that isn't plain paper, a few pixels out
-  const HALO = 4, r = Math.max(3, Math.round(hpx * 0.3)) + 1, mask = new Uint8Array(N), dep = new Int16Array(N).fill(-1), q0 = [];
-  for (let j = 0; j < N; j++) if (kill[j]) { mask[j] = 1; dep[j] = 0; q0.push(j); }
-  for (let qi = 0; qi < q0.length; qi++) {
-    const p = q0[qi], px = p % w, py = (p / w) | 0, dp = dep[p]; if (dp >= r) continue;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const qx = px + dx, qy = py + dy; if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
-      const q = qy * w + qx; if (dep[q] >= 0 || rule[q]) continue;
-      if (dist[q] > HALO && (!ink[q] || kill[q])) { mask[q] = 1; dep[q] = dp + 1; q0.push(q); }
-    }
-  }
-  // fill from the plain paper on either side (left and right, up and down, nearer counts more), so shading and
-  // paper texture carry on
-  const src = new Uint8ClampedArray(d), ok = q => !mask[q] && dist[q] <= HALO;
-  const pick = q => [src[q * 4], src[q * 4 + 1], src[q * 4 + 2]];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const q = y * w + x; if (!mask[q]) continue;
-    let L = x - 1; while (L >= 0 && !ok(y * w + L)) L--; let R = x + 1; while (R < w && !ok(y * w + R)) R++;
-    let U = y - 1; while (U >= 0 && !ok(U * w + x)) U--; let D = y + 1; while (D < h && !ok(D * w + x)) D++;
-    const cand = [];
-    if (L >= 0) cand.push([pick(y * w + L), 1 / (x - L)]); if (R < w) cand.push([pick(y * w + R), 1 / (R - x)]);
-    if (U >= 0) cand.push([pick(U * w + x), 1 / (y - U)]); if (D < h) cand.push([pick(D * w + x), 1 / (D - y)]);
-    let col = bg;
-    if (cand.length) { const sw = cand.reduce((s2, c) => s2 + c[1], 0); col = [0, 1, 2].map(j => cand.reduce((s2, c) => s2 + c[0][j] * c[1], 0) / sw); }
-    if (Math.max(Math.abs(col[0] - bg[0]), Math.abs(col[1] - bg[1]), Math.abs(col[2] - bg[2])) <= HALO) col = bg;   // paper is paper (no faint trace of the words)
-    d[q * 4] = col[0]; d[q * 4 + 1] = col[1]; d[q * 4 + 2] = col[2];
-  }
-  // the faint ring the scanner left around the letters (a few shades off the paper) goes too, close to them
-  const near = new Uint8Array(N), R2 = r + 2;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) for (let dy = -R2; dy <= R2; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue; for (let dx = -R2; dx <= R2; dx++) { const xx = x + dx; if (xx >= 0 && xx < w) near[yy * w + xx] = 1; } }
-  for (let j = 0; j < N; j++) if (near[j] && !mask[j] && !rule[j] && dist[j] <= HALO) { d[j * 4] = bg[0]; d[j * 4 + 1] = bg[1]; d[j * 4 + 2] = bg[2]; }
-  g.putImageData(im, X0, Y0);
+// (2804) take the words in box B (picture pixels) out of the scan: the same as Recognize Text and Edit PDF do when they
+// convert a page (khzOcrErase, app16), on the area A round them (khzScanArea) — the shading, watermark and pen lines
+// round the words stay. Until 2804 this was an eraser of its own, which took 5 seconds and more for a line of words on a
+// 600 dpi scan (the window stood still meanwhile) and left letters touching a band or a pen line. Done in the
+// background thread where there is one (khzOcrEraseOff, app282). others: the boxes of the page's other recognized
+// text (the line's height and the next words along are found from them)
+async function khzScanErase(A, B, others) {
+  const im = A.g.getImageData(A.x, A.y, A.w, A.h), sh = o => ({ x0: o.x0 - A.x, y0: o.y0 - A.y, x1: o.x1 - A.x, y1: o.y1 - A.y });
+  const same = o => Math.abs(o.x0 - B.x0) < 1 && Math.abs(o.y0 - B.y0) < 1 && Math.abs(o.x1 - B.x1) < 1 && Math.abs(o.y1 - B.y1) < 1;
+  const b = sh(B), all = [b, ...others.filter(o => !same(o)).map(sh)];
+  await khzOcrEraseOff({ width: A.w, height: A.h, data: im.data }, all);
+  A.g.putImageData(im, A.x, A.y);
 }
 
 // fill the masked pixels of an area (picture pixels X0,Y0,w,h) from the plain paper around them
@@ -51290,15 +51538,19 @@ async function khzScanCleaned(n) {
       const S = state.olSeg && state.olSeg[n], cuts = S && typeof S === 'object' && S.base && khzAnnImg(im.key) && khzAnnImg(im.key).id === S.base ? khzScanCutsOn(n) : [];
       if (!boxes.length && !cuts.length) continue;
       const patches = [];
-      const work = (B, pad, fn) => {
+      const work = async (B, pad, fn) => {
         const X0 = Math.max(0, Math.floor(B.x0) - pad), Y0 = Math.max(0, Math.floor(B.y0) - pad), X1 = Math.min(W, Math.ceil(B.x1) + pad), Y1 = Math.min(H, Math.ceil(B.y1) + pad);
         if (X1 - X0 < 2 || Y1 - Y0 < 2) return;
         const A = khzScanArea(sc, patches, X0, Y0, X1 - X0, Y1 - Y0);
-        fn(A.g);
+        await fn(A);
         patches.push({ x: A.x, y: A.y, w: A.w, h: A.h, canvas: A.canvas });
       };
-      boxes.forEach(B => work(B, Math.max(4, Math.ceil((B.y1 - B.y0) * 0.9)), g => khzScanErase(g, W, H, B)));
-      cuts.forEach(m => work(khzScanCutRect(im, W, H, n, m), 3, g => khzScanCutPiece(g, W, H, im, n, m)));
+      // (the page's recognized text, edited or not, in the picture's pixels: the line's height and its other words)
+      const others = (state.annotations || []).filter(a => a.page === n && a.type === 'text-block' && a.invisible && a.origPts)
+        .map(a => { const xs = a.origPts.map(p => p[0]), ys = a.origPts.map(p => p[1]); return khzScanRect(im, W, H, { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }); });
+      // (as far round the words as the eraser looks for ruled lines and the paper under the print: 2.2 line heights)
+      for (const B of boxes) await work(B, Math.ceil((B.y1 - B.y0) * 3) + 8, A => khzScanErase(A, B, others));
+      for (const m of cuts) await work(khzScanCutRect(im, W, H, n, m), 3, A => khzScanCutPiece(A.g, W, H, im, n, m));
       out[im.key] = { W, H, src: sc, patches, enc: null };
     }
     return out;
@@ -53432,10 +53684,12 @@ let khzEditSelStart = null;
   fpToggle = function (key) { if (!on()) return _fpToggle.apply(this, arguments); toggle(key); };
   const _fpScript = fpScript;
   fpScript = function (k) { if (!on()) return _fpScript.apply(this, arguments); setChars('script', firstStyle().script === k ? '' : k); };
+  const _fpCharSp = fpCharSpacing;
+  fpCharSpacing = function (pt) { if (!on()) return _fpCharSp.apply(this, arguments); blocks(a => { a.charSp = +(pt / (a.fontSize || 12)).toFixed(5); }); };
   const _fpAlign = fpAlign;
   fpAlign = function (al) { if (!on()) return _fpAlign.apply(this, arguments); blocks(a => { a.align = al; }); };
   const _fpLineSpacing = fpLineSpacing;
-  fpLineSpacing = function (m) { if (!on()) return _fpLineSpacing.apply(this, arguments); blocks(a => { a.lineH = (a.fontSize || baseStyleOf(a).fontSize) * 1.2 * m; }); };
+  fpLineSpacing = function (m) { if (!on()) return _fpLineSpacing.apply(this, arguments); blocks(a => { a.lineH = (a.fontSize || baseStyleOf(a).fontSize) * m; }); };
   const _fpObjProp = fpObjProp;
   fpObjProp = function (key, v, norm) { if (!on()) return _fpObjProp.apply(this, arguments); blocks(a => { if (v === norm) delete a[key]; else a[key] = v; }); };
   const _fpListDo = fpListDo;
@@ -54706,15 +54960,27 @@ document.addEventListener('keydown', e => {
   if (e.key === 'F8' && khzDocHid.tb) { e.preventDefault(); e.stopImmediatePropagation(); document.body.classList.remove('khz-doc-notb'); khzDocHid.tb = false; }
   if (e.key === 'F9' && khzDocHid.menu) { e.preventDefault(); e.stopImmediatePropagation(); document.body.classList.remove('no-menubar'); khzDocHid.menu = false; }
 }, true);
-// "View documents in PDF/A mode": a PDF/A file opens read-only with a bar saying so, and an Enable Editing button
+// (2805) a document's message bar (PDF/A, Protected View, a review, a repaired file) as Acrobat shows it: a strip
+// across the window under the toolbars, where the signature bar is, the pages below it. They went in beside the
+// pages, and showed as a light-blue panel down half the window.
+function khzDocBarPlace(bar) {
+  const body = $('app-body'); if (body && body.parentNode) body.parentNode.insertBefore(bar, body);
+}
+// "View documents in PDF/A mode": a PDF/A file opens read-only with a bar saying so, and an Enable Editing button.
+// (2805) Enable Editing asks first, as Acrobat does: OK makes it editable, Cancel leaves it read-only
 function khzPdfaBar(A) {
   const old = $('khz-pdfa-bar'); if (old) old.remove();
   state.pdfaView = false;
   if (!A || !A.pdfa || khzPref('pdfaMode', 'Only for PDF/A documents') === 'Never') return;
   const bar = document.createElement('div'); bar.id = 'khz-pdfa-bar';
   bar.innerHTML = `<span class="ic">${icon('info')}</span><span>This file claims compliance with the PDF/A standard and has been opened read-only to prevent modification.</span><button class="ap-btn">Enable Editing</button>`;
-  bar.querySelector('button').onclick = () => { state.pdfaView = false; bar.remove(); };
-  const area = $('canvas-area'); if (area && area.parentNode) area.parentNode.insertBefore(bar, area);
+  bar.querySelector('button').onclick = async () => {
+    const ok = await khzMsgBox('KHZ PDF', `<div style="display:flex;gap:12px;align-items:flex-start"><span style="flex:none;width:34px;height:30px;display:inline-block"><svg viewBox="0 0 24 21" width="34" height="30"><path d="M12 1L23.2 20H.8z" fill="#f2c200" stroke="#a07d00" stroke-width=".8" stroke-linejoin="round"/><path d="M12 7v6.5" stroke="#1a1a1a" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="16.6" r="1.25" fill="#1a1a1a"/></svg></span>
+      <div style="line-height:1.45">Editing a PDF will cause the PDF to no longer comply with PDF/A.&nbsp; Are you sure you wish to continue?<br>NOTE: If PDF/A compliance is required when the editing is complete, be sure to use File-&gt;Save As Other-&gt;PDF/A.</div></div>`, ['OK', 'Cancel']);
+    if (ok !== 0 || !bar.isConnected) return;
+    state.pdfaView = false; bar.remove();
+  };
+  khzDocBarPlace(bar);
   state.pdfaView = true;
 }
 // while a PDF/A file is read-only, the tools that would change it ask first
@@ -55022,7 +55288,7 @@ const khzTrouble = [];
 {
   const add = (lvl, args) => {
     if (khzPref('genTrouble', false) !== true) return;
-    const line = `${new Date().toISOString()} ${lvl} ${[...args].map(a => a && a.stack ? a.stack : typeof a === 'object' ? (() => { try { return JSON.stringify(a); } catch (e) { return String(a); } })() : String(a)).join(' ')}`;
+    const line = `${khzLocalTime(new Date(), true)} ${lvl} ${[...args].map(a => a && a.stack ? a.stack : typeof a === 'object' ? (() => { try { return JSON.stringify(a); } catch (e) { return String(a); } })() : String(a)).join(' ')}`;
     khzTrouble.push(line); if (khzTrouble.length > 400) khzTrouble.shift();
     if (KHZ_DSK && KHZ_DSK.log) KHZ_DSK.log(line + '\n');
   };
@@ -55746,7 +56012,7 @@ const khzReviews = () => { try { return JSON.parse(localStorage.getItem(KHZ_RV) 
 const khzReviewsSave = L => { try { localStorage.setItem(KHZ_RV, JSON.stringify(L)); } catch (e) {} };
 async function khzSendForComments() {
   if (!requireDoc()) return;
-  const name = state.fileName || 'document.pdf', due = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const name = state.fileName || 'document.pdf', due = khzLocalTime(new Date(Date.now() + 7 * 864e5)).slice(0, 10);
   const m = await khzComposeDlg({ title: 'Send for Comments', due, subject: `Please review: ${name}`, body: `Please review the attached document "${name}". Open it in KHZ PDF (or Acrobat), add your comments, then click Send Comments (in KHZ PDF) or email the file back to me.`, files: [name], ok: 'Send' });
   if (!m) return;
   const id = uid('rev'), me = { name: commentAuthor(), email: khzPref('email', '') };
@@ -55778,7 +56044,7 @@ function khzReviewBar(R) {
     bar.querySelector('.rv-send').onclick = () => khzSendComments(R);
     if (khzPref('rvToolbars', true) !== false) setTimeout(() => { try { activateToolGroup('comment'); } catch (e) {} }, 200);
   }
-  const area = $('canvas-area'); if (area && area.parentNode) area.parentNode.insertBefore(bar, area);
+  khzDocBarPlace(bar);
 }
 async function khzSendComments(R) {
   const name = state.fileName || R.name || 'document.pdf', mine = (state.annotations || []).filter(a => !a.native && typeof COMMENT_TYPES !== 'undefined' && COMMENT_TYPES[a.type]);
@@ -55867,7 +56133,7 @@ pf2Action = (prev => async function (act) {
 // ================================================================
 // ---- logs: Protected Mode log, cross domain log (desktop: files in the app's logs folder; web: kept in this browser) ----
 function khzLogFile(file, text) {
-  const line = `${new Date().toISOString()}  ${text}\n`;
+  const line = `${khzLocalTime()}  ${text}\n`;
   if (KHZ_DSK && KHZ_DSK.logAdd) { KHZ_DSK.logAdd(file, line); return; }
   try { const k = 'khz-log-' + file, L = (localStorage.getItem(k) || '').split('\n').filter(Boolean); L.push(line.trim()); localStorage.setItem(k, L.slice(-300).join('\n')); } catch (e) {}
 }
@@ -55912,7 +56178,7 @@ function khzPvApply(on, why) {
   const bar = document.createElement('div'); bar.id = 'khz-pv-bar';
   bar.innerHTML = `<span class="ic">${icon('info')}</span><span><b>Protected View:</b> ${why === 'all' ? 'All files are opened in Protected View (Preferences › Security (Enhanced)).' : 'This file originated from a potentially unsafe location, and most features have been disabled to avoid potential security risks.'}</span><button class="ap-btn">Enable All Features</button>`;
   bar.querySelector('button').onclick = () => { khzLogFile('protectedmode.log', `Protected View turned off by the user: ${state.fileName}`); khzPvApply(false); try { if (khzJsActive()) khzJsWorker(); } catch (e) {} };
-  const area = $('canvas-area'); if (area && area.parentNode) area.parentNode.insertBefore(bar, area);
+  khzDocBarPlace(bar);
   try { setActiveTool('hand'); } catch (e) {}
 }
 async function khzProtectedView() {
@@ -56619,7 +56885,7 @@ async function tabShow(t) {
   area.innerHTML = ''; area.appendChild(L.dom);
   KHZ_AREA_CLASSES.forEach(c => area.classList.toggle(c, L.area.includes(c)));
   KHZ_DOC_BODY.forEach(c => document.body.classList.toggle(c, L.body.includes(c)));
-  L.bars.forEach(b => area.parentNode.insertBefore(b, area));
+  L.bars.forEach(b => khzDocBarPlace(b));
   khzTabLocals.forEach((l, i) => { try { l.show(L.locals[i]); } catch (e) { console.warn('tab', e); } });
   // the pages are watched again so the ones in view are drawn
   if (typeof pageObserver !== 'undefined') {
@@ -57934,7 +58200,7 @@ const khzDev = {
       const text = Array.from(args).map(a => a instanceof Error ? (a.stack || a.message) : typeof a === 'object' ? (() => { try { return JSON.stringify(a); } catch (e) { return String(a); } })() : String(a)).join(' ');
       // (2410: the same warning again — only numbers differ, "Optional content group not found: 694R" — is counted, not
       // listed again: one file's harmless warnings filled all 200 lines and pushed real problems out of the report)
-      const t = new Date().toISOString().slice(11, 23), key = level + '|' + text.slice(0, 600).replace(/\d+/g, '#');
+      const t = khzLocalTime(new Date(), true).slice(11, 23), key = level + '|' + text.slice(0, 600).replace(/\d+/g, '#');
       const same = khzDev.problems.find(p => p.key === key);
       if (same) { same.n = (same.n || 1) + 1; same.last = t; return; }
       khzDev.problems.push({ t, level, text: text.slice(0, 600), key });
@@ -58032,7 +58298,7 @@ function khzDevPanel() {
   p.querySelector('.kdv-raw').onclick = () => { if (typeof khzOcrRaw === 'undefined' || !khzOcrRaw.length) { alert('No pages recognized yet: run Recognize Text or Edit PDF on a scan first.'); return; } downloadBlob(new Blob([JSON.stringify({ app: APP_BUILD, platform: navigator.platform, saved: new Date().toISOString(), pages: khzOcrRaw })], { type: 'application/json' }), `KHZ PDF readings ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`); };
   p.querySelector('.kdv-info').onclick = () => esDialog('khz-dev-info', 'This document', `<pre class="kdv-pre">${escapeHtml(khzDevInfo())}</pre>`, [{ label: 'Close', primary: true }], 640);
   p.querySelector('.kdv-copy').onclick = async () => { try { await khzCopyText(khzDevReport()); toast('Developer report copied.'); } catch (e) { toast('Could not copy: ' + (e.message || e)); } };
-  p.querySelector('.kdv-save').onclick = async () => downloadBlob(new Blob([await khzDevReport()], { type: 'text/plain' }), `KHZ PDF developer report ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`);
+  p.querySelector('.kdv-save').onclick = async () => downloadBlob(new Blob([await khzDevReport()], { type: 'text/plain' }), `KHZ PDF developer report ${khzLocalTime().slice(0, 16).replace(/[: ]/g, '-')}.txt`);
   p.querySelector('.kdv-clear').onclick = () => { khzDev.zooms = []; khzDev.scrolls = []; khzDev.draws = []; khzDevLogShow(); };
   // drag by its title
   const h = p.querySelector('.kdv-h');
@@ -60214,11 +60480,11 @@ async function khzRepairPdf(bytes) {
 }
 function khzRepairBar(name, found, log) {
   document.querySelectorAll('.khz-repair-bar').forEach(x => x.remove());
-  const host = $('canvas-area') && $('canvas-area').parentNode; if (!host) return;
+  if (!$('app-body')) return;
   const bar = document.createElement('div'); bar.className = 'khz-repair-bar';
   bar.style.cssText = 'display:flex;gap:10px;align-items:center;padding:6px 12px;background:#3a3420;color:#f2e2a8;border-bottom:1px solid #5c5130;font-size:12px';
   bar.innerHTML = `<span>⚠ “${escapeHtml(name || 'This file')}” was damaged and has been repaired. Save it to keep the repaired file.</span><span style="flex:1"></span><button class="btn-secondary kr-d" style="font-size:12px;padding:2px 10px">Details</button><button class="btn-secondary kr-x" style="font-size:12px;padding:2px 8px">✕</button>`;
-  host.insertBefore(bar, $('canvas-area'));
+  khzDocBarPlace(bar);
   const items = [...found, ...log].slice(0, 80);
   bar.querySelector('.kr-x').onclick = () => bar.remove();
   bar.querySelector('.kr-d').onclick = () => esDialog('kr-ov', 'Repaired File', `<div class="es-note">What was wrong with the file and what was rebuilt:</div><ul style="max-height:50vh;overflow:auto;font-size:12px;margin:6px 0 0;padding-left:18px">${items.map(s => `<li>${escapeHtml(s)}</li>`).join('') || '<li>The file\'s structure was rebuilt.</li>'}</ul>`, [{ label: 'OK', primary: 1 }], 560);
@@ -61330,7 +61596,7 @@ function khzOcrRawKeep(o, c, k, r) {
     const found = (r.found || []).map(w => { let li = -1; if (w.line) { if (!at.has(w.line)) { at.set(w.line, lines.length); lines.push(w.line.bbox ? [w.line.bbox.x0, w.line.bbox.y0, w.line.bbox.x1, w.line.bbox.y1].map(n1) : null); } li = at.get(w.line); }
       return { t: w.text, c: n1(w.confidence), b: w.bbox ? [w.bbox.x0, w.bbox.y0, w.bbox.x1, w.bbox.y1].map(n1) : null, l: li }; });
     const ai = r.aiRes ? JSON.parse(JSON.stringify(r.aiRes, (key, v) => n1(v))) : null;
-    const rec = { at: new Date().toISOString(), file: (typeof state !== 'undefined' && state.fileName) || '', page: o.page || null, px: [c.width, c.height], k: n1(k), lang: o.lang, ai: !!o.useAi, sysVote: khzOcrSysVote() !== false, found, lines, aiRes: ai, sys: r.sys ? JSON.parse(JSON.stringify(r.sys, (key, v) => n1(v))) : null };
+    const rec = { at: khzLocalTime(new Date(), true), file: (typeof state !== 'undefined' && state.fileName) || '', page: o.page || null, px: [c.width, c.height], k: n1(k), lang: o.lang, ai: !!o.useAi, sysVote: khzOcrSysVote() !== false, found, lines, aiRes: ai, sys: r.sys ? JSON.parse(JSON.stringify(r.sys, (key, v) => n1(v))) : null };
     const same = khzOcrRaw.findIndex(x => x.file === rec.file && x.page === rec.page && x.px[0] === rec.px[0] && x.ai === rec.ai);
     if (same >= 0) khzOcrRaw.splice(same, 1);
     khzOcrRaw.push(rec); while (khzOcrRaw.length > 16) khzOcrRaw.shift();
@@ -62792,6 +63058,7 @@ async function khzOcrSymbols(placed, px, left, dict) {
       const pairs = []; for (let i = 0; i < runs.length; i++) for (let j = i; j <= Math.min(runs.length - 1, i + 2); j++) { if (j > i && runs[j].x0 - runs[j - 1].x1 >= 0.15 * L.size) break; pairs.push([i, j]); }
       const got = await khzOcrPoolFits(px, pairs.map(([i, j]) => ({ b: { ...b, x0: runs[i].x0, x1: runs[j].x1 }, colors, fam: L.fam, bold: L.bold, size: L.size, base: L.base, cands, fitH: false, plain })));
       if (got) pairs.forEach(([i, j], n) => keep(i + ',' + j, got[n]));
+      await khzTick();
     }
     // (a sliver of a neighbouring mark caught at the box's edge isn't one of its marks)
     // (one that a pixel's gap parts from the next run is that mark's own thin stroke broken by the blur: the rising arm
@@ -62803,6 +63070,7 @@ async function khzOcrSymbols(placed, px, left, dict) {
     const best = new Array(s1 + 2).fill(null); best[s0] = { score: 0, segs: [] };
     for (let i = s0; i <= s1; i++) {
       if (!best[i]) continue;
+      await khzTick();   // (2715: each fit not yet made is a moment's work: the window answers between them)
       for (let j = i; j <= Math.min(s1, i + 2); j++) {
         if (j > i && runs[j].x0 - runs[j - 1].x1 >= 0.15 * L.size) break;
         const t = tell(i, j), w = runs.slice(i, j + 1).reduce((a, r) => a + r.x1 - r.x0, 0), score = best[i].score + Math.max(0, t.fit) ** 2 * w;   // (cut where the marks fit best, told or not: a mark that can't be told isn't hidden inside a neighbour)
@@ -64674,7 +64942,8 @@ async function khzOcrPoolRun(kind, px, altPx, items) {
     if (kind === 'measure') { const q = it.alt && altPx ? altPx : px, colors = khzOcrColors(q, it.pb); out[i] = { colors, stroke: khzOcrStroke(q, it.pb, colors, it.sizePx, it.turned), slant: khzOcrSlant(px, it.pb, colors) }; }
     else if (kind === 'tilted') out[i] = khzOcrTilted(px, it, it.big);
     else out[i] = khzOcrFaceScore(it, px, cx, cv); };
-  const runMe = async () => { for (let r = take(); r && !failed; r = take()) { for (let i = r[0]; i < r[1]; i++) one(i); await khzTick(); } };
+  // (2715: the window answers after every word, not every chunk: a chunk of 24 took up to 0.2 s)
+  const runMe = async () => { for (let r = take(); r && !failed; r = take()) for (let i = r[0]; i < r[1] && !failed; i++) { one(i); await khzTick(); } };
   here.forEach(one);
   await Promise.all([...pool.ws.map(runT), runMe()]);
   if (failed) return null;
@@ -64701,9 +64970,9 @@ async function khzOcrPoolFits(px, items) {
   const out = new Array(items.length); let next = 0, failed = false;
   const CH = Math.max(1, Math.ceil(items.length / (2 * pool.ws.length)));
   const take = () => { if (next >= items.length) return null; const a = next; next = Math.min(items.length, next + CH); return [a, next]; };
-  // (the window takes a share too, a chunk at a time)
-  const runMe = async () => { for (let r = take(); r && !failed; r = take()) { for (let i = r[0]; i < r[1]; i++) { const it = items[i]; out[i] = khzOcrGlyphFit(px, it.b, it.colors, it.fam, it.bold, it.size, it.base, it.cands, it.fitH, it.plain); } await khzTick(); } };
-  await Promise.all([...pool.ws.map(async s => { for (let r = take(); r && !failed; r = take()) { const res = await s.call({ type: 'job', kind: 'fits', items: items.slice(r[0], r[1]).map(jobOf) }); if (!res.ok) { failed = true; console.warn('KHZ OCR thread', res.err); return; } res.out.forEach((v, k) => { out[r[0] + k] = v; }); } }), runMe()]);
+  // (2715: the threads do all the fitting — the window no longer takes a share: one box's fit against a hundred marks
+  // took up to 0.4 s in the window, and scrolling stopped for it)
+  await Promise.all([...pool.ws.map(async s => { for (let r = take(); r && !failed; r = take()) { const res = await s.call({ type: 'job', kind: 'fits', items: items.slice(r[0], r[1]).map(jobOf) }); if (!res.ok) { failed = true; console.warn('KHZ OCR thread', res.err); return; } res.out.forEach((v, k) => { out[r[0] + k] = v; }); } })]);
   return failed ? null : out;
 }
 // (a test print — marks drawn in the window, fitted against a few candidates there and in every thread: the same answers,
@@ -64736,16 +65005,12 @@ async function khzOcrPoolFitCheck(pool) {
 //  Preference key 'ocrPrepare' (on unless set to false).
 // ================================================================
 const KHZ_PREP_PAGES = 3;
-const khzOcrPrep = { p: null, bytes: null, pages: [], lang: '', key: '', res: new Map(), stop: false, busyAt: -1e9, active: false, onRes: null };
+const khzOcrPrep = { p: null, bytes: null, pages: [], lang: '', key: '', res: new Map(), stop: false, active: false, onRes: null };
 function khzOcrPrepOn() { return !!(window.khzDesktop && window.khzDesktop.ocrRecognize) && getPref('ocrPrepare', true) !== false; }
 function khzOcrPrepCancel() { const P = khzOcrPrep; P.stop = true; P.p = null; P.res = new Map(); P.bytes = null; P.pages = []; P.active = false; }
-// (you're scrolling, zooming or pressing: the background work waits — khzTickHold, app16)
-function khzOcrPrepHeld() { return khzOcrPrep.active && performance.now() - khzOcrPrep.busyAt < 600; }
-{
-  const mark = () => { khzOcrPrep.busyAt = performance.now(); };
-  ['wheel', 'pointerdown', 'keydown', 'touchmove'].forEach(t => window.addEventListener(t, mark, { capture: true, passive: true }));
-  document.addEventListener('scroll', mark, { capture: true, passive: true });
-}
+// (you're scrolling, zooming or pressing: the background work waits — khzUserBusy, app16)
+// (2715: the one watcher of your scrolling and typing is khzUserBusy, app16 — every text recognition waits through khzTick)
+function khzOcrPrepHeld() { return khzOcrPrep.active && khzUserBusy(600); }
 // is page n a scan (no text to speak of, the page a picture) — as khzScannedPages tells it, for one page
 async function khzOcrPrepIsScan(n) {
   try { const tc = await getTextContent(n); if (tc.items.map(i => i.str).join('').replace(/\s/g, '').length >= 20) return false;
@@ -64768,7 +65033,6 @@ async function khzOcrPrepare() {
   if (!pages.length) return;
   khzOcrPrepCancel();
   Object.assign(P, { bytes, pages, lang, key, res: new Map(), stop: false, active: true });
-  khzTickHold = khzOcrPrepHeld;
   const until = async () => { while (khzOcrPrepHeld()) await new Promise(r => setTimeout(r, 100)); };
   const job = P.p = khzOcrRead({
     pages: pages.slice(), lang, mode: 'editable', dpi: 300, down: 150, visibleOnly: true, oneAtATime: true, bytes,   // (the same as Edit PDF's Recognize Text, app157)
@@ -64914,7 +65178,13 @@ function khzFitBlockWidth(a) {
   if (!a || a.type !== 'text-block' || !a.untouched || a._wFit || a.wrap || a.rot || a.vertical) return;
   a._wFit = true;
   if (String(a.text) !== String(a.origText || a.text)) return;
-  const xs = (a.origPts || a.pts || []).map(p => p[0]); if (xs.length < 2) return;
+  // (2806) measured along the lines: the block's corners are in the page's own units, and on a page the file turns a
+  // quarter (/Rotate 90 or 270 — a drawing saved landscape) its lines run up or down the page's own height. Measured
+  // across, a block of four short lines came out as wide as it is tall and was squeezed to 63% the first time it was
+  // edited (Brandon's riser diagram: the wire sizes, the text in the transfer switch)
+  const pr = ((((state.pages[a.page] || {}).origPage || {}).rotate || 0) % 360 + 360) % 360, ax = pr === 90 || pr === 270 ? 1 : 0;
+  const along = p => pr === 90 ? -p[1] : pr === 270 ? p[1] : pr === 180 ? -p[0] : p[0];   // (where a point is along the lines, as they read)
+  const xs = (a.origPts || a.pts || []).map(p => p[ax]); if (xs.length < 2) return;
   const ow = Math.max(...xs) - Math.min(...xs) - 2;   // (the block's box reaches 1 pt past its letters on each side)
   const rw = Math.max(0, ...khzBlockLineWidths(a)); if (!(ow > 4 && rw > 4)) return;
   const r = ow / rw; if (Math.abs(r - 1) < 0.015 || r < 0.6 || r > 1.6) return;
@@ -64927,13 +65197,13 @@ function khzFitBlockWidth(a) {
   //  and one spacing for every space drew the answer closer to its label once the line was dragged)
   if (lines.length === 1 && nsp && a.ops && state.pageTextOps && state.pageTextOps[a.page]) {
     const ops = a.ops.map(i => state.pageTextOps[a.page][i]), words = text.split(/ +/);
-    if (ops.length === words.length && ops.every(o => o && o.ocr && o.pt) && ops.every((o, i) => !i || o.pt[0] > ops[i - 1].pt[0])) {
+    if (ops.length === words.length && ops.every(o => o && o.ocr && o.pt) && ops.every((o, i) => !i || along(o.pt) > along(ops[i - 1].pt))) {
       const base = a.charSp || 0, src = a.runs && a.runs.length ? a.runs : [{ t: text, s: {} }], segs = [];
       src.forEach(rn => { String(rn.t || '').split(/( +)/).forEach(seg => { if (seg) segs.push({ t: seg, s: { ...(rn.s || {}) } }); }); });
       const wOf = g => textWidth(g.t, g.s.fontSize || fs, g.s.bold !== undefined ? !!g.s.bold : !!a.bold, g.s.family || a.family || 'sans', g.s.charSp !== undefined ? g.s.charSp : base) * hk;
-      let x = ops[0].pt[0], wi = 0, ok = true;
+      let x = along(ops[0].pt), wi = 0, ok = true;
       for (const g of segs) {
-        if (/^ +$/.test(g.t)) { wi++; const nx = ops[wi] && ops[wi].pt[0]; if (nx === undefined) { ok = false; break; }
+        if (/^ +$/.test(g.t)) { wi++; const nx = ops[wi] && along(ops[wi].pt); if (nx === undefined) { ok = false; break; }
           const sz = g.s.fontSize || fs, sp = textWidth(g.t, sz, !!a.bold, g.s.family || a.family || 'sans') * hk, cs = ((nx - x) - sp) / hk / sz / g.t.length;
           if (!(cs > -0.3 && cs < 3)) { ok = false; break; } g.s.charSp = cs; x = nx; }
         else x += wOf(g);
@@ -64965,56 +65235,91 @@ function khzFitBlockWidth(a) {
   return _tn.apply(this, arguments);
 }; }
 // ================================================================
-//  FONT SIZE YOU CAN TYPE (Edit PDF › Format), like Acrobat: the size box is an editable list — click into it,
-//  type any size (48, 37.5…) and press Enter, and the text typed next (or the letters selected) takes that size;
-//  the arrow still opens the list of usual sizes. Before, the size could only be picked from the list.
-//  The list (#fp-size) stays the one owner of the value: the box shows what it holds and writes back through it.
+//  NUMBERS YOU CAN TYPE IN THE FORMAT PANEL (Edit PDF › Format), like Acrobat: the font size box (since 2108) and, from
+//  2806, the Line Spacing, Paragraph Spacing, Horizontal Scaling and Character Spacing boxes are editable lists — click
+//  into one, type a value (37.5, 1.8, 85…) and press Enter, Tab or click away; the arrow still opens the list. A value
+//  out of range is refused with Acrobat's message ("The value must be between 1 and 5.") and the box goes back to what
+//  it was. Each list (#fp-size, #fp-linesp…) stays the one owner of its value: the box shows what it holds and writes
+//  back through the list's own setter. One helper for all five, so they behave the same.
 // ================================================================
-(function khzSizeEntry() {
-  const sel = document.getElementById('fp-size'); if (!sel || sel.dataset.khzEdit) return;
+function khzFpEntry(selId, o) {
+  const sel = document.getElementById(selId); if (!sel || sel.dataset.khzEdit) return;
   sel.dataset.khzEdit = '1';
-  const wrap = document.createElement('span'); wrap.className = 'fp-size-wrap';
+  const wrap = document.createElement('span'); wrap.className = 'fp-num-wrap';
   sel.parentNode.insertBefore(wrap, sel); wrap.appendChild(sel);
   const inp = document.createElement('input');
-  Object.assign(inp, { type: 'text', id: 'fp-size-in', title: 'Font size', spellcheck: false, autocomplete: 'off' });
+  Object.assign(inp, { type: 'text', id: o.id, title: o.title || sel.title || '', spellcheck: false, autocomplete: 'off' });
   inp.setAttribute('inputmode', 'decimal');
   wrap.appendChild(inp);
-  const st = document.createElement('style');
-  st.textContent = `.fp-size-wrap { position:relative; display:inline-block; }
-    .fp-size-wrap #fp-size-in { position:absolute; left:0; top:0; bottom:1px; width:calc(100% - 18px); background:transparent; border:none; outline:none;
-      color:var(--ac-text, #e6e6e6); font-size:13px; padding:3px 2px; box-sizing:border-box; }
-    .fp-size-wrap #fp-size-in:focus { background:rgba(255,255,255,.06); }
-    /* (the list's own number hidden under the box: both showed, "24" printed over "24", offset) */
-    .fp-size-wrap #fp-size { color:transparent !important; text-shadow:none; }
-    .fp-size-wrap #fp-size option { color:var(--ac-text, #eee); }
-    #rp-format.notext .fp-size-wrap { opacity:.45; pointer-events:none; }`;
-  document.head.appendChild(st);
-  // the box shows the list's value (a size not in the list is added to it, as Acrobat shows any size)
   // (the number sits where the list's own would: themes pad the list differently — the yellow theme's 5px 8px)
   const align = () => { try { const cs = getComputedStyle(sel); inp.style.paddingLeft = cs.paddingLeft; inp.style.paddingTop = cs.paddingTop; inp.style.paddingBottom = cs.paddingBottom; inp.style.fontSize = cs.fontSize; inp.style.fontFamily = cs.fontFamily; } catch (e) {} };
-  const show = () => { align(); if (document.activeElement === inp) return; const o = sel.options[sel.selectedIndex]; inp.value = o ? o.textContent : ''; };
+  // the box shows the list's value (the list adds a value it doesn't have, as Acrobat shows any value)
+  const show = () => { align(); if (document.activeElement === inp) return; const op = sel.options[sel.selectedIndex]; inp.value = op ? op.textContent : ''; };
   new MutationObserver(show).observe(sel, { childList: true, subtree: true, attributes: true });
   sel.addEventListener('change', show);
-  const _upd = window.updateFormatPanel;
-  if (typeof _upd === 'function') window.updateFormatPanel = updateFormatPanel = function () { const r = _upd.apply(this, arguments); show(); return r; };
-  const apply = () => {
-    const v = +String(inp.value).replace(',', '.').replace(/[^\d.]/g, '');
-    if (!(v > 0)) { show(); return; }
-    const n = Math.max(1, Math.min(1296, Math.round(v * 10) / 10));   // (Acrobat takes 1 to 1296 pt)
-    if (![...sel.options].some(o => +o.value === n)) { const o = document.createElement('option'); o.value = String(n); o.textContent = String(n); sel.appendChild(o); }
-    sel.value = String(n);
-    fpSet('fontSize', n);
-    inp.value = String(n);
+  let asking = false;
+  const apply = async () => {
+    if (asking) return;
+    const raw = String(inp.value).trim().replace(',', '.');
+    const op = sel.options[sel.selectedIndex];
+    if (!raw || (op && raw === op.textContent)) { show(); return; }
+    const v = +raw.replace(/[^\d.\-]/g, '');
+    if (!Number.isFinite(v) || !/\d/.test(raw)) { show(); return; }
+    const n = Math.round(v * Math.pow(10, o.decimals)) / Math.pow(10, o.decimals);
+    if (n < o.min || n > o.max) {
+      asking = true;
+      try {
+        await khzMsgBox('KHZ PDF', `<div style="display:flex;gap:12px;align-items:center"><svg viewBox="0 0 32 32" width="32" height="32" style="flex:none"><circle cx="16" cy="16" r="14.5" fill="#2a68c8" stroke="#1b4f9e"/><circle cx="16" cy="9.5" r="2" fill="#fff"/><path d="M13.5 14h4v10h2v2h-7v-2h2v-8h-1z" fill="#fff"/></svg><div>The value must be between ${o.min} and ${o.max}.</div></div>`, ['OK']);
+      } finally { asking = false; }
+      show(); return;
+    }
+    const val = o.toValue ? o.toValue(n) : n;
+    if (![...sel.options].some(x => Math.abs(+x.value - val) < 1e-9)) { const x = document.createElement('option'); x.value = String(val); x.textContent = o.fmt(n); sel.appendChild(x); }
+    sel.value = [...sel.options].find(x => Math.abs(+x.value - val) < 1e-9).value;
+    o.set(val);
+    inp.value = o.fmt(n);
   };
   inp.addEventListener('focus', () => inp.select());
   inp.addEventListener('keydown', e => {
     e.stopPropagation();   // (typing in the box isn't a shortcut and isn't typed into the page)
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); apply(); inp.blur(); }
-    else if (e.key === 'Escape') { e.preventDefault(); show(); inp.blur(); }
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); const cur = +inp.value || +sel.value || 12; inp.value = String(Math.max(1, cur + (e.key === 'ArrowUp' ? 1 : -1))); apply(); }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); apply().then(() => inp.blur()); }
+    else if (e.key === 'Escape') { e.preventDefault(); inp.value = ''; inp.blur(); show(); }
+    else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && o.step) {
+      e.preventDefault(); const cur = +String(inp.value).replace(',', '.') || 0;
+      inp.value = o.fmt(Math.max(o.min, Math.min(o.max, Math.round((cur + (e.key === 'ArrowUp' ? o.step : -o.step)) * 100) / 100))); apply();
+    }
   });
-  inp.addEventListener('change', apply);
+  inp.addEventListener('change', () => { apply(); });
   show();
+  return { show };
+}
+(function khzFpEntries() {
+  const st = document.createElement('style');
+  st.textContent = `.fp-num-wrap { position:relative; display:inline-block; }
+    .fp-num-wrap > input { position:absolute; left:0; top:0; bottom:1px; width:calc(100% - 18px); background:transparent; border:none; outline:none;
+      color:var(--ac-text, #e6e6e6); font-size:13px; padding:3px 2px; box-sizing:border-box; }
+    .fp-num-wrap > input:focus { background:rgba(255,255,255,.06); }
+    /* (the list's own number hidden under the box: both showed, "24" printed over "24", offset) */
+    /* (#rp-format: stronger than the themes' "body.khz-th .fp-sel { color … !important }", which showed the old number under the typing) */
+    #rp-format .fp-num-wrap > select { color:transparent !important; -webkit-text-fill-color:transparent; text-shadow:none !important; }
+    #rp-format .fp-num-wrap > select option { color:var(--ac-text, #eee) !important; -webkit-text-fill-color:currentColor; }
+    #rp-format.notext .fp-num-wrap { opacity:.45; pointer-events:none; }`;
+  document.head.appendChild(st);
+  const trim = (n, d) => String(+n.toFixed(d));
+  const boxes = [
+    // (Acrobat takes 0.01 to 1296 pt)
+    khzFpEntry('fp-size', { id: 'fp-size-in', title: 'Font size', min: 0.01, max: 1296, decimals: 2, step: 1, fmt: n => trim(n, 2), set: n => fpSet('fontSize', n) }),
+    // (Acrobat: 1 to 5, shown with two decimals — 1.8 is "1.80")
+    khzFpEntry('fp-linesp', { id: 'fp-linesp-in', title: 'Line spacing', min: 1, max: 5, decimals: 2, step: 0.1, fmt: n => n.toFixed(2), set: n => fpLineSpacing(n) }),
+    // (Acrobat: 0 to 1584 pt, from Brandon's screenshot)
+    khzFpEntry('fp-parasp', { id: 'fp-parasp-in', title: 'Paragraph spacing (points after each paragraph)', min: 0, max: 1584, decimals: 2, step: 1, fmt: n => trim(n, 2), set: n => fpParaSpacing(n) }),
+    // (Acrobat: 0.01 to 6400 %)
+    khzFpEntry('fp-hscale', { id: 'fp-hscale-in', title: 'Horizontal scaling (%)', min: 0.01, max: 6400, decimals: 2, step: 1, fmt: n => trim(n, 2), set: n => fpHScale(n) }),
+    // (Acrobat: points between letters, −10 to 10)
+    khzFpEntry('fp-charsp', { id: 'fp-charsp-in', title: 'Character spacing (points)', min: -10, max: 10, decimals: 2, step: 0.5, fmt: n => trim(n, 2), set: n => fpCharSpacing(n) }),
+  ].filter(Boolean);
+  const _upd = window.updateFormatPanel;
+  if (typeof _upd === 'function') window.updateFormatPanel = updateFormatPanel = function () { const r = _upd.apply(this, arguments); boxes.forEach(b => b.show()); return r; };
 })();
 // ================================================================
 //  FILL & SIGN TEXT WHILE YOU TYPE, like Acrobat (Brandon's videos of 21 Oct, 20:10 and 20:12):
@@ -69029,6 +69334,11 @@ async function khzExportSvg(opts = {}) {
 //  • Organize Pages › Insert › From Scanner and Insert Pages › From Scanner: the pages go into the open document
 //  The web version still explains how to scan with the scanner's own program, as before.
 // ================================================================
+// (2715/2716) times KHZ shows or writes — logs, reports, file and folder names — are in this computer's own time
+// ("YYYY-MM-DD HH:MM:SS", ms: with thousandths), like the helper's (server.js logNow). Times kept inside files for
+// other programs (a PDF's dates, XMP, certificates) stay in their own standard forms.
+function khzLocalTime(d = new Date(), ms = false) { const p = (v, n = 2) => String(v).padStart(n, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${ms ? '.' + p(d.getMilliseconds(), 3) : ''}`; }
+const khzLogNow = () => khzLocalTime();
 function khzCanScan() { return !!(window.khzDesktop && khzDesktop.scanAcquire); }
 // the scanned pages as one PDF (null when cancelled)
 async function khzScanPdf() {
@@ -69040,7 +69350,7 @@ async function khzScanPdf() {
   document.body.appendChild(wait);
   wait.querySelector('.ksw-x').onclick = () => { wait.querySelector('.ksw-t').textContent = 'Cancelling…'; try { khzDesktop.scanCancel && khzDesktop.scanCancel(); } catch (e) {} };
   let r; try { r = await khzDesktop.scanAcquire(); } catch (e) { r = { ok: false, reason: e.message }; } finally { wait.remove(); }
-  try { if (khzDesktop.log) khzDesktop.log(new Date().toISOString().replace('T', ' ').slice(0, 19) + ' scanner: result ' + JSON.stringify(r && { ok: r.ok, pages: r.files && r.files.length, cancelled: r.cancelled, reason: r.reason }) + '\n'); } catch (e) {}
+  try { if (khzDesktop.log) khzDesktop.log(khzLogNow() + ' scanner: result ' + JSON.stringify(r && { ok: r.ok, pages: r.files && r.files.length, cancelled: r.cancelled, reason: r.reason }) + '\n'); } catch (e) {}
   if (!r || !r.ok) { if (!(r && r.cancelled)) alert((r && r.reason) || 'The scanner could not be used.'); return null; }
   if (r.files) { files = r.files; dir = r.dir; }
   else if (r.watch) {
@@ -69298,11 +69608,19 @@ const khzScanSummary = s => `${KHZ_COLOR_NAMES[s.color] || 'Color'}, ${(KHZ_PAPE
 // (2702) one entry per scanner, named like its printer ("Permitting Printer"); Show every connection lists each way in
 // (TWAIN, Windows (WIA), Windows' TWAIN bridge) on its own, as before
 let khzScanDevicesCache = null, khzScanAllCache = [], khzScanCapsCache = {};
+// (2715) a question already asked of the scanners is waited for, not asked again: the panel drawing itself a few times
+// as it opened asked the Epson for its settings 3 times in 4 s, and the tries after that found it busy ("check that the
+// scanner is on")
+let khzScanDevicesP = null; const khzScanCapsP = {};
 async function khzScanDevices(force) {
-  if (khzScanDevicesCache && !force) return getPref('scanAllRoutes', false) && khzScanAllCache.length ? khzScanAllCache : khzScanDevicesCache;
-  let r = null; try { r = await khzDesktop.scanDevices(); } catch (e) {}
-  khzScanDevicesCache = (r && r.list) || []; khzScanAllCache = (r && r.all) || [];
-  return getPref('scanAllRoutes', false) && khzScanAllCache.length ? khzScanAllCache : khzScanDevicesCache;
+  const pick = () => getPref('scanAllRoutes', false) && khzScanAllCache.length ? khzScanAllCache : khzScanDevicesCache;
+  if (khzScanDevicesCache && !force) return pick();
+  if (!khzScanDevicesP) khzScanDevicesP = (async () => {
+    let r = null; try { r = await khzDesktop.scanDevices(); } catch (e) {}
+    khzScanDevicesCache = (r && r.list) || []; khzScanAllCache = (r && r.all) || [];
+  })().finally(() => { khzScanDevicesP = null; });
+  await khzScanDevicesP;
+  return pick();
 }
 // a scanner chosen before (one way in) → its entry now, and back
 function khzScanPickId(list, id) {
@@ -69316,9 +69634,12 @@ function khzScanPickId(list, id) {
 async function khzScanCaps(id) {
   if (!id || !khzDesktop.scanCaps) return null;
   if (khzScanCapsCache[id]) return khzScanCapsCache[id];
-  let r = null; try { r = await khzDesktop.scanCaps(id); } catch (e) {}
-  if (r && r.ok) khzScanCapsCache[id] = r;
-  return r && r.ok ? r : null;
+  if (!khzScanCapsP[id]) khzScanCapsP[id] = (async () => {
+    let r = null; try { r = await khzDesktop.scanCaps(id); } catch (e) {}
+    if (r && r.ok) khzScanCapsCache[id] = r;
+    return r && r.ok ? r : null;
+  })().finally(() => { delete khzScanCapsP[id]; });
+  return khzScanCapsP[id];
 }
 
 // ---------------- the panel ----------------
@@ -69487,13 +69808,13 @@ async function khzScanRun(S, o = {}) {
       const pw = S.paper === 'custom' ? +S.w : S.paper === 'auto' ? 8.5 : paper[1], ph = S.paper === 'custom' ? +S.h : S.paper === 'auto' ? 11.7 : paper[2];
       let fit = Math.floor(Math.min(32000 / Math.max(pw, ph), Math.sqrt(250e6 / (pw * ph))));
       const lst = ((khzScanCapsCache[S.device] || {}).res || [75, 100, 150, 200, 300, 400, 600, 1200]).filter(x => x <= fit); if (lst.length) fit = Math.max(...lst);
-      if (+S.dpi > fit && round === 0) { toast(`${S.dpi} dpi makes a page too big to open; scanning at ${fit} dpi.`); try { khzDesktop.log && khzDesktop.log(new Date().toISOString().replace('T', ' ').slice(0, 19) + ` scanner: ${S.dpi} dpi too big for a page this size, using ${fit}\n`); } catch (e) {} S = { ...S, dpi: fit }; }
+      if (+S.dpi > fit && round === 0) { toast(`${S.dpi} dpi makes a page too big to open; scanning at ${fit} dpi.`); try { khzDesktop.log && khzDesktop.log(khzLogNow() + ` scanner: ${S.dpi} dpi too big for a page this size, using ${fit}\n`); } catch (e) {} S = { ...S, dpi: fit }; }
     }
     let r;
     try {
       r = await khzDesktop.scanAcquire({ device: S.device, ui: S.ui, color: S.color === 'auto' ? 'color' : S.color, dpi: S.dpi, source: S.pages === 'both' ? 'duplex' : 'auto', w: S.paper === 'auto' ? 0 : (S.paper === 'custom' ? S.w : paper[1]), h: S.paper === 'auto' ? 0 : (S.paper === 'custom' ? S.h : paper[2]) });
     } catch (e) { r = { ok: false, reason: e.message }; } finally { wait.remove(); }
-    try { if (khzDesktop.log) khzDesktop.log(new Date().toISOString().replace('T', ' ').slice(0, 19) + ' scanner: result ' + JSON.stringify(r && { ok: r.ok, pages: r.files && r.files.length, cancelled: r.cancelled, reason: r.reason }) + '\n'); } catch (e) {}
+    try { if (khzDesktop.log) khzDesktop.log(khzLogNow() + ' scanner: result ' + JSON.stringify(r && { ok: r.ok, pages: r.files && r.files.length, cancelled: r.cancelled, reason: r.reason }) + '\n'); } catch (e) {}
     if (!r || !r.ok) { if (!(r && r.cancelled)) alert((r && r.reason) || 'The scanner could not be used.'); if (!pages.length) return; break; }
     let files = r.files || [];
     if (r.watch) files = await khzScanWatchMac(r.watch);   // (Mac: Image Capture)
@@ -73388,6 +73709,194 @@ async function khzRecentResolve(n) {
     if (typeof renderRecentMenu === 'function') renderRecentMenu();
   } catch (e) { console.warn('Recent: moving older entries', e); }
 })();
+// ================================================================
+//  TASKBAR / DOCK TASKS (2714, like Acrobat's taskbar right-click list). Right-clicking KHZ PDF on the Windows
+//  taskbar (or its Dock icon on a Mac) lists: Scan with KHZ PDF, Create PDF, Combine Files, New Blank PDF and Open a
+//  File…, above Windows' Recent files. The app (src-tauri lib.rs: TASKS, jump_list, dock) starts KHZ with --task=<name>,
+//  or hands the task to the KHZ that's already open; the window in front does it here.
+// ================================================================
+const KHZ_TASKS = {
+  scan: () => khzScanToNewPdf(),             // the Scan panel, ready to scan into a new PDF
+  create: () => tcRunTool('create'),         // as Tools › Create PDF
+  combine: () => tcRunTool('combine'),       // as Tools › Combine Files
+  blank: () => createBlankPdf(),             // as File › Create › Blank Page
+  open: () => openFileDialog(),              // as File › Open
+};
+function khzRunTask(t) {
+  const f = KHZ_TASKS[t]; if (!f) return;
+  try { const r = f(); if (r && r.catch) r.catch(e => console.warn('task', t, e)); } catch (e) { console.warn('task', t, e); }
+}
+if (window.khzDesktop && khzDesktop.onTask) {
+  // (a task that started the app waits until the page has finished starting)
+  const go = () => khzDesktop.onTask(t => setTimeout(() => khzRunTask(t), 0));
+  if (document.readyState === 'complete') setTimeout(go, 0); else addEventListener('load', () => setTimeout(go, 0), { once: true });
+}
+// ================================================================
+//  FINISHING OFF RECOGNIZED PAGES IN A BACKGROUND THREAD (2717, Brandon: "i dont want to slow down OCR text recognition
+//  either? cant the cores that dont do the OCR have the scrolling and scalling?").
+//  After the engines read a page (in the helper, on their own cores), the page is finished off: the readings combined,
+//  the marks, symbols, colours and typefaces measured, the scan's letters taken out, the lines made. That ran on the
+//  window's own thread — the one that scrolls and zooms — so the two took turns (2715 made the finishing wait while
+//  you scroll). Now it runs in a background thread of its own (a Web Worker), with its helper threads (app223) under it:
+//  the window only hands the page over and takes the lines back, so it scrolls and zooms freely while Recognize Text
+//  goes on at full speed.
+//  • The thread runs the very same functions as the window (copied over as they are written; which ones is worked out
+//    when KHZ is built, tools/finish-src.js → KHZ_FINISH_SRC), so a page comes out the same.
+//  • What only the window can do — the engines (the desktop app's OCR; Tesseract in the web version) — the thread asks
+//    the window for (short questions while the page is finished off).
+//  • Where the thread can't be had (an older Mac web view without drawing in threads, or the thread's letters don't
+//    come out exactly as the window's), or it fails on a page, that page is finished off in the window as before.
+// ================================================================
+const KHZ_FINISH_SRC = {"fns":["escapeHtml","b64ToBytes","ocrWordSize","ocrWordsOf","khzTessRead","ocrSplitLines","khzOcrGray","ocrDesktopRecognize","khzOcrFinishHere","khzOcrTiltLines","khzOcrDict","khzOcrVote","khzOcrFuse","khzOcrSlashed","khzOcrPairs","khzOcrInkSplit","khzOcrTight","khzOcrAiSide","khzOcrLineSizes","khzOcrInkSize","khzOcrPlace","khzOcrInk","khzOcrMask","khzOcrDarkBands","khzOcrLoneMarks","khzOcrBareInk","khzOcrGroups","khzOcrTurned","khzOcrPictures","khzOcrPieces","khzOcrRunOnLines","khzOcrStampPieces","khzOcrRaised","khzOcrDropDoubles","khzOcrBackdrop","khzOcrPack","khzOcrGrow","khzOcrBoxMean","khzOcrPrintOff","khzOcrThinLines","khzOcrPrintMask","khzOcrUnderColours","khzOcrErase","khzOcrColors","khzOcrPaperPicture","khzOcrJpeg","khzOcrStroke","khzOcrBlurPx","khzOcrStrokeFloor","khzOcrBold","khzOcrSlant","khzOcrInkGrid","khzOcrMonoCheck","khzOcrDrawnWord","khzOcrFaceScore","khzOcrTypeface","khzOcrItalic","khzInkCore","khzOcrWebGray","khzOcrWebResize","khzOcrWebLocalMax","khzOcrWebBlur","khzOcrWebHist","khzOcrWebOtsu","khzOcrWebClean","khzOcrWebSpeckle","khzOcrWebMedian3","khzOcrFacesReady","khzOcrGlyphMask","khzOcrGlyphFit","khzOcrBoxMark","khzOcrRuleStroke","khzOcrTilted","khzOcrSymbols","khzOcrTmQuotes","khzOcrTimes","khzOcrInkWords","khzOcrUnoverlap","khzOcrDashedRules","khzOcrBigBullets","khzOcrLeaders","khzOcrScripts","khzOcrStops","khzOcrMissedStops","khzOcrQuotePairs","khzOcrDollar","khzOcrForeignStrokes","khzOcrLookalikes","khzOcrFractions","khzOcrGrowBox","khzOcrCase","khzOcrFrameEdges","khzOcrMidDots","khzOcrLoneYen","khzOcrPoolSize","khzOcrPoolSource","khzOcrPool","khzOcrPoolRun","khzOcrPoolFits","khzOcrPoolFitCheck","khzOcrKeptPack","khzOcrInkMatch","khzOcrInkCols","khzOcrIconPic","khzOcrIconTrim","khzOcrJoinPieces","khzOcrIcons","khzOcrSpellFix","khzOcrPreErase","khzFinishThreadMain"],"decls":"let TEXT_FONT = 'Helvetica, Arial, sans-serif';\nlet FAMILY_CSS = new Proxy({ calibri: \"Calibri, Carlito, Arial, sans-serif\", sans: TEXT_FONT, serif: \"'Times New Roman', Times, serif\", mono: \"'Courier New', Courier, monospace\" },\n  { get: (t, k) => k in t ? t[k] : (typeof k === 'string' && k.startsWith('f:') ? `\"${k.slice(2).replace(/\"/g, '')}\", ${/mono|courier|consol|code/i.test(k) ? 'monospace' : /serif|roman|times|garamond|georgia|book|cambria|century|minion|palatino|song|ming|mincho|myungjo/i.test(k) && !/sans/i.test(k) ? 'serif' : TEXT_FONT}` : undefined) });\nlet area;\nconst mn = s => escapeHtml(s).replace(/&amp;(\\w)/, '<u>$1</u>');\nconst ocrDesc = t => /[gjpqyφø()\\[\\]{}|@]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;\nlet ocrDeskInfo = null;\nlet khzOcrDictP = null;\nlet KHZ_OCR_FAMS = ['sans', 'serif', 'mono', 'calibri', 'narrow'];\nlet KHZ_OCR_KIDS = { serif: [], sans: [] };\nlet KHZ_OCR_KID_LEAD = { sans: 0.10, serif: 0.07, cross: 0.15 };\nlet KHZ_OCR_CAL_LEAD = 0.02;\nlet khzOcrDrawnCache = new Map();\nconst b64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };\nlet KHZ_OCR_FACES = null;\nlet khzOcrFacesP = null;\nlet KHZ_SYM_LONE = ['\\u2713', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>'];\nlet KHZ_SYM_RAISED = ['*', '\\u2020', '\\u2021', '\\u00b0', '\\u00b9', '\\u00b2', '\\u00b3', '\\u2122', '\\u00ae', '\\u00a9', '+', '#', '\\u00a7', '\\u2032', '\\u2033'];\nlet KHZ_SYM_PUNCT = ['.', ',', ':', ';', '\"', \"'\", '(', ')', '[', ']', '{', '}', '\\\\', '_', '~', '^', '\\u201c', '\\u201d', '\\u2018', '\\u2019'];\nlet KHZ_SYM_SAME = [['\"', '\\u201c', '\\u201d'], [\"'\", '\\u2018', '\\u2019']];\nlet KHZ_SYM_EXTRA = new Set(['\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25ef', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109']);\nlet KHZ_SYM_SHAPES = new Set(['\\u25cb', '\\u25cf', '\\u25ce', '\\u25c9', '\\u25a1', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25bd', '\\u25c6', '\\u25c7', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u2713', '\\u2717', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469']);\nlet KHZ_SYM_RARE = ['\\u2200', '\\u2201', '\\u2203', '\\u2204', '\\u220a', '\\u220b', '\\u220c', '\\u220d', '\\u220e', '\\u220f', '\\u2210', '\\u2214', '\\u221b', '\\u221c', '\\u221f', '\\u2224', '\\u2225', '\\u2226', '\\u2227', '\\u2228', '\\u222c', '\\u222d', '\\u222e', '\\u222f', '\\u2230', '\\u2231', '\\u2232', '\\u2233', '\\u2235', '\\u2237', '\\u2238', '\\u2239', '\\u223a', '\\u223b', '\\u223e', '\\u223f', '\\u2241', '\\u2242', '\\u2243', '\\u2244', '\\u2246', '\\u2247', '\\u2249', '\\u224a', '\\u224c', '\\u2252', '\\u2253', '\\u2254', '\\u2255', '\\u2256', '\\u2257', '\\u2258', '\\u2259', '\\u225a', '\\u225b', '\\u225c', '\\u225d', '\\u225e', '\\u225f', '\\u2262', '\\u2263', '\\u2266', '\\u2267', '\\u2268', '\\u2269', '\\u226a', '\\u226b', '\\u226c', '\\u226d', '\\u226e', '\\u226f', '\\u2270', '\\u2271', '\\u2272', '\\u2273', '\\u2274', '\\u2275', '\\u2276', '\\u2277', '\\u2278', '\\u2279', '\\u227a', '\\u227b', '\\u227c', '\\u227d', '\\u227e', '\\u22bf', '\\u22cf', '\\u22ce', '\\u22d5', '\\u22eb', '\\u22ec', '\\u22ed', '\\u22ea', '\\u22e9', '\\u22e8', '\\u22e7', '\\u22e6', '\\u22e5', '\\u22e4', '\\u22e3', '\\u22e2', '\\u2282', '\\u2283', '\\u2284', '\\u2285', '\\u2286', '\\u2287', '\\u2288', '\\u2289', '\\u228a', '\\u228b', '\\u228c', '\\u228d', '\\u228e', '\\u228f', '\\u2290', '\\u2291', '\\u2292', '\\u2293', '\\u2294', '\\u2296', '\\u2298', '\\u2299', '\\u229a', '\\u229b', '\\u229c', '\\u229d', '\\u229e', '\\u229f', '\\u2301', '\\u2303', '\\u2304', '\\u2305', '\\u2306', '\\u2307', '\\u2308', '\\u2309', '\\u230a', '\\u230b', '\\u230c', '\\u230d', '\\u230e', '\\u230f', '\\u2310', '\\u2311', '\\u2318', '\\u2319', '\\u231c', '\\u231d', '\\u231e', '\\u231f', '\\u2324', '\\u2325', '\\u2326', '\\u2327', '\\u2328', '\\u27e8', '\\u27e9', '\\u232b', '\\u2221', '\\u29ce', '\\u29cf', '\\u29d0', '\\u29d1', '\\u29d2', '\\u29d3', '\\u29d4', '\\u29d5', '\\u219a', '\\u219b', '\\u219c', '\\u219d', '\\u219e', '\\u219f', '\\u21a0', '\\u21a1', '\\u21a2', '\\u21a3', '\\u21a4', '\\u21a5', '\\u21a6', '\\u21a7', '\\u21a8', '\\u21a9', '\\u21aa', '\\u21ab', '\\u21ac', '\\u21ad', '\\u21ae', '\\u21af', '\\u21b0', '\\u21b1', '\\u21b2', '\\u21b3', '\\u21b4', '\\u21b5', '\\u21b6', '\\u21b7', '\\u21b8', '\\u21b9', '\\u21bc', '\\u21bd', '\\u21be', '\\u21bf', '\\u21c0', '\\u21c1', '\\u21c2', '\\u21c3', '\\u21c4', '\\u21c5', '\\u21c6', '\\u21c7', '\\u21c8', '\\u21c9', '\\u21ca', '\\u21cb', '\\u21cc', '\\u21cd', '\\u21ce', '\\u21cf', '\\u21d5', '\\u21d6', '\\u21d7', '\\u21d8', '\\u21d9', '\\u21da', '\\u21db', '\\u21dc', '\\u21dd', '\\u21de', '\\u21df', '\\u21e0', '\\u21e1', '\\u21e2', '\\u21e3', '\\u21e4', '\\u21e5', '\\u21e6', '\\u21e7', '\\u21e8', '\\u21e9', '\\u21ea', '\\u21eb', '\\u21ec', '\\u21ed', '\\u21ee', '\\u21ef', '\\u21f0', '\\u21f1', '\\u21f2', '\\u21f3', '\\u21f4', '\\u21f5', '\\u21f6', '\\u21f7', '\\u21f8', '\\u21f9', '\\u21fa', '\\u21fb', '\\u21fc', '\\u21fd', '\\u21fe', '\\u21ff', '\\u2794', '\\u2798', '\\u2799', '\\u279a', '\\u279b', '\\u279c', '\\u279d', '\\u279e', '\\u279f', '\\u27a0', '\\u27a1', '\\u27a2', '\\u27a3', '\\u27a4', '\\u27a5', '\\u27a6', '\\u27a7', '\\u27a8', '\\u27a9', '\\u27b2', '\\u27b3', '\\u27b4', '\\u27b5', '\\u27b6', '\\u27b7', '\\u27b8', '\\u27b9', '\\u27ba', '\\u27bb', '\\u27bc', '\\u27bd', '\\u27be', '\\u25a2', '\\u25a3', '\\u25a4', '\\u25a5', '\\u25a6', '\\u25a7', '\\u25a8', '\\u25a9', '\\u25ab', '\\u25ac', '\\u25ad', '\\u25ae', '\\u25af', '\\u25b0', '\\u25b1', '\\u25b4', '\\u25b5', '\\u25b7', '\\u25b8', '\\u25b9', '\\u25bb', '\\u25be', '\\u25bf', '\\u25c1', '\\u25c2', '\\u25c3', '\\u25c5', '\\u25c8', '\\u25ca', '\\u25cc', '\\u25cd', '\\u25d0', '\\u25d1', '\\u25d2', '\\u25d3', '\\u25d4', '\\u25d5', '\\u25d6', '\\u25d7', '\\u25d8', '\\u25d9', '\\u25da', '\\u25db', '\\u25dc', '\\u25dd', '\\u25de', '\\u25df', '\\u25e0', '\\u25e1', '\\u25e2', '\\u25e3', '\\u25e4', '\\u25e5', '\\u25e7', '\\u25e8', '\\u25e9', '\\u25ea', '\\u25eb', '\\u25ec', '\\u25ed', '\\u25ee', '\\u2609', '\\u263f', '\\u2640', '\\u2641', '\\u2642', '\\u2643', '\\u2644', '\\u2645', '\\u2646', '\\u2647'];\nlet KHZ_SYM_SMALL = new Set(['.', ',', '\\u00b7', '\\u2022', '\\u25cf', '\\u25aa', '-', '\\u2013', '\\u2014', '_', '~', \"'\", '\"', '`', '^', '\\u00b0', '\\u00af', '=', ':', ';', '\\u2018', '\\u2019', '\\u201c', '\\u201d', '*', '+', '\\u2212', '\\u00a8', '\\u02d9', '\\u00b4', '\\u2219', '\\u00b8', '\\u02dc', '\\u2026']);\nlet KHZ_SYM_SOLID = new Set(['\\u25cf', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25c6', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4']);\nlet KHZ_SYM_CANDS = ['\\u2713', '\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', '≥', '≤', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>', '/', '?', '!', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '\\u25ef'];\nlet khzOcrGlyphCache = new Map();\nlet KHZ_FIT_SHIFTS = (() => { const a = []; for (let sy = -2; sy <= 2; sy++) for (let sx = -2; sx <= 2; sx++) a.push([sx, sy]); return a.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1])); })();\nlet KHZ_LOOKALIKE = { A: ['\\u2206'], v: ['\\u221a', '\\u2713'], V: ['\\u221a', '\\u2207', '\\u2713'], '=': ['\\u2261', '\\u21d2', '\\u2248'], '@': ['\\u25c6'], '\\u00d8': ['\\u2205', '\\u2300'], '\\u00a9': ['\\u2205'], '\\u03b1': ['\\u221d', '\\u2300'], '\\u00ab': ['\\u221d'] };\nlet KHZ_FRACTIONS = ['\\u00bc', '\\u00bd', '\\u00be', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154'];\nlet KHZ_POOL_FNS = ['khzInkCore', 'khzOcrColors', 'khzOcrStroke', 'khzOcrSlant', 'khzOcrInkGrid', 'khzOcrDrawnWord', 'khzOcrFaceScore', 'khzOcrTilted', 'khzOcrGlyphMask', 'khzOcrGlyphFit'];\nconst KHZ_POOL_CONSTS = () => ({ arrays: { KHZ_FIT_SHIFTS, KHZ_SYM_RARE }, sets: { KHZ_SYM_EXTRA, KHZ_SYM_SMALL, KHZ_SYM_SHAPES, KHZ_SYM_SOLID } });\nlet khzOcrPoolP = null;\nlet KHZ_FORM_MARKS = new Set(['☐', '☑', '☒', '□', '○', '●', '◉', '◎', '✓', '✔', '✗', '✘', '×', '•', '·', '-', '–', '—', '*', '#', '%', '&', '@', '$', '/', '\\\\', ':', ';', ',', '.', '(', ')', '[', ']', '\"', \"'\", '?', '!', '+', '=', '<', '>', '°', '±', '∅', 'Ø', '⌀', 'Φ', 'φ', 'µ', 'Ω', '→', '←', '↑', '↓']);","big":["KHZ_OCR_FACES"],"vals":["TEXT_FONT","ocrDeskInfo","KHZ_OCR_FAMS","KHZ_OCR_KIDS","KHZ_OCR_KID_LEAD","KHZ_OCR_CAL_LEAD","KHZ_OCR_FACES","KHZ_SYM_LONE","KHZ_SYM_RAISED","KHZ_SYM_PUNCT","KHZ_SYM_SAME","KHZ_SYM_EXTRA","KHZ_SYM_SHAPES","KHZ_SYM_RARE","KHZ_SYM_SMALL","KHZ_SYM_SOLID","KHZ_SYM_CANDS","KHZ_FIT_SHIFTS","KHZ_LOOKALIKE","KHZ_FRACTIONS","KHZ_POOL_FNS","KHZ_FORM_MARKS"],"live":["ocrDeskInfo"]};   // (filled in by the build: tools/finish-src.js)
+let khzFinishP = null;
+// the thread's own part: page jobs in, lines out; the window answers its questions (rpc)
+function khzFinishThreadMain() {
+  const jobs = new Map(), asks = new Map(); let askN = 0;
+  const ask = (fn, args, transfer, job) => new Promise((res, rej) => { const rid = ++askN; asks.set(rid, { res, rej }); postMessage({ type: 'rpc', rid, fn, args, job }, transfer || []); });
+  const setLive = (n, v) => { try { eval(n + ' = v'); } catch (e) {} };   // (a value the window keeps changing — the OCR language)
+  const toCanvas = bm => { const c = new OffscreenCanvas(bm.width, bm.height); c.getContext('2d', { willReadFrequently: true }).drawImage(bm, 0, 0); bm.close(); return c; };
+  onmessage = async e => {
+    const m = e.data;
+    if (m.type === 'rpc') { const a = asks.get(m.rid); if (a) { asks.delete(m.rid); if (m.ok) a.res(m.value); else a.rej(new Error(m.err)); } return; }
+    if (m.type === 'stop') { const j = jobs.get(m.id); if (j) j.stop = true; return; }
+    if (m.type === 'init') {
+      try {
+        for (const [n, v] of Object.entries(m.vals || {})) setLive(n, v);
+        if (m.desk) window.khzDesktop = { ocrRecognize: (img, opts) => ask('ocrRecognize', [img, opts]), ocrWords: () => ask('ocrWords', []) };
+        if (m.noPool) window.khzNoPool = true;
+        const ready = await khzOcrFacesReady();
+        const cv = new OffscreenCanvas(8, 8), cx = cv.getContext('2d', { willReadFrequently: true });
+        const a = khzOcrDrawnWord(cx, cv, '400 64px "KHZ OCR sans"', 64, m.test, 0), b = khzOcrDrawnWord(cx, cv, '700 64px "KHZ OCR serif"', 64, m.test, 9.5);
+        postMessage({ type: 'init', ok: !!ready, check: JSON.stringify([a && a.w, a && a.h, a && a.m.reduce((s, v) => s + v, 0), b && b.w, b && b.h, b && b.m.reduce((s, v) => s + v, 0)]) });
+      } catch (err) { postMessage({ type: 'init', ok: false, err: String(err && err.stack || err) }); }
+      return;
+    }
+    // (2804) words taken out of a scan picture's area when recognized text is changed (app158 khzScanErase)
+    if (m.type === 'erase') {
+      try { const d = new Uint8ClampedArray(m.data); khzOcrErase({ width: m.w, height: m.h, data: d }, m.all[0], m.all, null); postMessage({ type: 'done', id: m.id, ok: true, data: d.buffer }, [d.buffer]); }
+      catch (err) { postMessage({ type: 'done', id: m.id, ok: false, err: String(err && err.stack || err) }); }
+      return;
+    }
+    if (m.type !== 'job') return;
+    const job = { stop: false }; jobs.set(m.id, job);
+    try {
+      for (const [n, v] of Object.entries(m.live || {})) setLive(n, v);
+      const c = toCanvas(m.c), rc = m.rc ? toCanvas(m.rc) : c, clean = m.clean ? toCanvas(m.clean) : null;
+      if (m.stamps) rc._stamps = m.stamps;
+      const laps = {}; let tl = performance.now();
+      const lap = key => { const t = performance.now(); laps[key] = (laps[key] || 0) + Math.round(t - tl); tl = t; };
+      // (the web version's Tesseract stays in the window: asked for each reading)
+      const worker = m.tess ? { read: async (psm, img, o1, o2) => { const bm = await createImageBitmap(img); return ask('tess.read', [psm, bm, o1, o2], [bm], m.id); } } : null;
+      const st = {};
+      const r = await khzOcrFinishHere({ ...m.J, c, cx: c.getContext('2d', { willReadFrequently: true }), rc, clean, gray: m.gray, worker, stop: () => job.stop, lap, st });
+      // (as a converted page is kept on this computer, app225: a line turned on its side keeps its frame as numbers)
+      postMessage({ type: 'done', id: m.id, ok: true, r: r.cancelled ? r : khzOcrKeptPack(r), laps, st });
+    } catch (err) { postMessage({ type: 'done', id: m.id, ok: false, err: String(err && err.stack || err) }); }
+    finally { jobs.delete(m.id); }
+  };
+}
+function khzFinishSource() {
+  const S = KHZ_FINISH_SRC, fn = n => { const f = (0, eval)(n); return typeof f === 'function' ? f.toString() : ''; };
+  return `// KHZ PDF — finishing off recognized pages (app282)
+const window = self;
+const document = { createElement: () => new OffscreenCanvas(1, 1), fonts: self.fonts };
+if (!OffscreenCanvas.prototype.toBlob) OffscreenCanvas.prototype.toBlob = function (cb, type, q) { this.convertToBlob({ type: type || 'image/png', quality: q }).then(cb, () => cb(null)); };
+// (the work hands the thread back now and then, so a Stop or an answer from the window gets in)
+let khzTickAt = 0; const khzTickStat = { n: 0, ms: 0 };
+const khzTickWait = (() => { const ch = new MessageChannel(), q = []; ch.port1.onmessage = () => { const r = q.shift(); if (r) r(); }; return () => new Promise(r => { q.push(r); ch.port2.postMessage(0); }); })();
+function khzTick() { const t = performance.now(); if (t - khzTickAt < 50) return null; return khzTickWait().then(() => { khzTickAt = performance.now(); khzTickStat.n++; }); }
+function khzUserBusy() { return false; }
+${S.decls}
+${S.fns.map(fn).join('\n')}
+khzFinishThreadMain();
+`;
+}
+// the thread, started the first time a page is finished off: null where it can't be had
+function khzFinishThread() {
+  if (khzFinishP) return khzFinishP;
+  khzFinishP = (async () => {
+    try {
+      if (!KHZ_FINISH_SRC || window.khzNoFinishThread || typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function' || !(await khzOcrFacesReady())) return null;
+      const w = new Worker(URL.createObjectURL(new Blob([khzFinishSource()], { type: 'text/javascript' })));
+      const T = { w, waits: new Map(), seq: 0, jobs: new Map(), dead: false };
+      w.onerror = e => { T.dead = true; console.warn('KHZ finishing thread stopped', e.message || e); for (const f of T.waits.values()) f({ ok: false, err: 'the thread stopped' }); T.waits.clear(); khzFinishP = null; };
+      const inited = new Promise(res => { T.onInit = res; });
+      w.onmessage = e => khzFinishAnswer(T, e.data);
+      const test = 'Hamburgefonts 0.5% ½';
+      const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+      const a = khzOcrDrawnWord(cx, cv, '400 64px "KHZ OCR sans"', 64, test, 0), b = khzOcrDrawnWord(cx, cv, '700 64px "KHZ OCR serif"', 64, test, 9.5);
+      const want = JSON.stringify([a && a.w, a && a.h, a && a.m.reduce((s, v) => s + v, 0), b && b.w, b && b.h, b && b.m.reduce((s, v) => s + v, 0)]);
+      const vals = {}; for (const n of KHZ_FINISH_SRC.vals) { try { const v = (0, eval)(n); if (v !== undefined && typeof v !== 'function' && !(v && typeof v.then === 'function')) vals[n] = structuredClone(v); } catch (e) {} }
+      w.postMessage({ type: 'init', vals, test, desk: !!(window.khzDesktop && window.khzDesktop.ocrRecognize), noPool: !!window.khzNoPool });
+      const r = await Promise.race([inited, new Promise(res => setTimeout(() => res(null), 20000))]);
+      if (!r || !r.ok || r.check !== want) { console.warn('KHZ finishing thread not used', r && (r.err || r.check), want); w.terminate(); return null; }
+      return T;
+    } catch (e) { console.warn('KHZ finishing thread not used', e); return null; }
+  })();
+  return khzFinishP;
+}
+// the thread's messages: a page done, or a question for the window
+async function khzFinishAnswer(T, m) {
+  if (m.type === 'init') { if (T.onInit) T.onInit(m); return; }
+  if (m.type === 'done') { const f = T.waits.get(m.id); if (f) { T.waits.delete(m.id); f(m); } return; }
+  if (m.type !== 'rpc') return;
+  const reply = (ok, value, err) => { try { T.w.postMessage({ type: 'rpc', rid: m.rid, ok, value, err }); } catch (e) { T.w.postMessage({ type: 'rpc', rid: m.rid, ok: false, err: String(e) }); } };
+  try {
+    const D = window.khzDesktop, J = T.jobs.get(m.job);
+    if (m.fn === 'ocrRecognize') reply(true, await D.ocrRecognize(...m.args));
+    else if (m.fn === 'ocrWords') reply(true, await D.ocrWords());
+    else if (m.fn === 'tess.read') {
+      const [psm, bm, o1, o2] = m.args, cv = document.createElement('canvas'); cv.width = bm.width; cv.height = bm.height;
+      cv.getContext('2d').drawImage(bm, 0, 0); bm.close();
+      const r = await khzTessRead(J.worker, psm, cv, o1, o2); cv.width = cv.height = 0;
+      reply(true, { data: r.data });
+    } else reply(false, null, 'unknown question ' + m.fn);
+  } catch (e) { reply(false, null, String(e && e.message || e)); }
+}
+// (2804) khzOcrErase(px, all[0], all, null) on a picture area px ({ width, height, data }) in the thread, so the window
+// doesn't stand still while it works; in the window where there's no thread. px.data is filled in with the result
+async function khzOcrEraseOff(px, all) {
+  const T = await khzFinishThread();
+  if (T && !T.dead) {
+    try {
+      const id = ++T.seq, buf = px.data.slice().buffer, done = new Promise(res => T.waits.set(id, res));
+      T.w.postMessage({ type: 'erase', id, w: px.width, h: px.height, data: buf, all }, [buf]);
+      const r = await done;
+      if (r.ok) { px.data.set(new Uint8ClampedArray(r.data)); return; }
+      console.warn('KHZ thread erase', r.err);
+    } catch (e) { console.warn('KHZ thread erase', e); }
+  }
+  khzOcrErase(px, all[0], all, null);
+}
+// one page finished off in the thread (or, where it can't be, in the window): see khzOcrFinishHere (app16)
+async function khzOcrFinish(J) {
+  const T = await khzFinishThread();
+  if (!T || T.dead) return khzOcrFinishHere(J);
+  const id = ++T.seq;
+  try {
+    const bm = x => createImageBitmap(x);
+    const msg = { type: 'job', id, J: { n: J.n, k: J.k, mode: J.mode, desk: J.desk, scan: J.scan, found: J.found, aiRes: J.aiRes, sys: J.sys, down: J.down }, gray: J.gray, tess: !!J.worker, live: {} };
+    for (const n of KHZ_FINISH_SRC.live) { try { const v = (0, eval)(n); if (v != null && typeof v.then !== 'function' && typeof v !== 'function') msg.live[n] = v; } catch (e) {} }
+    msg.c = await bm(J.c);
+    if (J.rc && J.rc !== J.c) { msg.rc = await bm(J.rc); if (J.rc._stamps) msg.stamps = J.rc._stamps; }
+    if (J.clean && J.clean !== J.c) msg.clean = await bm(J.clean);
+    T.jobs.set(id, J);
+    const done = new Promise(res => T.waits.set(id, res));
+    T.w.postMessage(msg, [msg.c, msg.rc, msg.clean].filter(Boolean));
+    const poll = setInterval(() => { if (J.stop()) T.w.postMessage({ type: 'stop', id }); }, 100);
+    const r = await done.finally(() => { clearInterval(poll); T.jobs.delete(id); });
+    if (!r.ok) throw new Error(r.err);
+    // (the time each step took in the thread, as in the window's report; the rest is the handing over and back)
+    J.lap('handover'); let sum = 0;
+    for (const [key, v] of Object.entries(r.laps)) { J.st[key] = (J.st[key] || 0) + v; sum += v; }
+    J.st.handover = Math.max(0, J.st.handover - sum); Object.assign(J.st, r.st); J.st.where = 'background thread';
+    return r.r.cancelled ? r.r : khzOcrKeptUnpack(r.r);
+  } catch (e) {
+    console.warn('KHZ: page ' + J.n + ' finished off in the window (the thread: ' + (e && e.message || e) + ')');
+    if (J.stop()) return { cancelled: true };
+    return khzOcrFinishHere(J);
+  }
+}
 </script>
 </body>
 </html>
