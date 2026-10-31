@@ -4873,7 +4873,7 @@ async function placePointAnnot(tool, n, vx, vy) {
       if (state.newTextLsMul && state.newTextLsMul !== 1) a.lsMul = state.newTextLsMul; state.newTextLsMul = null; applyTextDefaults(a); if (lastEditorRuns && lastEditorRuns.text === txt) setRichText(a, txt, lastEditorRuns.styles);
       // size the box to the text, in the size and font it was typed in (addTextRefit, app92: one owner for Add Text's
       // width — sized here for 12 pt Helvetica, text typed at 18 pt Arial wrapped onto a second line once it was done)
-      { const dy = (lastEditorRuns && lastEditorRuns.text === txt && lastEditorRuns.dy) || 0; a.pts = toPdfPts(ps, [[vx - state.scale, vy + dy - state.scale], [vx + 10 * state.scale, vy + dy + 10 * state.scale]]); }
+      { const L = lastEditorRuns && lastEditorRuns.text === txt ? lastEditorRuns : null, dy = (L && L.dy) || 0, dx = (L && L.dx) || 0; a.pts = toPdfPts(ps, [[vx + dx - state.scale, vy + dy - state.scale], [vx + dx + 10 * state.scale, vy + dy + 10 * state.scale]]); }   /* (dx/dy: the box moved while typing, app227) */
       if (typeof addTextRefit === 'function') addTextRefit(a);
       addAnnotation(a);
       // done typing: the new comment stays selected (Acrobat's dotted box) unless something else was started
@@ -5201,6 +5201,9 @@ async function importNativeAnnots() {
     if (L && L.size && L.size() === 4) info.L = L.asArray().map(x => x.asNumber());   // true direction (pdf.js sorts these)
     { const LL = d.get(N('LL')); if (LL && LL.asNumber) info.ll = LL.asNumber(); const LLE = d.get(N('LLE')); if (LLE && LLE.asNumber) info.lle = LLE.asNumber(); const LLO = d.get(N('LLO')); if (LLO && LLO.asNumber) info.llo = LLO.asNumber(); const CP = d.get(N('CP')); if (CP) info.cp = String(CP); }
     if (String(d.get(N('Subtype'))) === '/FreeText') { try { info.apText = apTextLines(d, lk); } catch (e) {} }
+    if (String(d.get(N('Subtype'))) === '/FreeText') try {   // line to line from the text's default look (Acrobat's "12.5 TL")
+      const DA = lk(d.get(N('DA'))); const t = DA && DA.decodeText ? DA.decodeText() : ''; const m = t.match(/(-?[\d.]+)\s+TL\b/); if (m && +m[1] > 0) info.daTL = +m[1];
+    } catch (e) {}
     if (String(d.get(N('Subtype'))) === '/FreeText') try {   // its rich text (bold, colours, fonts per word), like Acrobat reads it
       const txt = v => { v = lk(v); if (!v) return ''; if (v.decodeText) return v.decodeText(); if (v instanceof PDFLib.PDFStream) return new TextDecoder(/^\xfe\xff/.test(bytesToLatin1((v instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(v).decode() : v.getContents()).slice(0, 2))) ? 'utf-16be' : 'utf-8').decode(v instanceof PDFLib.PDFRawStream ? PDFLib.decodePDFRawStream(v).decode() : v.getContents()); return ''; };
       info.rc = txt(d.get(N('RC'))); info.ds = txt(d.get(N('DS')));
@@ -5309,6 +5312,19 @@ async function importNativeAnnots() {
               if (raw.apText.length > 1) { const lh = raw.apText[0].y - raw.apText[1].y; if (lh > 1 && lh < (a.fontSize || 12) * 3) a.apLh = lh; }
             }
           }
+          // (turned with the page: measured along its own lines, when the text reads upright on the turned page — the
+          // way the app draws it. Without this the app's copy sat ~1.3 pt higher with tighter lines than the file's, and
+          // the text moved up when clicked into: riser diagram 26kw, "SPD is optional…", "Circuits previously…")
+          const F = raw.apText && raw.apText.frame;
+          if (!raw.cl && raw.rotate && F && a.apTop === undefined) {
+            const UP = { 90: [-1, 0], 180: [0, -1], 270: [1, 0] }[raw.rotate];
+            if (UP && F.up[0] * UP[0] + F.up[1] * UP[1] > 0.99 && F.off > 0 && F.off < F.height + 2 && F.dx >= 0 && F.dx < 40) {
+              a.apTop = F.off; a.apX = F.dx;
+              if (F.lh > 1 && F.lh < (a.fontSize || 12) * 3) a.apLh = F.lh;
+            }
+          }
+          // (one line in the file's appearance: line to line from its default look, as Acrobat types more lines)
+          if (a.apTop !== undefined && !a.apLh && raw.daTL > 1 && raw.daTL < (a.fontSize || 12) * 3) a.apLh = raw.daTL;
           if (raw.rc && typeof khzRcToRuns === 'function') try { const R = khzRcToRuns(raw.rc, raw.ds, a); if (R) { a.text = R.text; if (R.runs) a.runs = R.runs; if (R.align) a.align = R.align; } } catch (e) { console.warn('rich text', e); }
           if (raw.cl) {   // Text Callout: arrow point + text box (box = Rect minus RD)
             const rd = raw.rd || [0, 0, 0, 0];
@@ -5757,7 +5773,7 @@ function apTextLines(d, lk) {
   const toPage = (x, y) => { const [a, b] = tp(M, x, y); return [rx0 + (a - tx0) * sx, ry0 + (b - ty0) * sy]; };
   // walk the text operators (cm inside the stream is followed for the simple q/cm/Q case)
   const toks = src.replace(/\((?:\\.|[^\\)])*\)/g, ' (S) ').replace(/<[0-9a-fA-F\s]*>/g, ' (S) ').split(/\s+/).filter(Boolean);
-  let ctm = [1, 0, 0, 1, 0, 0]; const stack = []; let lm = [1, 0, 0, 1, 0, 0], tl = 0; const out = []; let shown = false, turned = false; const st2 = [];
+  let ctm = [1, 0, 0, 1, 0, 0]; const stack = []; let lm = [1, 0, 0, 1, 0, 0], tl = 0; const out = []; let shown = false, turned = false, dir = null; const st2 = [];
   const mul = (a, b) => [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3], a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]];
   const nl = () => { shown = false; };
   for (const t of toks) {
@@ -5769,12 +5785,27 @@ function apTextLines(d, lk) {
     else if ((t === 'Td' || t === 'TD') && st2.length >= 2) { const [x, y] = st2.slice(-2); if (t === 'TD') tl = -y; lm = mul([1, 0, 0, 1, x, y], lm); nl(); }
     else if (t === 'TL' && st2.length) tl = st2[st2.length - 1];
     else if (t === 'T*' || t === "'" || t === '"') { lm = mul([1, 0, 0, 1, 0, -tl], lm); nl(); if (t !== 'T*') { shown = true; const m = mul(lm, ctm); out.push(toPage(m[4], m[5])); } }
-    else if ((t === 'Tj' || t === 'TJ') && !shown) { shown = true; const m = mul(lm, ctm); out.push(toPage(m[4], m[5])); const w = mul(m, M); if (Math.abs(w[1]) > 1e-6 || w[0] <= 0) turned = true; }
+    else if ((t === 'Tj' || t === 'TJ') && !shown) { shown = true; const m = mul(lm, ctm); out.push(toPage(m[4], m[5])); const w = mul(m, M); if (Math.abs(w[1]) > 1e-6 || w[0] <= 0) turned = true; if (!dir) dir = w; }
     st2.length = 0;
   }
   const lines = [];
   out.sort((a, b) => b[1] - a[1]).forEach(([x, y]) => { const L = lines.find(l => Math.abs(l.y - y) < 2); if (L) L.x = Math.min(L.x, x); else lines.push({ x, y }); });
   lines.turned = turned;   // (text drawn turned: its line positions aren't across the box)
+  // turned text (a typewriter box on a turned page: Acrobat draws it turned with the page): the same three numbers
+  // measured along the text's own lines — how far the first line's baseline is below the box's top (as you read it),
+  // how far in it starts, and line to line
+  if (turned && dir && out.length) {
+    const nu = Math.hypot(dir[0], dir[1]), nv = Math.hypot(dir[2], dir[3]);
+    if (nu > 1e-6 && nv > 1e-6) {
+      const u = [dir[0] / nu, dir[1] / nu], v = [dir[2] / nv, dir[3] / nv];
+      const pu = p => p[0] * u[0] + p[1] * u[1], pv = p => p[0] * v[0] + p[1] * v[1];
+      const C = [[rx0, ry0], [rx1, ry0], [rx0, ry1], [rx1, ry1]];
+      const top = Math.max(...C.map(pv)), bot = Math.min(...C.map(pv)), left = Math.min(...C.map(pu));
+      const L = [];
+      out.map(p => [pu(p), pv(p)]).sort((a, b) => b[1] - a[1]).forEach(([a, b]) => { const l = L.find(l => Math.abs(l.v - b) < 2); if (l) l.u = Math.min(l.u, a); else L.push({ u: a, v: b }); });
+      lines.frame = { off: top - L[0].v, dx: L[0].u - left, lh: L.length > 1 ? L[0].v - L[1].v : 0, height: top - bot, up: v };
+    }
+  }
   return lines;
 }
 
@@ -7801,7 +7832,7 @@ function inlineEdit(ps, o) {
       // spell out every character's full style, so text typed in the box's own style keeps it
       // even when the new object's defaults differ (e.g. the last color picked)
       const full = { bold: false, italic: false, underline: false, strike: false, script: '' }; STYLE_KEYS.forEach(k => { if (base[k] !== undefined) full[k] = base[k]; });
-      lastEditorRuns = { text: t, styles: styles.slice(0, t.length).map(st => ({ ...full, ...(st || {}) })), dy: +el.dataset.fsDy || 0 };   // (dy: screen px the box moved while typing — Fill & Sign keeps text centred as it's sized, app227)
+      lastEditorRuns = { text: t, styles: styles.slice(0, t.length).map(st => ({ ...full, ...(st || {}) })), dy: +el.dataset.fsDy || 0, dx: +el.dataset.fsDx || 0 };   // (dy: screen px the box moved while typing — Fill & Sign keeps text centred as it's sized, app227)
       el.remove();
       resolve(commit ? t : null);
       if (o.annotId) setTimeout(updatePropsBar, 0);
@@ -7952,7 +7983,11 @@ async function editAnnotText(a, opt = {}) {
   // the page's own text stays in the page picture while you only click in, look or select (no redraw = no flicker);
   // the first real change (typing, a style) takes it out and the app draws it from then on
   if (a.type === 'text-block' && a.untouched) wasUntouched = true;
-  if (a.native && a.untouched && a.pageAP) touchNative(a);   // (a text box shown with the file's own appearance: the app draws it while you edit)
+  // (a text box shown with the file's own appearance: the app draws it while you edit. Taking it out of the page means
+  // redrawing the page, ~0.1 s; until the new page picture is up the typing box's letters stay see-through, so the
+  // page's copy and the typing box's never show together — they did, a pixel apart: the text "doubled" for a moment)
+  let apWait = false;
+  if (a.native && a.untouched && a.pageAP) { touchNative(a); apWait = !!ps && ps.canvasHidden !== ((state.nativeHidden || {})[a.page] || ''); }
   const bo = editBoxOptions(a, ps);
   if (!bo) return;
   if (activeEditor) activeEditor.finish(true);
@@ -7960,17 +7995,25 @@ async function editAnnotText(a, opt = {}) {
   state.selectedId = a.id;
   renderPageAnnots(a.page);
   const edit = inlineEdit(ps, {
-    ...bo, annotId: a.id, multiline: true, ghost: wasUntouched, onFirstChange: wasUntouched ? () => touchNative(a) : null, at: opt.at, word: opt.word, selectAll: opt.selectAll, dragSelect: opt.dragSelect,
+    ...bo, annotId: a.id, multiline: true, ghost: wasUntouched || apWait, onFirstChange: wasUntouched ? () => touchNative(a) : null, at: opt.at, word: opt.word, selectAll: opt.selectAll, dragSelect: opt.dragSelect,
     // dragging out of the text into other text: Edit PDF's selection across text boxes (app174)
     onDragOut: opt.dragSelect && a.type === 'text-block' && typeof khzEditSelStart === 'function' ? (e, at) => khzEditSelStart(a, at, e) : null,
   });
+  if (apWait) {   // the page is redrawn without the box: the typing box shows its letters in that same moment
+    const n = a.page, me = activeEditor;
+    const done = () => { document.removeEventListener('khz-page-drawn', on); clearTimeout(t); if (activeEditor === me && me && me.unghost) me.unghost(); };
+    const on = e => { if (e.detail === n && ps.canvasHidden === ((state.nativeHidden || {})[n] || '')) done(); };
+    document.addEventListener('khz-page-drawn', on);
+    const t = setTimeout(done, 2000);   // (a page that never finishes drawing: the letters show anyway)
+  }
   updatePropsBar();
   const txt = await edit;
   if (state.editingId === a.id) state.editingId = null;
   const SNAP = x => JSON.stringify([x.text, x.runs || null, x.fontSize, x.lineH, x.color, x.family, !!x.bold, !!x.italic, !!x.underline, !!x.strike, x.script || '']);
   let c = null;
   if (txt !== null && lastEditorRuns) { c = JSON.parse(JSON.stringify(a)); setRichText(c, lastEditorRuns.text, lastEditorRuns.styles); khzKeepLineSpacing(a, c);
-    if (lastEditorRuns.dy && Array.isArray(a.pts)) { const d = lastEditorRuns.dy / ps.vp.scale; a.pts = a.pts.map(p => [p[0], p[1] - d]); c.pts = a.pts; } }
+    // (the box moved while typing — sized about its middle or dragged by its edge in Fill & Sign, app227: screen px)
+    if ((lastEditorRuns.dy || lastEditorRuns.dx) && Array.isArray(a.pts)) { const DX = lastEditorRuns.dx || 0, DY = lastEditorRuns.dy || 0; a.pts = toPdfPts(ps, a.pts.map(p => { const v = ps.vp.convertToViewportPoint(p[0], p[1]); return [v[0] + DX, v[1] + DY]; })); c.pts = a.pts; } }
   if (!c || SNAP(c) === SNAP(a)) {
     if (wasUntouched && a._noRevert) delete a._noRevert;   // turned or resized while typing: it stays the app's own copy
     else if (wasUntouched) {   // nothing changed: keep the original text exactly
@@ -18744,7 +18787,7 @@ document.addEventListener('keydown', e => {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.2807';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.10.3002';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -19070,6 +19113,10 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.10.3002', ['Fill & Sign: clicking off the text you typed leaves it as plain text on the page (no box, no toolbar), like Acrobat; and dragging text you clicked back into no longer leaves its toolbar behind where it was.']],
+  ['2026.10.3001', ['Fill & Sign: while you type, the edge of the text box shows the move cross, like Acrobat \u2014 drag it to move the box with its text and keep typing.', 'Fill & Sign: the first click off the text you\u2019re typing only finishes it, like Acrobat; the next click starts a new one (it used to open a new empty box straight away).']],
+  ['2026.10.2809', ['Text boxes added in Acrobat on a turned page (a drawing saved landscape) keep their place and line spacing when you click into them or change them \u2014 the text moved up a little and its lines closed up.']],
+  ['2026.10.2808', ['Edit PDF: clicking into a text box that was added in Acrobat (shown with the file\u2019s own look) no longer shows its text doubled for a moment \u2014 the typing box\u2019s letters appear in the same moment the page\u2019s copy goes.']],
   ['2026.10.2807', ['Edit PDF \u203a Format: with a colour theme on (yellow, black, pink\u2026), the old number no longer shows under what you type in the Font Size, Line Spacing, Paragraph Spacing, Horizontal Scaling and Character Spacing boxes.']],
   ['2026.10.2806', ['Edit PDF: text on a page the file turns sideways (a drawing saved landscape) keeps its width when you change it \u2014 a block of several short lines was squeezed (to 63%) or stretched the first time it was edited.', 'Edit PDF › Format: Line Spacing shows the text\u2019s own spacing as Acrobat does (12 pt lines of 10 pt text are 1.20; it showed 1.00), with Acrobat\u2019s choices, and Line Spacing, Paragraph Spacing, Horizontal Scaling and Character Spacing can be typed into like the font size. A value out of range gets Acrobat\u2019s message (\u201cThe value must be between 1 and 5.\u201d) and the box goes back to what it was; the font size box too (0.01 to 1296). Character Spacing is now in points between letters like Acrobat\u2019s (\u221210 to 10), Horizontal Scaling takes 0.01 to 6400% and Paragraph Spacing 0 to 1584 pt.']],
   ['2026.10.2805', ['PDF/A files: the read-only bar is a strip across the window under the toolbar, as in Acrobat (it showed as a light-blue panel down half the window; so did the Protected View, review and repaired-file bars), and Enable Editing first warns that editing will cause the PDF to no longer comply with PDF/A \u2014 OK makes it editable, Cancel leaves it read-only.', 'Print: when a page is bigger than the paper (Actual size, or a Custom Scale), the preview shows the whole page with the paper outlined in pink and what won\u2019t print greyed, like Acrobat.']],
@@ -33494,6 +33541,7 @@ document.addEventListener('input', e => {
 // while typing in text (Edit PDF): pressing on the edge of its box (the ✥ cursor) moves it instead of selecting letters
 window.addEventListener('mousedown', e => {
   if (e.button !== 0 || typeof activeEditor === 'undefined' || !activeEditor || !activeEditor.annotId) return;
+  if (typeof khzFsEdgeAt === 'function' && khzFsEdgeAt(e)) return;   // (Fill & Sign text being typed: app227 moves it — one owner)
   const a = state.annotations.find(x => x.id === activeEditor.annotId); if (!a || a.locked) return;
   const ps = state.pages[a.page]; if (!ps) return;
   const r = ps.wrapper.getBoundingClientRect(), vx = e.clientX - r.left, vy = e.clientY - r.top;
@@ -53095,6 +53143,8 @@ function canvasPointer(e) {
     if (d.mode === 'move' && khzTypewriter(d.annot)) return { hard: 'move', wide: true };
     return null;   // other drags keep the pointer they started with
   }
+  // Fill & Sign text being typed: its box's edge (and dragging it) is the move cross, like Acrobat (app227)
+  if (typeof khzFsEdgeAt === 'function' && khzFsEdgeAt(e)) return { hard: 'move', wide: khzFsMoving() };
   const inArea = e.target && e.target.closest && e.target.closest('#canvas-area');
   const pg = inArea ? pointerPage(e) : null;
   // a comment drawing tool over a comment that's there: a press picks it — its handles' resize pointers, the move
@@ -65488,6 +65538,9 @@ function khzFpEntry(selId, o) {
     const w = Math.max(er.width, phW) + 8, h = Math.max(er.height, phW ? tick.phH || 0 : 0) + 6, x = er.left - hr.left - 4, y = er.top - hr.top - 3;
     Object.assign(frame.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
     if (!bar || !bar.isConnected) { bar = null; draw(cur); }
+    // (one bar while typing: the bar of the item as it was selected before you clicked into it (app41's fsMini) goes —
+    // it stayed where the text had been when the text was dragged away, Brandon's video 30 Oct)
+    document.querySelectorAll('#fs-mini:not(.fs-ed)').forEach(m => m.remove());
     const top = er.top - 3 - bar.offsetHeight - 4;
     bar.style.left = Math.max(4, er.left - 4) + 'px'; bar.style.top = (top < 40 ? er.bottom + 8 : top) + 'px';
     lastText = el.textContent || ''; sugShow(cur, er);
@@ -65496,6 +65549,64 @@ function khzFpEntry(selId, o) {
   const kick = () => { if (running) return; running = true; requestAnimationFrame(tick); };
   const _ie = inlineEdit;
   inlineEdit = function () { const r = _ie.apply(this, arguments); setTimeout(kick, 0); return r; };
+
+  // ---- moving the box while you type, like Acrobat (Brandon's video, 30 Oct): over the box's edge the pointer is the
+  //      ✥ move cross (canvasPointer, app171, asks khzFsEdgeAt); press and drag moves the box with its text — the mini
+  //      toolbar hides while it moves — and you go on typing where you were. The move is kept on the typing box
+  //      (fsDx / fsDy, like the size change's shift) and handed on when it closes, so the finished text sits where it
+  //      was dragged to ----
+  let fsMove = null;
+  window.khzFsEdgeAt = e => {
+    if (fsMove) return true;
+    const cur = editing(); if (!cur || !frame || !frame.isConnected) return false;
+    const fr = frame.getBoundingClientRect(), er = cur.ed.el.getBoundingClientRect(), x = e.clientX, y = e.clientY, B = 3;
+    if (x < fr.left - B || x > fr.right + B || y < fr.top - B || y > fr.bottom + B) return false;   // (not near the box)
+    return !(x >= er.left && x <= er.right && y >= er.top && y <= er.bottom);                      // (on the letters: the I-beam)
+  };
+  window.khzFsMoving = () => !!fsMove;
+  window.addEventListener('mousedown', e => {
+    if (e.button !== 0 || !window.khzFsEdgeAt(e)) return;
+    const cur = editing(); if (!cur) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    const el = cur.ed.el, z = parseFloat(getComputedStyle(el).zoom) || 1;
+    fsMove = { el, z, x0: e.clientX, y0: e.clientY, l0: parseFloat(el.style.left) || 0, t0: parseFloat(el.style.top) || 0, dx0: +el.dataset.fsDx || 0, dy0: +el.dataset.fsDy || 0, moved: false };
+    if (typeof pointerRefresh === 'function') pointerRefresh();
+  }, true);
+  window.addEventListener('mousemove', e => {
+    const m = fsMove; if (!m) return;
+    e.preventDefault(); e.stopPropagation();
+    const dx = e.clientX - m.x0, dy = e.clientY - m.y0;
+    if (!m.moved && Math.hypot(dx, dy) < 3) return;
+    if (!m.moved) { m.moved = true; if (bar) bar.style.visibility = 'hidden'; sugHide(); }
+    m.el.style.left = m.l0 + dx / m.z + 'px'; m.el.style.top = m.t0 + dy / m.z + 'px';
+    // (screen px, as the size change's shift: the finished item is placed with them)
+    m.el.dataset.fsDx = String(m.dx0 + dx); m.el.dataset.fsDy = String(m.dy0 + dy);
+  }, true);
+  window.addEventListener('mouseup', e => {
+    const m = fsMove; if (!m) return; fsMove = null;
+    e.preventDefault(); e.stopPropagation();
+    if (bar) bar.style.visibility = '';
+    try { m.el.focus({ preventScroll: true }); } catch (err) {}
+    if (typeof pointerRefresh === 'function') pointerRefresh();
+  }, true);
+
+  // ---- clicking off the text, like Acrobat (Brandon, 30 Oct): the first click on the page only finishes the text
+  //      being typed; the next click starts a new one (the same click did both, so a stray click off the box opened a
+  //      new empty box) ----
+  window.addEventListener('mousedown', e => {
+    if (e.button !== 0 || fsMove) return;
+    const cur = editing(); if (!cur || !cur.ed.finish) return;
+    const t = e.target; if (!t || !t.closest || !t.closest('.page-wrapper') || cur.ed.el.contains(t) || t.closest('#fs-mini, #fs-sug')) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    const id = cur.a && cur.a.id, before = new Set(state.annotations.map(x => x.id));
+    cur.ed.finish(true);
+    // (and it's left as plain text on the page — no box, no bar — like Acrobat; finishing a new one selected it. Run
+    // once the finish has been handed on: the new text is added when the typing box's promise settles)
+    setTimeout(() => {
+      const sel = state.selectedId && state.annotations.find(x => x.id === state.selectedId);
+      if (sel && sel.origin === 'fill-sign' && (sel.id === id || !before.has(sel.id))) selectAnnot(null);
+    }, 0);
+  }, true);
 })();
 // ================================================================
 //  COMB TEXT KEEPS ITS BOXES WHILE YOU TYPE IN IT AGAIN (Fill & Sign › Ab), like Acrobat: clicking back into comb
