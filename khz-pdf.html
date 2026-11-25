@@ -13924,7 +13924,7 @@ async function ocrDesktopRecognize(c, k, gray, strips, refine) {
   const W = c.width, H = c.height;
   gray = gray || khzOcrGray(c);
   const lang = (ocrDeskInfo && ocrDeskInfo.lang) || 'eng';
-  const read = (y0, y1) => window.khzDesktop.ocrRecognize({ width: W, height: y1 - y0, dpi: Math.round(k * 72), data: y0 === 0 && y1 === H ? gray : gray.slice(y0 * W, y1 * W) }, { psm: 11, lang, vote: false, ...(refine === false ? { refine: false } : {}) });   // (the system's OCR is asked on its own and only breaks ties: app230)
+  const read = (y0, y1) => window.khzDesktop.ocrRecognize({ width: W, height: y1 - y0, dpi: Math.round(k * 72), data: y0 === 0 && y1 === H ? gray : gray.slice(y0 * W, y1 * W) }, { psm: 11, lang, vote: false, ...(refine === false ? { refine: false } : {}), ...(typeof khzBgPrepNow === 'function' && khzBgPrepNow() ? { bg: true } : {}) });   // (the system's OCR is asked on its own and only breaks ties: app230)
   // one page read by several engines at once (desktop: one Tesseract thread each): the page is cut across into
   // strips at its emptiest rows, each strip is read with ¾ inch of the next one beside it, and each line is kept from
   // the strip its middle falls in — so no line is cut in two and none is read twice
@@ -14053,7 +14053,7 @@ async function khzOcrRead(o) {
     // letters under the invisible ones. A drawn page's picture is kept at the reading's own resolution (at least
     // 300 dpi): its lines are sharp, not a scan's grain
     const cover = mode === 'editable' ? await khzOcrScanCover(pg) : 0, scan = mode === 'editable' ? 1 : 0, drawn = mode === 'editable' && cover < 0.8;
-    return { n, rot: pg.rotate || 0, vp, k, c, cx, rc, readings, gray, scan, drawn, fkey, hidden: allText > shown, get clean() { return clean; } };
+    return { n, rot: pg.rotate || 0, vp, k, c, cx, rc, readings, gray, scan, drawn, pg: drawn ? pg : null, fkey, hidden: allText > shown, get clean() { return clean; } };
   };
   const queue = [];
   let next = 0;
@@ -14090,12 +14090,17 @@ async function khzOcrRead(o) {
       if (sys && sys.words && sys.words.length) khzOcrSysBreak(found, aiRes, sys);   // (app230)
       if (o.oneAtATime) fill();
       lap('reading');
+      // (2026.11.2301) a page whose letters are drawn shapes: drawn again without the shapes inside the words read (app306),
+      // for the finishing off to take the words' areas from — instead of erasing them, 34–38 s a page
+      let drawnPic = null;
+      if (job.drawn && job.pg && typeof khzOcrDrawnPic === 'function') { try { drawnPic = await khzOcrDrawnPic(job.pg, vp, c.width, c.height, khzOcrReadBoxes(found, aiRes, sys), c); } catch (e) { console.warn('KHZ drawn page picture', e); } if (drawnPic) st.drawnLeftOut = drawnPic._left; lap('drawn picture'); }
       // (2717) the finishing off — combining the readings, the marks, the measuring, the scan's letters taken out, the
       // lines — runs in a background thread when it can (app282), so the window scrolls and zooms while it works
-      const fin = await khzOcrFinish({ n, k, mode, desk: !!desk, worker, c, cx, rc: job.rc, gray: job.gray, clean: job.clean, scan: job.scan, found, aiRes, sys, down: job.drawn ? Math.max(o.down || 600, 300) : o.down, stop, lap, st });
+      const fin = await khzOcrFinish({ n, k, mode, desk: !!desk, worker, c, cx, rc: job.rc, gray: job.gray, clean: job.clean, scan: job.scan, drawnPic, found, aiRes, sys, down: job.drawn ? Math.max(o.down || 600, 300) : o.down, stop, lap, st });
       job.gray = null;
       if (fin.cancelled) return { cancelled: true };
       const { clean, pieces, lines } = fin;
+      if (drawnPic) drawnPic.width = drawnPic.height = 0;
       // (2026.11.503) the words the readers weren't sure of, each with its picture from the scan, for Scan & OCR ›
       // Correct Recognized Text (app288) — while the page picture is still here
       let sus = null; try { if (typeof khzOcrSuspects === 'function') sus = khzOcrSuspects(lines, c); } catch (e) {}
@@ -14254,12 +14259,15 @@ async function khzOcrFinishHere(J) {
       const eb0 = p => { const w = p.w && p.w.wide; if (!w || p.frame || p.sym) return p.pb; const m = 0.5 * (p.sizePx || (p.pb.y1 - p.pb.y0)); return { x0: Math.max(p.pb.x0 - m, Math.min(p.pb.x0, w.x0)), y0: Math.max(p.pb.y0 - m, Math.min(p.pb.y0, w.y0)), x1: Math.min(p.pb.x1 + m, Math.max(p.pb.x1, w.x1)), y1: Math.min(p.pb.y1 + m, Math.max(p.pb.y1, w.y1)) }; };   // (nor up or down: a reading of "AI" six lines tall took a stamp's letter above the line off the page)
       const eb = p => { const b = eb0(p), ct = ctOf(p); return ct > 0 && ct < 40 ? { ...b, ct } : b; };   // (a pale word's ink, khzOcrPrintOff)
       const alt = stampBoxes.length ? job.rc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height) : null;
-      const boxes = placed.map(eb);
-      // (2805) shared out among the helper threads, coming out the same as one word after another (khzOcrEraseAll)
+      let boxes = placed.map(eb), erasing = placed;
       const before = px.data.slice();
+      // (2026.11.2301) a page whose letters are drawn shapes: each word's area from the page drawn without them (app306) —
+      // only the words whose letters weren't shapes are erased
+      if (J.drawnPic && typeof khzOcrFromDrawn === 'function') { try { const took = khzOcrFromDrawn(px, c, J.drawnPic, boxes, look.paper); erasing = placed.filter((_, i) => !took[i]); boxes = boxes.filter((_, i) => !took[i]); st.drawnWords = (placed.length - erasing.length) + ' of ' + placed.length + ' words from the drawing'; if (self.KHZ_DBG_DRAWN) st.drawnErased = erasing.slice(0, 60).map(p => p.txt + '@' + Math.round(p.pb.x0) + ',' + Math.round(p.pb.y0)).join(' | '); } catch (e) { console.warn('KHZ drawn page', e); } lap('from drawing'); }
+      // (2805) shared out among the helper threads, coming out the same as one word after another (khzOcrEraseAll)
       await khzOcrEraseAll(px, boxes, boxes.map(b => alt && stampBoxes.some(s => b.x1 > s.x0 && b.x0 < s.x1 && b.y1 > s.y0 && b.y0 < s.y1) ? alt : null));
       // (2026.11.711: and what the erasing left of the words' print, khzOcrEraseLeft — not in a picture or a stamp)
-      khzOcrEraseLeft(px, placed.filter(p => !p.frame && !p.sym || /[A-Za-z0-9]/.test(p.txt || '')).map(eb), pics.map(r => ({ x0: r.x0 * k, y0: r.y0 * k, x1: (r.x1 + 1) * k, y1: (r.y1 + 1) * k })).concat(stampBoxes), before);
+      khzOcrEraseLeft(px, erasing.filter(p => !p.frame && !p.sym || /[A-Za-z0-9]/.test(p.txt || '')).map(eb), pics.map(r => ({ x0: r.x0 * k, y0: r.y0 * k, x1: (r.x1 + 1) * k, y1: (r.y1 + 1) * k })).concat(stampBoxes), before);
       if (khzOcrEraseAll.last) st.eraseThreads = khzOcrEraseAll.last.failed ? 'failed' : khzOcrEraseAll.last.threads + ' (' + khzOcrEraseAll.last.n + ' words, longest chain ' + khzOcrEraseAll.last.chain + ')'; }
     lap('erase');
     cx.putImageData(px, 0, 0);
@@ -19948,7 +19956,7 @@ function khzToolLearn(k) {
 //  HELP MENU like Acrobat: tool help (F1), help & tutorials, About, plug-ins (components),
 //  account (local identity), system report, repair, updates, what's new
 // ================================================================
-const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.11.2001';
+const APP_BUILD = (window.khzDesktop && window.khzDesktop.version) || '2026.11.2401';
 const APP_WHERE = window.khzDesktop && window.khzDesktop.isDesktop ? (window.khzDesktop.platform === 'darwin' ? 'Mac app' : 'Windows app') : 'runs in your web browser';
 const TOOL_NAMES = { edit: 'Edit PDF', comment: 'Comment', 'fill-sign': 'Fill & Sign', measure: 'Measure', protect: 'Protect', organize: 'Organize Pages', export: 'Export PDF', prepare: 'Prepare Form' };
 function currentToolName() { return (state.pdfDoc && TOOL_NAMES[state.activeToolGroup]) || (state.pdfDoc ? 'Viewing PDFs' : 'Home'); }
@@ -20276,6 +20284,8 @@ async function checkForUpdates() {
 // ---------- See What's New ----------
 // what each recent version changed (newest first); the update notification's "What's new" opens at its version
 const WN_BUILDS = [
+  ['2026.11.2401', ['A secured document shows it like Acrobat: a padlock at the top of the left bar opens Security Settings (\u201cThis document has an open password or a modify password.\u201d, Permission Details).', 'Document Properties \u203a Security lists each restriction the file actually sets (e.g. Page Extraction: Not Allowed), \u201cCan be Opened by\u201d from how the file is encrypted, and whether its metadata is encrypted.', 'Edit PDF\u2019s Restrict editing is ticked for a document that came secured; unticking it asks \u201cAre you sure you want to remove security from this document?\u201d and then for the Permissions Password, as in Acrobat.', 'Mac: Recognize Text reads with Tesseract built for the Mac itself (Apple M chip and Intel) instead of the WebAssembly copy \u2014 about twice as fast at reading, with the same words. Windows has had this since October.']],
+  ['2026.11.2301', ['Edit PDF no longer freezes on a scanned or \u201cprinted to PDF\u201d document: getting scanned pages ready in the background pauses while Edit PDF prepares the pages, and stops when you choose Later.', 'The background getting-ready uses fewer of the computer\u2019s cores, so the app keeps answering while it works.', 'Recognize Text on pages whose letters are drawn shapes (such as files made with Microsoft Print to PDF): the words are left out of the page picture instead of rubbed out of it, so far fewer bits of old letters are left behind, lines under and around the words stay, and the page is ready sooner.']],
   ['2026.11.2001', ['Updates: when Restart now can\u2019t install the new version, the update panel says why, with Try again and the download page (it did nothing, so the click looked ignored). On a Mac that won\u2019t let the app replace itself, it says so and how to install the new version by hand. The reason is also written to the app\u2019s update log.']],
   ['2026.11.801', ['Pointing at a text comment with the Select tool shows its blue box and round handles, like Acrobat (only the text cursor showed); it goes when the pointer leaves. ', 'Edit PDF \u203a Show bounding boxes like Acrobat: comments (text comments, text boxes, lines, stamps) no longer get dotted boxes \u2014 only the page\u2019s own text, pictures and the text you add in Edit PDF. ', 'Edit PDF \u203a Add Text: the text you\u2019re typing can be moved straight away, like Acrobat \u2014 its box\u2019s edge shows the move cross (the handles their sizing arrows, the knob the turn arrow; it showed the add-text pointer everywhere), dragging leaves the box in place and moves a see-through blue box with green line-up guides, and the text lands where you let go with typing carrying on at its end. The box keeps the width it had while you typed (it shrank to the letters, piling the handles on a short text). ', 'Print \u203a Save as PDF (and every export) saves a real PDF file: the Save window shows \u201cAdobe PDF Files (*.pdf)\u201d as its type, like Acrobat, and a name typed without .pdf \u2014 or with a dot in it, like \u201cPRGS 11.18\u201d \u2014 gets the .pdf ending (it was saved as a file of no type that Windows couldn\u2019t open). Word, Excel, ZIP and the other exports keep their own types the same way. ', 'Export to Word (and the other text exports) leaves out text you can\u2019t see, like Acrobat: old wording covered by new wording, text hidden behind pictures or white boxes, or clipped away (the page came out with words printed over each other). Fonts Word doesn\u2019t have are matched by their look: Roboto and other sans fonts no longer come out in Times New Roman; black weights use Arial Black. ', 'Print \u203a Orientation Auto portrait/landscape works like Acrobat: the paper stays portrait and a landscape page is turned onto it (the paper was turned instead), for normal prints and separations. ', 'Separations, like Acrobat: Print \u203a Advanced \u203a Output \u203a Color: Separations prints every page once per ink (Cyan, Magenta, Yellow, Black and each spot ink with its own plate), worked out with the CMYK profile chosen in Color Management (Treat grays as K-only, Preserve Black); pictures keep their own inks, shadings and overprinting come out right, text and lines stay sharp. Emit this plate, Flip, Negative and Ink Manager\u2019s aliases / Convert All Spots to Process are used. In-RIP Separations sends PostScript to the printer with the inks, screens (frequency and angle), mirror, negative and in-RIP trapping for its RIP. Marks and Bleeds draw trim, bleed and registration marks, colour bars and page information. Output Preview shows the real plates: tick inks on and off, read each ink\u2019s percentage under the pointer, Total Area Coverage, and Color Warnings (overprinting, rich black). New CMYK profile: Coated GRACoL 2013 (the U.S. press standard), also in Convert Colors. ', 'Ink Manager lists the file\u2019s own inks like Acrobat \u2014 the four process inks plus every spot colour (Pantone and others), with its colour and density \u2014 and is the same window everywhere (Print Production, Convert Colors, Output Preview, Print \u203a Advanced). Ink Alias and Convert All Spots to Process work: Convert Colors applies them, including Pantone colours defined in Lab. Print \u203a Advanced lists the spot inks too. ', 'Print \u203a Advanced is Acrobat\u2019s Advanced Print Setup: Settings you can save, Print to File, Print As Image with its dpi, and the Output, Marks and Bleeds, PostScript Options and Color Management panels. Color has Composite, Composite Gray (prints in gray), Separations and In-RIP Separations; Separations turn on Flip (the page picture mirrors with it) and the ink frequency, In-RIP Separations turns on Trapping, like Acrobat. Screening lists Adobe PDF\u2019s line screens and sets every ink\u2019s frequency (71lpi 600dpi gives each ink its own), like Acrobat; pick an ink to change its frequency and angle; Ink Manager shows each ink\u2019s type, density and trapping order, as in Acrobat. With Print in grayscale on, Color and Color Management are greyed with the gray profile, like Acrobat. ', 'Signatures and Fill & Sign marks no longer show a yellow note icon beside them in Acrobat (they carried a note saying \u201cSignature\u201d). ', 'Printing to a printer sends the pages themselves, like Acrobat: lines and letters stay sharp, and Microsoft Print to PDF or Adobe PDF make a PDF of real text and lines (Print As Image still prints pictures). Print \u203a Properties opens the printer\u2019s own settings window, as in Acrobat (trays, quality, colour, Adobe PDF settings), and those settings are used when you print. Edit PDF: a picture you drag or size moves with the box, live, and isn\u2019t left showing at its old spot \u2014 a step past Acrobat. ', 'Edit PDF: a picture you added stays in view while you drag or size it, and lands at its new spot the moment you let go (it vanished while dragging, and stayed behind for a few seconds after). The yellow font note\u2019s message is no longer cut off at the page edge. ', 'Your name on comments and stamps is the computer\u2019s own user name until you type another (account menu, or Preferences \u203a Identity), like Acrobat. ', 'Edit PDF on a site plan: moving the address logo keeps its colours (pink stays pink, \u201cAlways On\u201d orange and \u201cGenerators\u201d black) \u2014 text drawn inside a logo went black once moved. Moving it also no longer pulls the scan in front of your callout boxes, and saving no longer turns a scan that has an ink layer black. ', 'Edit PDF: a line, shape or picture you move stays at its own level, like Acrobat \u2014 what the page draws over it stays over it, on screen and in the saved file. Moving the white box behind a section of a web-page PDF no longer covers the section\u2019s text.', 'A picture inside a frame moves with its frame (it used to stay cut off by its old frame and could disappear when saved).', 'Clicking just beside a line picks the line, not the big box behind it.', 'Right-click a picture: Remove Crop gives back the whole picture after a crop, and shows a picture the file trims whole. A picture the file trims is shown trimmed in Edit PDF (it showed whole).', 'Dragging a line, shape or picture leaves it in place and moves a see-through blue box, like Acrobat; it moves when you let go (a section\u2019s white box no longer hides the text while dragged).', 'A click on text picks the text even after the box behind it was moved (it picked the box).', 'A picture moved under a box (a logo moved into a section of a web-page form) can still be clicked and dragged out again, like Acrobat (the click picked the box).', 'View \u203a Show/Hide like Acrobat: Navigation Panes (Accessibility Tags, Articles, Attachments, Bookmarks, Content, Destinations, Layers, Model Tree, Order, Page Thumbnails, Signatures, Show Navigation Pane F4, Reset Panes), Tools Pane, Toolbar Items, Page Controls, Menu Bar, Button Labels, Rulers & Grids (Grid, Snap to Grid, Rulers, Guides, Line Weights Ctrl+5) and Cursor Coordinates.', 'New Content pane: every object on the page in the order it is drawn (later ones on top). Click a row to outline it on the page; right-click for Find Content from Selection. Pictures show their number, like Acrobat (“Image (19): w:331 h:256”). Clicking a row outlines the object where it is now, also after you moved it. Right-click a row (or use the pane\u2019s options button) for Acrobat\u2019s menu: Cut, Delete, Edit Image... / Edit Object... (the editor set in Preferences \u203a Content Editing), Find, Highlight Content, Audit Space Usage... and Properties... (Acrobat\u2019s Object Properties). Deleting or undoing updates the list. Text shows as \u201cText: \u2026\u201d rows, Acrobat\u2019s marked places as \u201cPlace\u201d, annotations by kind (PolyLine, Popup, Line\u2026); clicking the file or a page outlines everything on the page.', 'Audit Space Usage looks like Acrobat\u2019s: Images, Content Streams, Fonts, Document Overhead and the rest, bytes and percent, only the kinds the file has.', 'View \u203a Enable new Acrobat is gone.', 'Order pane like Acrobat: options and right-click (reading order panel, page content groups, Tag as\u2026, Clear page structure), drag rows to change the order. The Reading Order panel looks like Acrobat\u2019s, with Heading 4\u20136, Form Field, Formula, Note and Reference.', 'Layers options like Acrobat: Import as Layer\u2026 (put a page of another PDF on its own layer), Merge Layers\u2026, Flatten Layers\u2026, print and export overrides.', 'Bookmarks options and toolbar like Acrobat (Hide After Use, Find current bookmark, default zoom for new bookmarks).', 'Page Thumbnails: the red box shows what you are looking at \u2014 drag it to move around the page, drag its corner to zoom.', 'Edit \u203a Undo names the change, like Acrobat (\u201cUndo Color Conversion\u201d).', 'The Content pane\u2019s outlines leave the page when you open another pane or close it.', 'Content pane: every row shows Acrobat\u2019s full menu, with what doesn\u2019t apply greyed; Save Selection As\u2026 saves a page as its own PDF; New Container\u2026 on a page adds it at the end and remembers the type.', 'View \u203a Tools lists your tools like Acrobat, each with Open, Remove Shortcut and Learn More.', 'View \u203a Show/Hide \u203a Cursor Coordinates: the box sits at the top left of the page area, like Acrobat, with the page size under X and Y.', 'Page Thumbnails: Acrobat\u2019s toolbar (options, delete, insert, rotate, thumbnail size) and the view box always shown, the rest of the page dimmed.', 'Content pane: right-click a page for Acrobat\u2019s page menu, with Edit Page Dictionary... (Acrobat\u2019s dictionary editor: open entries, Change Item, Delete Item, New Item, Options); right-click the file for Edit Document Catalog... Find... is Acrobat\u2019s Find Element (Artifacts, Unmarked Content, Unmarked Comments, Links, Annotations, Element; this page or the whole document).', 'Content pane: right-click shows Acrobat\u2019s menu for that row \u2014 Create Artifact... (Page, Pagination or Layout, attached to sides), Remove Artifact and New Container... work; Properties... has Acrobat\u2019s Tag and Color tabs (Convert Colors); clicking Annotations outlines them all.', 'Right-click the navigation pane buttons on the left, like Acrobat: open any pane, Reset Panes, Pin a pane so its button stays, or Hide Navigation Pane Buttons. A pane you open gets a button on the bar until Reset Panes.']],
   ['2026.11.711', ['Recognize Text: a coloured band read right (\u201cKeep 5 ft clear in front of the unit.\u201d came out cut up), thin letters and marks get their word spaces (\u201cbar |: I l 1 |\u201d), and a stop or semicolon after a drawn box stays text.', 'Every empty checkbox and round button on a form becomes text, sized like the print \u2014 white boxes on a dark band too; ticked orange ones stay as printed. Heading bullets are all read, and a heading\u2019s icon isn\u2019t taken for a box.', 'Moving recognized text leaves nothing behind: pieces of \u201c=\u201d, \u201cl1I\u201d, commas at a highlight\u2019s edge, faint pale labels and ghost letters on shaded or dark bands are all taken off the page.', 'Edit PDF: while you type in text whose own font can\u2019t be used for editing, a yellow mark at the box\u2019s corner says so and names the font KHZ is using in its place, like Acrobat.', 'Fonts added from More fonts\u2026 are in the font list under their own names and are saved in the PDF (they were saved in Helvetica). Add only adds the font \u2014 your text keeps its font until you pick the new one. The \u201cfont file couldn\u2019t be read\u201d message shows only when you save.', 'The desktop app downloads the whole Google font library once after it\u2019s installed (in the background, kept for offline use): every font goes on your font lists. A PDF whose text is in one of those fonts is edited and saved in that font.']],
@@ -26265,6 +26275,12 @@ async function showDocumentProperties(tab) {
   const sec = state.security, enc = !!(sec || state.encryptedOriginal);
   const perms = sec ? sec.perms : null;
   const allow = k => !perms ? 'Allowed' : (perms[k] ? 'Allowed' : 'Not Allowed');
+  // (2026.11.2401, Brandon's Acrobat video 2026-11-24 13:18: RN400 Spec Sheet) a file that came secured: each row from
+  // the file's own permissions (P), as Acrobat reads them — until 2401 most rows followed "can edit" alone, so this file
+  // showed Page Extraction Allowed (Acrobat: Not Allowed). Opened with its Permissions Password: everything allowed
+  const EO = state.encOrig && !(sec && !sec.keepOriginal) ? state.encOrig : null;
+  const pRows = EO ? khzSecRows(EO) : null;
+  const openBy = EO ? khzSecOpenBy(EO) : 'Acrobat X and later';
   const T = ['Description', 'Security', 'Fonts', 'Initial View', 'Custom', 'Advanced'];
   const ov = document.createElement('div'); ov.id = 'dp-ov'; ov.className = 'vm-ov'; ov.style.zIndex = topZ();
   ov.innerHTML = `<div class="dp-win" role="dialog" aria-label="Document Properties">
@@ -26293,9 +26309,9 @@ async function showDocumentProperties(tab) {
         <fieldset class="dp-grp"><legend>Document Security</legend>
           <div class="dp-note">The document's Security Method restricts what can be done to the document. To remove security restrictions, set the Security Method to No Security.</div>
           <div class="dp-grid sec"><label>Security Method:</label><select class="dp-secm">${opt([['none', 'No Security'], ['pw', 'Password Security'], ['cert', 'Certificate Security']], enc ? 'pw' : 'none')}</select><button class="wc-btn dp-chg" ${enc ? '' : 'disabled'}>Change Settings...</button>
-          <label>Can be Opened by:</label><div>${enc ? 'Acrobat X and later' : 'All versions of Acrobat'}</div><button class="wc-btn dp-det" ${enc ? '' : 'disabled'}>Show Details...</button></div></fieldset>
+          <label>Can be Opened by:</label><div>${enc ? openBy : 'All versions of Acrobat'}</div><button class="wc-btn dp-det" ${enc ? '' : 'disabled'}>Show Details...</button></div>${enc ? `<div class="dp-note" style="margin-top:8px">${EO && EO.noMeta ? "All contents of the document are encrypted except the document's metadata, which search engines can access." : "All contents of the document are encrypted and search engines cannot access the document's metadata."}</div>` : ''}</fieldset>
         <fieldset class="dp-grp grow"><legend>Document Restrictions Summary</legend><div class="dp-grid perm">
-          ${[['Printing', allow('print')], ['Changing the Document', allow('edit')], ['Document Assembly', allow('edit')], ['Content Copying', allow('copy')], ['Content Copying for Accessibility', perms ? (perms.access || perms.copy ? 'Allowed' : 'Not Allowed') : 'Allowed'], ['Page Extraction', allow('edit')], ['Commenting', allow('edit')], ['Filling of form fields', allow('edit')], ['Signing', allow('edit')], ['Creation of Template Pages', allow('edit')]].map(([k, v]) => `<label>${k}:</label><div>${v}</div>`).join('')}</div></fieldset>
+          ${(pRows || [['Printing', allow('print')], ['Changing the Document', allow('edit')], ['Document Assembly', allow('edit')], ['Content Copying', allow('copy')], ['Content Copying for Accessibility', perms ? (perms.access || perms.copy ? 'Allowed' : 'Not Allowed') : 'Allowed'], ['Page Extraction', allow('edit')], ['Commenting', allow('edit')], ['Filling of form fields', allow('edit')], ['Signing', allow('edit')], ['Creation of Template Pages', allow('edit')]]).map(([k, v]) => `<label>${k}:</label><div>${v}</div>`).join('')}</div></fieldset>
       </div>
       <div class="dp-pane hidden" data-p="2"><fieldset class="dp-grp grow"><legend>Fonts Used in this Document</legend><div class="dp-fonts"></div></fieldset></div>
       <div class="dp-pane hidden" data-p="3">
@@ -38035,13 +38051,14 @@ function pdfIsEncrypted(bytes) {
   // xref streams keep the trailer inside a stream dictionary
   try { const s = bytesToLatin1(bytes.subarray(0, Math.min(bytes.length, 4 * 1024 * 1024))); return /\/Encrypt\s+\d+\s+\d+\s+R/.test(s); } catch (e) { return false; }
 }
+// (2401: a Permissions Password left empty is checked, and called incorrect, as in Acrobat)
 function khzPasswordDialog(name, wrong, perms) {
   return new Promise(res => {
     let done = false; const fin = v => { if (!done) { done = true; res(v); } };
     const ov = esDialog('pw-ov', 'Password', `<div style="display:flex;gap:14px;align-items:flex-start"><span style="font-size:30px;line-height:1">🔒</span><div style="flex:1">
       <div style="margin-bottom:10px">${wrong ? '<b style="color:#d7373f">Incorrect password.</b> ' : ''}'${escapeHtml(name || 'This document')}' is protected. Please enter a ${perms ? 'Permissions Password. If you do not have the password, please contact the author of the document.' : 'Document Open Password.'}</div>
       <label style="display:flex;align-items:center;gap:8px">Enter Password: <input type="password" class="pw-in" style="flex:1" autocomplete="off"></label></div></div>`,
-      [{ label: 'OK', primary: true, run: d => { const v = d.querySelector('.pw-in').value; if (!v) { d.querySelector('.pw-in').focus(); return false; } fin(v); } }, { label: 'Cancel', run: () => fin(null) }], 460);
+      [{ label: 'OK', primary: true, run: d => { const v = d.querySelector('.pw-in').value; if (!v && !perms) { d.querySelector('.pw-in').focus(); return false; } fin(v); } }, { label: 'Cancel', run: () => fin(null) }], 460);
     ov.querySelector('.ap-x').addEventListener('click', () => fin(null));
     ov.addEventListener('keydown', e => { if (e.key === 'Escape') fin(null); if (e.key === 'Enter') { e.preventDefault(); ov.querySelector('.ap-ok').click(); } });
     setTimeout(() => { const i = ov.querySelector('.pw-in'); i && i.focus(); }, 30);
@@ -38061,6 +38078,12 @@ function khzPdfEnd(bytes) {
   while (e < bytes.length && (bytes[e] === 13 || bytes[e] === 10)) e++;
   return e;
 }
+// where the text s (plain ASCII) first comes in bytes, or -1
+function khzBytesFind(bytes, s) {
+  const n = s.length, c0 = s.charCodeAt(0);
+  outer: for (let i = bytes.indexOf(c0); i >= 0 && i <= bytes.length - n; i = bytes.indexOf(c0, i + 1)) { for (let j = 1; j < n; j++) if (bytes[i + j] !== s.charCodeAt(j)) continue outer; return i; }
+  return -1;
+}
 async function khzDecrypt(bytes, name) {
   // owner-password-only files open without asking (empty user password); a password the app already has (the copy it
   // just signed) is tried first
@@ -38079,7 +38102,9 @@ async function khzDecrypt(bytes, name) {
       const P = +((/P = (-?\d+)/.exec(info.text) || [])[1] || -1);
       const isOwner = /Supplied password is owner password/.test(info.text);
       const R = +((/R = (\d+)/.exec(info.text) || [])[1] || 0), M = (/stream encryption method: (\S+)/i.exec(info.text) || [])[1] || '';
-      return { bytes: r.out['out.pdf'], pw, isOwner, P, R, M, src: bytes };   // (src: the file as read — its own end, without junk after it)
+      // (2026.11.2401) the document's details (metadata) left unencrypted — /EncryptMetadata false in the Encrypt dictionary
+      const noMeta = khzBytesFind(bytes, '/EncryptMetadata') >= 0 && /\/EncryptMetadata\s*false/.test(bytesToLatin1(bytes.subarray(khzBytesFind(bytes, '/EncryptMetadata'), khzBytesFind(bytes, '/EncryptMetadata') + 40)));
+      return { bytes: r.out['out.pdf'], pw, isOwner, P, R, M, noMeta, src: bytes };   // (src: the file as read — its own end, without junk after it)
     }
     // (only a wrong password asks for one: a file qpdf can't read for another reason — damaged, or with junk after its
     // end, like a download padded with zeros: "can't find startxref" — isn't password protected. Acrobat opens those
@@ -38110,7 +38135,7 @@ loadBytes = async function (bytes, name, opts = {}) {
   state._sigRaw = bytes;   // (its signatures are checked against these encrypted bytes, app17)
   const r = await _loadBytesENC.call(this, d.bytes, name, { ...opts, _decrypted: true });
   // remember the original protection so saving keeps it (same passwords and permissions)
-  state.encOrig = { bytes: d.src || bytes, pw: d.pw, isOwner: d.isOwner, P: d.P, R: d.R, M: d.M };
+  state.encOrig = { bytes: d.src || bytes, pw: d.pw, isOwner: d.isOwner, P: d.P, R: d.R, M: d.M, noMeta: !!d.noMeta };
   state.security = keepSec || { keepOriginal: true, userPw: d.isOwner ? '' : d.pw, ownerPw: d.isOwner ? d.pw : '', perms: { print: !!(d.P & 4), edit: !!(d.P & 8), copy: !!(d.P & 16), access: !!(d.P & 512) } };
   if (typeof updateSecurityBadge === 'function') updateSecurityBadge();
   state.secRestricted = !d.isOwner && !(d.P & 8) ? { annotate: !!(d.P & 32), fill: !!(d.P & 256) || !!(d.P & 32), assemble: !!(d.P & 1024) } : null;
@@ -38187,7 +38212,7 @@ document.addEventListener('mousedown', e => {
   e.preventDefault(); e.stopImmediatePropagation(); khzAskPermsPw();
 }, true);
 // the window's title says the document is secured, as Acrobat's does
-updateTitle = (prev => function () { const r = prev.apply(this, arguments); if (state.pdfDoc && (state.encOrig || (state.security && state.security.pubsec))) document.title = document.title.replace(/ - KHZ PDF$/, ' (SECURED) - KHZ PDF'); return r; })(updateTitle);
+updateTitle = (prev => function () { const r = prev.apply(this, arguments); if (state.pdfDoc && ((state.encOrig && !state.encOrig.removed) || (state.security && state.security.pubsec))) document.title = document.title.replace(/ - KHZ PDF$/, ' (SECURED) - KHZ PDF'); return r; })(updateTitle);
 // changing / removing the protection needs the Permissions password when the file restricts changes
 ['removeSecurity', 'showEncrypt'].forEach(fn => { const o = window[fn]; if (typeof o !== 'function') return; window[fn] = function () { if (state.secRestricted) { alert('This document is secured.\n\nTo change or remove its security, open it with the Permissions password.'); return; } return o.apply(this, arguments); }; });
 
@@ -52867,7 +52892,7 @@ async function khzEditAskOCR1() {
       <p style="margin:0 0 10px">Recognize the text now?</p>
       <p style="margin:0;color:#9a9a9a">To recognize it without being asked, tick Scanned Documents › Recognize text, on the right.</p></div>`, [
     { label: 'Recognize Now', primary: true, run: () => { khzRecognizeForEdit(); } },
-    { label: 'Later', run: () => { toast('You can recognize the text any time: Scanned Documents › Recognize text, on the right.'); } }], 420);
+    { label: 'Later', run: () => { if (typeof khzOcrPrepLater === 'function') khzOcrPrepLater(); toast('You can recognize the text any time: Scanned Documents › Recognize text, on the right.'); } }], 420);
 }
 // closing the document forgets "Later", so opening it again asks again (as it does the first time)
 {
@@ -52875,7 +52900,7 @@ async function khzEditAskOCR1() {
   closeDocTab = async function (id) {
     const key = id === state.activeTabId ? khzDocKey() : null;
     const r = await _cdtAsk.apply(this, arguments);
-    if (key && !(state.docTabs || []).some(t => t.id === id)) khzOcrAsked.delete(key);
+    if (key && !(state.docTabs || []).some(t => t.id === id)) { khzOcrAsked.delete(key); if (typeof khzOcrPrep !== 'undefined' && khzOcrPrep.later === key) khzOcrPrep.later = null; }
     return r;
   };
 }
@@ -67162,7 +67187,16 @@ let khzOcrPoolP = null;
 // finishing share the processor — on Brandon's 12 threads they asked for about 19 at once — and which split is fastest
 // is measured on the computer itself; the text comes out the same either way
 let KHZ_POOL_MAX = 0;
+// (2026.11.2301) while scanned pages are made ready in the background (khzOcrPrep): the helper threads it may use, so the
+// window and the rest of the computer keep a share of the processor (0: all of them)
+let KHZ_POOL_BG = 0;
 function khzOcrPoolSize() { const n = navigator.hardwareConcurrency || 2, auto = Math.max(1, Math.min(8, n - 1)); return KHZ_POOL_MAX > 0 ? Math.max(1, Math.min(auto, KHZ_POOL_MAX)) : auto; }
+// (2026.11.2301) the helper threads a run may use now: all of them, or KHZ_POOL_BG while pages are made ready in the
+// background (Brandon: the app froze while New NextGen Pads was being made ready — every core was busy). Same results.
+function khzOcrPoolUse(pool) {
+  const bg = typeof khzBgPrepNow === 'function' ? (khzBgPrepNow() ? 2 : 0) : KHZ_POOL_BG;
+  return bg > 0 && pool.ws.length > bg ? pool.ws.slice(0, bg) : pool.ws;
+}
 function khzOcrPoolSource() {
   return `'use strict';
 const document = { createElement: () => new OffscreenCanvas(8, 8) };
@@ -67269,9 +67303,9 @@ async function khzOcrPoolRun(kind, px, altPx, items) {
   // (2715: the window answers after every word, not every chunk: a chunk of 24 took up to 0.2 s)
   const runMe = async () => { for (let r = take(); r && !failed; r = take()) for (let i = r[0]; i < r[1] && !failed; i++) { one(i); await khzTick(); } };
   here.forEach(one);
-  await Promise.all([...pool.ws.map(runT), runMe()]);
+  await Promise.all([...khzOcrPoolUse(pool).map(runT), runMe()]);
   if (failed) return null;
-  khzOcrPoolRun.last = { kind, n: items.length, ms: Math.round(performance.now() - t0), threads: pool.ws.length };
+  khzOcrPoolRun.last = { kind, n: items.length, ms: Math.round(performance.now() - t0), threads: khzOcrPoolUse(pool).length };
   return out;
 }
 
@@ -67286,7 +67320,7 @@ async function khzOcrEraseAll(px, boxes, alts) {
   const n = boxes.length, W = px.width, H = px.height; khzOcrEraseAll.last = null;
   // (with one helper thread there's nothing at the same time — only the handing over: 3.0 s against 2.3 s on a page)
   const pool = n >= 24 ? await khzOcrPool() : null;
-  if (!pool || pool.ws.length < 2) { for (let i = 0; i < n; i++) { khzOcrErase(px, boxes[i], boxes, alts[i]); await khzTick(); } return; }
+  if (!pool || khzOcrPoolUse(pool).length < 2) { for (let i = 0; i < n; i++) { khzOcrErase(px, boxes[i], boxes, alts[i]); await khzTick(); } return; }
   const t0 = performance.now(), R = boxes.map(b => khzOcrEraseReach(W, H, b, boxes));
   const meet = (a, b) => a.x0 < b.ex1 && b.ex0 < a.x1 && a.y0 < b.ey1 && b.ey0 < a.y1;   // (a's changed area within what b reads)
   const need = new Int32Array(n), after = Array.from({ length: n }, () => []);
@@ -67313,11 +67347,11 @@ async function khzOcrEraseAll(px, boxes, alts) {
     }
     rouse();
   };
-  await Promise.all(pool.ws.map(runT));
+  await Promise.all(khzOcrPoolUse(pool).map(runT));
   // (a thread that failed: the words not yet taken out are, here, in their order — still as one after another, since a
   // word done already never touched what one of these reads)
   if (failed) for (let i = 0; i < n; i++) if (!done[i]) { khzOcrErase(px, boxes[i], boxes, alts[i]); await khzTick(); }
-  khzOcrEraseAll.last = { n, ms: Math.round(performance.now() - t0), threads: pool.ws.length, failed, chain: n ? Math.max(...depth) : 0 };
+  khzOcrEraseAll.last = { n, ms: Math.round(performance.now() - t0), threads: khzOcrPoolUse(pool).length, failed, chain: n ? Math.max(...depth) : 0 };
 }
 
 // the symbols' shape fitting (khzOcrGlyphFit, app218) for many boxes at once, shared out among the threads: each box with
@@ -67389,7 +67423,15 @@ function khzOcrPrepOn() { return !!(window.khzDesktop && window.khzDesktop.ocrRe
 function khzOcrPrepCancel() { const P = khzOcrPrep; P.stop = true; P.p = null; P.res = new Map(); P.bytes = null; P.pages = []; P.active = false; }
 // (you're scrolling, zooming or pressing: the background work waits — khzUserBusy, app16)
 // (2715: the one watcher of your scrolling and typing is khzUserBusy, app16 — every text recognition waits through khzTick)
-function khzOcrPrepHeld() { return khzOcrPrep.active && khzUserBusy(600); }
+// (2026.11.2301, Brandon: New NextGen Pads stuck on "Preparing pages for editing…") and while Edit PDF is getting the
+// document's pages ready (app2b state.editPrep): the two had every core between them and the window stopped answering
+function khzOcrPrepHeld() { return khzOcrPrep.active && (khzUserBusy(600) || !!state.editPrep || !!state._khzEditWants); }
+// (2026.11.2301) the background work is what's running (not a Recognize Text you asked for): it uses fewer helper
+// threads (khzOcrPoolUse) and fewer reading engines at once (the desktop helper, opts.bg) — the same results, slower
+function khzBgPrepNow() { const P = khzOcrPrep; return !!(P.active && P.keep == null && !khzOcrEdit); }
+// (2026.11.2301) "Later" in Edit PDF's scanned-page question: the pages aren't made ready in the background either, for
+// that document while it's open (Acrobat converts nothing until you ask). Until 2301 it carried on with three pages
+function khzOcrPrepLater() { khzOcrPrep.later = khzDocKey(); khzOcrPrepCancel(); }
 // is page n a scan (no text to speak of, the page a picture) — as khzScannedPages tells it, for one page
 async function khzOcrPrepIsScan(n) {
   try { const tc = await getTextContent(n); if (tc.items.map(i => i.str).join('').replace(/\s/g, '').length >= 20) return false;
@@ -67399,6 +67441,7 @@ async function khzOcrPrepIsScan(n) {
 }
 async function khzOcrPrepare() {
   if (!khzOcrPrepOn() || khzOcrEdit || !state.pdfDoc || state.dirty || !state.fileBytes || typeof khzOcrRead !== 'function') return;
+  if (khzOcrPrep.later && khzOcrPrep.later === khzDocKey()) return;
   const n = state.currentPage, bytes = state.fileBytes, key = khzDocKey(), lang = ($('ocr-lang') && $('ocr-lang').value) || 'eng';
   const P = khzOcrPrep;
   if (P.p && P.bytes === bytes && P.lang === lang && (P.pages[0] === n || P.pages.includes(n) && P.active)) return;   // (these pages are being made ready already)
@@ -76354,7 +76397,7 @@ if (window.khzDesktop && khzDesktop.onTask) {
 //  • Where the thread can't be had (an older Mac web view without drawing in threads, or the thread's letters don't
 //    come out exactly as the window's), or it fails on a page, that page is finished off in the window as before.
 // ================================================================
-const KHZ_FINISH_SRC = {"fns":["escapeHtml","b64ToBytes","ocrWordSize","ocrWordsOf","khzTessRead","ocrSplitLines","khzOcrGray","khzOcrGrayPx","ocrDesktopRecognize","khzOcrFinishHere","khzOcrLineTilt","khzOcrMarksOf","khzOcrDotted","khzOcrTiltLines","khzOcrDict","khzOcrVote","khzOcrFuse","khzOcrSlashed","khzOcrPairs","khzOcrInkSplit","khzOcrWordSpace","khzOcrFontSpace","khzOcrFontGap","khzOcrLineEm","khzOcrTight","khzOcrAiSide","khzOcrLineSizes","khzOcrInkSize","khzOcrPlace","khzOcrInk","khzOcrMask","khzOcrDarkBands","khzOcrPaleMarks","khzOcrLoneMarks","khzOcrBareInk","khzOcrGroups","khzOcrTurned","khzOcrPictures","khzOcrPieces","khzOcrRunOnLines","khzOcrStampPieces","khzOcrRaised","khzOcrDropDoubles","khzOcrBackdrop","khzOcrPack","khzOcrGrow","khzOcrBoxMean","khzOcrPrintOff","khzOcrThinLines","khzOcrPrintMask","khzOcrUnderColours","khzOcrEraseReach","khzOcrEraseLeft","khzOcrErase","khzOcrColors","khzOcrPaperPicture","khzOcrJpeg","khzOcrStroke","khzOcrFaint","khzOcrBlurPx","khzOcrStrokeFloor","khzOcrBold","khzOcrSlant","khzOcrInkGrid","khzOcrMonoCheck","khzOcrDrawnWord","khzOcrFaceScore","khzOcrTypeface","khzOcrItalic","khzInkCore","khzOcrWebGray","khzOcrWebResize","khzOcrWebLocalMax","khzOcrWebBlur","khzOcrWebHist","khzOcrWebOtsu","khzOcrWebClean","khzOcrWebSpeckle","khzOcrWebMedian3","khzOcrFacesReady","khzOcrGlyphMask","khzOcrGlyphFit","khzOcrBoxMark","khzOcrRingMark","khzOcrBulletLeft","khzOcrHeadBullets","khzOcrFormBoxes","khzOcrRuleStroke","khzOcrTilted","khzOcrSymbols","khzOcrTmQuotes","khzOcrTimes","khzOcrInkWords","khzOcrUnoverlap","khzOcrDashedRules","khzOcrBigBullets","khzOcrSnapPieces","khzOcrLeaders","khzOcrScripts","khzOcrStops","khzOcrMissedStops","khzOcrQuotePairs","khzOcrDollar","khzOcrForeignStrokes","khzOcrLookalikes","khzOcrStrokes","khzOcrNumberDashes","khzOcrSupFigures","khzOcrInklessMarks","khzOcrFractions","khzOcrGrowBox","khzOcrCase","khzOcrCapsByHeight","khzOcrFrameEdges","khzOcrMidDots","khzOcrLoneYen","khzOcrPoolSize","khzOcrPoolSource","khzOcrPool","khzOcrPoolRun","khzOcrEraseAll","khzOcrPoolFits","khzOcrPoolFitCheck","khzOcrKeptPack","khzOcrInkMatch","khzOcrInkCols","khzOcrCornerInk","khzOcrInnerInk","khzOcrIconPic","khzOcrIconTrim","khzOcrCopyright","khzOcrJoinPieces","khzOcrIcons","khzOcrSpellFix","khzOcrPreErase","khzFinishThreadMain"],"decls":"let TEXT_FONT = 'Helvetica, Arial, sans-serif';\nlet FAMILY_CSS = new Proxy({ calibri: \"Calibri, Carlito, Arial, sans-serif\", sans: TEXT_FONT, serif: \"'Times New Roman', Times, serif\", mono: \"'Courier New', Courier, monospace\" },\n  { get: (t, k) => k in t ? t[k] : (typeof k === 'string' && k.startsWith('f:') ? `\"${k.slice(2).replace(/\"/g, '')}\", ${/mono|courier|consol|code/i.test(k) ? 'monospace' : /serif|roman|times|garamond|georgia|book|cambria|century|minion|palatino|song|ming|mincho|myungjo/i.test(k) && !/sans/i.test(k) ? 'serif' : TEXT_FONT}` : undefined) });\nlet area;\nconst mn = s => escapeHtml(s).replace(/&amp;(\\w)/, '<u>$1</u>');\nconst ocrDesc = t => /[gjpqyφø()\\[\\]{}|@]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;\nlet ocrDeskInfo = null;\nlet khzOcrDictP = null;\nlet KHZ_OCR_FAMS = ['sans', 'serif', 'mono', 'calibri', 'narrow'];\nlet KHZ_OCR_KIDS = { serif: [], sans: [] };\nlet KHZ_OCR_KID_LEAD = { sans: 0.10, serif: 0.07, cross: 0.15 };\nlet KHZ_OCR_CAL_LEAD = 0.02;\nlet khzOcrDrawnCache = new Map();\nconst b64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };\nlet KHZ_OCR_FACES = null;\nlet khzOcrFacesP = null;\nlet KHZ_SYM_LONE = ['\\u2713', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>'];\nlet KHZ_SYM_RAISED = ['*', '\\u2020', '\\u2021', '\\u00b0', '\\u00b9', '\\u00b2', '\\u00b3', '\\u2122', '\\u00ae', '\\u00a9', '+', '#', '\\u00a7', '\\u2032', '\\u2033'];\nlet KHZ_SYM_PUNCT = ['.', ',', ':', ';', '\"', \"'\", '(', ')', '[', ']', '{', '}', '\\\\', '_', '~', '^', '\\u201c', '\\u201d', '\\u2018', '\\u2019'];\nlet KHZ_SYM_SAME = [['\"', '\\u201c', '\\u201d'], [\"'\", '\\u2018', '\\u2019']];\nlet KHZ_SYM_EXTRA = new Set(['\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25ef', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109']);\nlet KHZ_SYM_SHAPES = new Set(['\\u2610', '\\u2611', '\\u2612', '\\u25cb', '\\u25cf', '\\u25ce', '\\u25c9', '\\u25a1', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25bd', '\\u25c6', '\\u25c7', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u2713', '\\u2717', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469']);\nlet KHZ_SYM_RARE = ['\\u2200', '\\u2201', '\\u2203', '\\u2204', '\\u220a', '\\u220b', '\\u220c', '\\u220d', '\\u220e', '\\u220f', '\\u2210', '\\u2214', '\\u221b', '\\u221c', '\\u221f', '\\u2224', '\\u2225', '\\u2226', '\\u2227', '\\u2228', '\\u222c', '\\u222d', '\\u222e', '\\u222f', '\\u2230', '\\u2231', '\\u2232', '\\u2233', '\\u2235', '\\u2237', '\\u2238', '\\u2239', '\\u223a', '\\u223b', '\\u223e', '\\u223f', '\\u2241', '\\u2242', '\\u2243', '\\u2244', '\\u2246', '\\u2247', '\\u2249', '\\u224a', '\\u224c', '\\u2252', '\\u2253', '\\u2254', '\\u2255', '\\u2256', '\\u2257', '\\u2258', '\\u2259', '\\u225a', '\\u225b', '\\u225c', '\\u225d', '\\u225e', '\\u225f', '\\u2262', '\\u2263', '\\u2266', '\\u2267', '\\u2268', '\\u2269', '\\u226a', '\\u226b', '\\u226c', '\\u226d', '\\u226e', '\\u226f', '\\u2270', '\\u2271', '\\u2272', '\\u2273', '\\u2274', '\\u2275', '\\u2276', '\\u2277', '\\u2278', '\\u2279', '\\u227a', '\\u227b', '\\u227c', '\\u227d', '\\u227e', '\\u22bf', '\\u22cf', '\\u22ce', '\\u22d5', '\\u22eb', '\\u22ec', '\\u22ed', '\\u22ea', '\\u22e9', '\\u22e8', '\\u22e7', '\\u22e6', '\\u22e5', '\\u22e4', '\\u22e3', '\\u22e2', '\\u2282', '\\u2283', '\\u2284', '\\u2285', '\\u2286', '\\u2287', '\\u2288', '\\u2289', '\\u228a', '\\u228b', '\\u228c', '\\u228d', '\\u228e', '\\u228f', '\\u2290', '\\u2291', '\\u2292', '\\u2293', '\\u2294', '\\u2296', '\\u2298', '\\u2299', '\\u229a', '\\u229b', '\\u229c', '\\u229d', '\\u229e', '\\u229f', '\\u2301', '\\u2303', '\\u2304', '\\u2305', '\\u2306', '\\u2307', '\\u2308', '\\u2309', '\\u230a', '\\u230b', '\\u230c', '\\u230d', '\\u230e', '\\u230f', '\\u2310', '\\u2311', '\\u2318', '\\u2319', '\\u231c', '\\u231d', '\\u231e', '\\u231f', '\\u2324', '\\u2325', '\\u2326', '\\u2327', '\\u2328', '\\u27e8', '\\u27e9', '\\u232b', '\\u2221', '\\u29ce', '\\u29cf', '\\u29d0', '\\u29d1', '\\u29d2', '\\u29d3', '\\u29d4', '\\u29d5', '\\u219a', '\\u219b', '\\u219c', '\\u219d', '\\u219e', '\\u219f', '\\u21a0', '\\u21a1', '\\u21a2', '\\u21a3', '\\u21a4', '\\u21a5', '\\u21a6', '\\u21a7', '\\u21a8', '\\u21a9', '\\u21aa', '\\u21ab', '\\u21ac', '\\u21ad', '\\u21ae', '\\u21af', '\\u21b0', '\\u21b1', '\\u21b2', '\\u21b3', '\\u21b4', '\\u21b5', '\\u21b6', '\\u21b7', '\\u21b8', '\\u21b9', '\\u21bc', '\\u21bd', '\\u21be', '\\u21bf', '\\u21c0', '\\u21c1', '\\u21c2', '\\u21c3', '\\u21c4', '\\u21c5', '\\u21c6', '\\u21c7', '\\u21c8', '\\u21c9', '\\u21ca', '\\u21cb', '\\u21cc', '\\u21cd', '\\u21ce', '\\u21cf', '\\u21d5', '\\u21d6', '\\u21d7', '\\u21d8', '\\u21d9', '\\u21da', '\\u21db', '\\u21dc', '\\u21dd', '\\u21de', '\\u21df', '\\u21e0', '\\u21e1', '\\u21e2', '\\u21e3', '\\u21e4', '\\u21e5', '\\u21e6', '\\u21e7', '\\u21e8', '\\u21e9', '\\u21ea', '\\u21eb', '\\u21ec', '\\u21ed', '\\u21ee', '\\u21ef', '\\u21f0', '\\u21f1', '\\u21f2', '\\u21f3', '\\u21f4', '\\u21f5', '\\u21f6', '\\u21f7', '\\u21f8', '\\u21f9', '\\u21fa', '\\u21fb', '\\u21fc', '\\u21fd', '\\u21fe', '\\u21ff', '\\u2794', '\\u2798', '\\u2799', '\\u279a', '\\u279b', '\\u279c', '\\u279d', '\\u279e', '\\u279f', '\\u27a0', '\\u27a1', '\\u27a2', '\\u27a3', '\\u27a4', '\\u27a5', '\\u27a6', '\\u27a7', '\\u27a8', '\\u27a9', '\\u27b2', '\\u27b3', '\\u27b4', '\\u27b5', '\\u27b6', '\\u27b7', '\\u27b8', '\\u27b9', '\\u27ba', '\\u27bb', '\\u27bc', '\\u27bd', '\\u27be', '\\u25a2', '\\u25a3', '\\u25a4', '\\u25a5', '\\u25a6', '\\u25a7', '\\u25a8', '\\u25a9', '\\u25ab', '\\u25ac', '\\u25ad', '\\u25ae', '\\u25af', '\\u25b0', '\\u25b1', '\\u25b4', '\\u25b5', '\\u25b7', '\\u25b8', '\\u25b9', '\\u25bb', '\\u25be', '\\u25bf', '\\u25c1', '\\u25c2', '\\u25c3', '\\u25c5', '\\u25c8', '\\u25ca', '\\u25cc', '\\u25cd', '\\u25d0', '\\u25d1', '\\u25d2', '\\u25d3', '\\u25d4', '\\u25d5', '\\u25d6', '\\u25d7', '\\u25d8', '\\u25d9', '\\u25da', '\\u25db', '\\u25dc', '\\u25dd', '\\u25de', '\\u25df', '\\u25e0', '\\u25e1', '\\u25e2', '\\u25e3', '\\u25e4', '\\u25e5', '\\u25e7', '\\u25e8', '\\u25e9', '\\u25ea', '\\u25eb', '\\u25ec', '\\u25ed', '\\u25ee', '\\u2609', '\\u263f', '\\u2640', '\\u2641', '\\u2642', '\\u2643', '\\u2644', '\\u2645', '\\u2646', '\\u2647'];\nlet KHZ_SYM_SMALL = new Set(['.', ',', '\\u00b7', '\\u2022', '\\u25cf', '\\u25aa', '-', '\\u2013', '\\u2014', '_', '~', \"'\", '\"', '`', '^', '\\u00b0', '\\u00af', '=', ':', ';', '\\u2018', '\\u2019', '\\u201c', '\\u201d', '*', '+', '\\u2212', '\\u00a8', '\\u02d9', '\\u00b4', '\\u2219', '\\u00b8', '\\u02dc', '\\u2026']);\nlet KHZ_SYM_SOLID = new Set(['\\u25cf', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25c6', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4']);\nlet KHZ_SYM_CANDS = ['\\u2713', '\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', '≥', '≤', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>', '/', '?', '!', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '\\u25ef'];\nlet khzOcrGlyphCache = new Map();\nlet KHZ_FIT_SHIFTS = (() => { const a = []; for (let sy = -2; sy <= 2; sy++) for (let sx = -2; sx <= 2; sx++) a.push([sx, sy]); return a.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1])); })();\nlet KHZ_LOOKALIKE = { A: ['\\u2206'], v: ['\\u221a', '\\u2713'], V: ['\\u221a', '\\u2207', '\\u2713'], '=': ['\\u2261', '\\u21d2', '\\u2248'], '@': ['\\u25c6'], '\\u00d8': ['\\u2205', '\\u2300'], '\\u00a9': ['\\u2205'], '\\u03b1': ['\\u221d', '\\u2300'], '\\u00ab': ['\\u221d'] };\nlet KHZ_FRACTIONS = ['\\u00bc', '\\u00bd', '\\u00be', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154'];\nlet KHZ_POOL_MAX = 0;\nlet KHZ_POOL_FNS = ['khzInkCore', 'khzOcrColors', 'khzOcrStroke', 'khzOcrSlant', 'khzOcrInkGrid', 'khzOcrDrawnWord', 'khzOcrFaceScore', 'khzOcrTilted', 'khzOcrGlyphMask', 'khzOcrGlyphFit', 'khzOcrEraseReach', 'khzOcrErase', 'khzOcrBackdrop', 'khzOcrPack', 'khzOcrBoxMean', 'khzOcrPrintOff', 'khzOcrThinLines', 'khzOcrPrintMask', 'khzOcrUnderColours', 'khzOcrGrow'];\nconst KHZ_POOL_CONSTS = () => ({ arrays: { KHZ_FIT_SHIFTS, KHZ_SYM_RARE }, sets: { KHZ_SYM_EXTRA, KHZ_SYM_SMALL, KHZ_SYM_SHAPES, KHZ_SYM_SOLID } });\nlet khzOcrPoolP = null;\nlet KHZ_FORM_MARKS = new Set(['☐', '☑', '☒', '□', '○', '●', '◉', '◎', '✓', '✔', '✗', '✘', '×', '•', '·', '-', '–', '—', '*', '#', '%', '&', '@', '$', '/', '\\\\', ':', ';', ',', '.', '(', ')', '[', ']', '\"', \"'\", '?', '!', '+', '=', '<', '>', '°', '±', '∅', 'Ø', '⌀', 'Φ', 'φ', 'µ', 'Ω', '→', '←', '↑', '↓']);","big":["KHZ_OCR_FACES"],"vals":["TEXT_FONT","ocrDeskInfo","KHZ_OCR_FAMS","KHZ_OCR_KIDS","KHZ_OCR_KID_LEAD","KHZ_OCR_SCRIPT_TOP","KHZ_OCR_CAL_LEAD","KHZ_OCR_FACES","KHZ_SYM_LONE","KHZ_SYM_RAISED","KHZ_SYM_PUNCT","KHZ_SYM_SAME","KHZ_SYM_EXTRA","KHZ_SYM_SHAPES","KHZ_SYM_RARE","KHZ_SYM_SMALL","KHZ_SYM_SOLID","KHZ_SYM_CANDS","KHZ_FIT_SHIFTS","KHZ_LOOKALIKE","KHZ_FRACTIONS","KHZ_SUPS","KHZ_POOL_FNS","KHZ_POOL_MAX","KHZ_FORM_MARKS"],"live":["ocrDeskInfo"]};   // (filled in by the build: tools/finish-src.js)
+const KHZ_FINISH_SRC = {"fns":["escapeHtml","b64ToBytes","ocrWordSize","ocrWordsOf","khzTessRead","ocrSplitLines","khzOcrGray","khzOcrGrayPx","ocrDesktopRecognize","khzOcrFinishHere","khzOcrLineTilt","khzOcrMarksOf","khzOcrDotted","khzOcrTiltLines","khzOcrDict","khzOcrVote","khzOcrFuse","khzOcrSlashed","khzOcrPairs","khzOcrInkSplit","khzOcrWordSpace","khzOcrFontSpace","khzOcrFontGap","khzOcrLineEm","khzOcrTight","khzOcrAiSide","khzOcrLineSizes","khzOcrInkSize","khzOcrPlace","khzOcrInk","khzOcrMask","khzOcrDarkBands","khzOcrPaleMarks","khzOcrLoneMarks","khzOcrBareInk","khzOcrGroups","khzOcrTurned","khzOcrPictures","khzOcrPieces","khzOcrRunOnLines","khzOcrStampPieces","khzOcrRaised","khzOcrDropDoubles","khzOcrBackdrop","khzOcrPack","khzOcrGrow","khzOcrBoxMean","khzOcrPrintOff","khzOcrThinLines","khzOcrPrintMask","khzOcrUnderColours","khzOcrEraseReach","khzOcrEraseLeft","khzOcrErase","khzOcrColors","khzOcrPaperPicture","khzOcrJpeg","khzOcrStroke","khzOcrFaint","khzOcrBlurPx","khzOcrStrokeFloor","khzOcrBold","khzOcrSlant","khzOcrInkGrid","khzOcrMonoCheck","khzOcrDrawnWord","khzOcrFaceScore","khzOcrTypeface","khzOcrItalic","khzInkCore","khzOcrWebGray","khzOcrWebResize","khzOcrWebLocalMax","khzOcrWebBlur","khzOcrWebHist","khzOcrWebOtsu","khzOcrWebClean","khzOcrWebSpeckle","khzOcrWebMedian3","khzOcrFacesReady","khzOcrGlyphMask","khzOcrGlyphFit","khzOcrBoxMark","khzOcrRingMark","khzOcrBulletLeft","khzOcrHeadBullets","khzOcrFormBoxes","khzOcrRuleStroke","khzOcrTilted","khzOcrSymbols","khzOcrTmQuotes","khzOcrTimes","khzOcrInkWords","khzOcrUnoverlap","khzOcrDashedRules","khzOcrBigBullets","khzOcrSnapPieces","khzOcrLeaders","khzOcrScripts","khzOcrStops","khzOcrMissedStops","khzOcrQuotePairs","khzOcrDollar","khzOcrForeignStrokes","khzOcrLookalikes","khzOcrStrokes","khzOcrNumberDashes","khzOcrSupFigures","khzOcrInklessMarks","khzOcrFractions","khzOcrGrowBox","khzOcrCase","khzOcrCapsByHeight","khzOcrFrameEdges","khzOcrMidDots","khzOcrLoneYen","khzOcrPoolSize","khzOcrPoolSource","khzOcrPool","khzOcrPoolRun","khzOcrEraseAll","khzOcrPoolFits","khzOcrPoolFitCheck","khzOcrKeptPack","khzOcrInkMatch","khzOcrInkCols","khzOcrCornerInk","khzOcrInnerInk","khzOcrIconPic","khzOcrIconTrim","khzOcrCopyright","khzOcrJoinPieces","khzOcrIcons","khzOcrSpellFix","khzOcrPreErase","khzOcrFromDrawn","khzOcrPoolUse","khzFinishThreadMain"],"decls":"let TEXT_FONT = 'Helvetica, Arial, sans-serif';\nlet FAMILY_CSS = new Proxy({ calibri: \"Calibri, Carlito, Arial, sans-serif\", sans: TEXT_FONT, serif: \"'Times New Roman', Times, serif\", mono: \"'Courier New', Courier, monospace\" },\n  { get: (t, k) => k in t ? t[k] : (typeof k === 'string' && k.startsWith('f:') ? `\"${k.slice(2).replace(/\"/g, '')}\", ${/mono|courier|consol|code/i.test(k) ? 'monospace' : /serif|roman|times|garamond|georgia|book|cambria|century|minion|palatino|song|ming|mincho|myungjo/i.test(k) && !/sans/i.test(k) ? 'serif' : TEXT_FONT}` : undefined) });\nlet area;\nconst mn = s => escapeHtml(s).replace(/&amp;(\\w)/, '<u>$1</u>');\nconst ocrDesc = t => /[gjpqyφø()\\[\\]{}|@]/.test(t) ? 0.21 : /[,;]/.test(t) ? 0.12 : 0;\nlet ocrDeskInfo = null;\nlet khzOcrDictP = null;\nlet KHZ_OCR_FAMS = ['sans', 'serif', 'mono', 'calibri', 'narrow'];\nlet KHZ_OCR_KIDS = { serif: [], sans: [] };\nlet KHZ_OCR_KID_LEAD = { sans: 0.10, serif: 0.07, cross: 0.15 };\nlet KHZ_OCR_CAL_LEAD = 0.02;\nlet khzOcrDrawnCache = new Map();\nconst b64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };\nlet KHZ_OCR_FACES = null;\nlet khzOcrFacesP = null;\nlet KHZ_SYM_LONE = ['\\u2713', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>'];\nlet KHZ_SYM_RAISED = ['*', '\\u2020', '\\u2021', '\\u00b0', '\\u00b9', '\\u00b2', '\\u00b3', '\\u2122', '\\u00ae', '\\u00a9', '+', '#', '\\u00a7', '\\u2032', '\\u2033'];\nlet KHZ_SYM_PUNCT = ['.', ',', ':', ';', '\"', \"'\", '(', ')', '[', ']', '{', '}', '\\\\', '_', '~', '^', '\\u201c', '\\u201d', '\\u2018', '\\u2019'];\nlet KHZ_SYM_SAME = [['\"', '\\u201c', '\\u201d'], [\"'\", '\\u2018', '\\u2019']];\nlet KHZ_SYM_EXTRA = new Set(['\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25ef', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109']);\nlet KHZ_SYM_SHAPES = new Set(['\\u2610', '\\u2611', '\\u2612', '\\u25cb', '\\u25cf', '\\u25ce', '\\u25c9', '\\u25a1', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25bd', '\\u25c6', '\\u25c7', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u2713', '\\u2717', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469']);\nlet KHZ_SYM_RARE = ['\\u2200', '\\u2201', '\\u2203', '\\u2204', '\\u220a', '\\u220b', '\\u220c', '\\u220d', '\\u220e', '\\u220f', '\\u2210', '\\u2214', '\\u221b', '\\u221c', '\\u221f', '\\u2224', '\\u2225', '\\u2226', '\\u2227', '\\u2228', '\\u222c', '\\u222d', '\\u222e', '\\u222f', '\\u2230', '\\u2231', '\\u2232', '\\u2233', '\\u2235', '\\u2237', '\\u2238', '\\u2239', '\\u223a', '\\u223b', '\\u223e', '\\u223f', '\\u2241', '\\u2242', '\\u2243', '\\u2244', '\\u2246', '\\u2247', '\\u2249', '\\u224a', '\\u224c', '\\u2252', '\\u2253', '\\u2254', '\\u2255', '\\u2256', '\\u2257', '\\u2258', '\\u2259', '\\u225a', '\\u225b', '\\u225c', '\\u225d', '\\u225e', '\\u225f', '\\u2262', '\\u2263', '\\u2266', '\\u2267', '\\u2268', '\\u2269', '\\u226a', '\\u226b', '\\u226c', '\\u226d', '\\u226e', '\\u226f', '\\u2270', '\\u2271', '\\u2272', '\\u2273', '\\u2274', '\\u2275', '\\u2276', '\\u2277', '\\u2278', '\\u2279', '\\u227a', '\\u227b', '\\u227c', '\\u227d', '\\u227e', '\\u22bf', '\\u22cf', '\\u22ce', '\\u22d5', '\\u22eb', '\\u22ec', '\\u22ed', '\\u22ea', '\\u22e9', '\\u22e8', '\\u22e7', '\\u22e6', '\\u22e5', '\\u22e4', '\\u22e3', '\\u22e2', '\\u2282', '\\u2283', '\\u2284', '\\u2285', '\\u2286', '\\u2287', '\\u2288', '\\u2289', '\\u228a', '\\u228b', '\\u228c', '\\u228d', '\\u228e', '\\u228f', '\\u2290', '\\u2291', '\\u2292', '\\u2293', '\\u2294', '\\u2296', '\\u2298', '\\u2299', '\\u229a', '\\u229b', '\\u229c', '\\u229d', '\\u229e', '\\u229f', '\\u2301', '\\u2303', '\\u2304', '\\u2305', '\\u2306', '\\u2307', '\\u2308', '\\u2309', '\\u230a', '\\u230b', '\\u230c', '\\u230d', '\\u230e', '\\u230f', '\\u2310', '\\u2311', '\\u2318', '\\u2319', '\\u231c', '\\u231d', '\\u231e', '\\u231f', '\\u2324', '\\u2325', '\\u2326', '\\u2327', '\\u2328', '\\u27e8', '\\u27e9', '\\u232b', '\\u2221', '\\u29ce', '\\u29cf', '\\u29d0', '\\u29d1', '\\u29d2', '\\u29d3', '\\u29d4', '\\u29d5', '\\u219a', '\\u219b', '\\u219c', '\\u219d', '\\u219e', '\\u219f', '\\u21a0', '\\u21a1', '\\u21a2', '\\u21a3', '\\u21a4', '\\u21a5', '\\u21a6', '\\u21a7', '\\u21a8', '\\u21a9', '\\u21aa', '\\u21ab', '\\u21ac', '\\u21ad', '\\u21ae', '\\u21af', '\\u21b0', '\\u21b1', '\\u21b2', '\\u21b3', '\\u21b4', '\\u21b5', '\\u21b6', '\\u21b7', '\\u21b8', '\\u21b9', '\\u21bc', '\\u21bd', '\\u21be', '\\u21bf', '\\u21c0', '\\u21c1', '\\u21c2', '\\u21c3', '\\u21c4', '\\u21c5', '\\u21c6', '\\u21c7', '\\u21c8', '\\u21c9', '\\u21ca', '\\u21cb', '\\u21cc', '\\u21cd', '\\u21ce', '\\u21cf', '\\u21d5', '\\u21d6', '\\u21d7', '\\u21d8', '\\u21d9', '\\u21da', '\\u21db', '\\u21dc', '\\u21dd', '\\u21de', '\\u21df', '\\u21e0', '\\u21e1', '\\u21e2', '\\u21e3', '\\u21e4', '\\u21e5', '\\u21e6', '\\u21e7', '\\u21e8', '\\u21e9', '\\u21ea', '\\u21eb', '\\u21ec', '\\u21ed', '\\u21ee', '\\u21ef', '\\u21f0', '\\u21f1', '\\u21f2', '\\u21f3', '\\u21f4', '\\u21f5', '\\u21f6', '\\u21f7', '\\u21f8', '\\u21f9', '\\u21fa', '\\u21fb', '\\u21fc', '\\u21fd', '\\u21fe', '\\u21ff', '\\u2794', '\\u2798', '\\u2799', '\\u279a', '\\u279b', '\\u279c', '\\u279d', '\\u279e', '\\u279f', '\\u27a0', '\\u27a1', '\\u27a2', '\\u27a3', '\\u27a4', '\\u27a5', '\\u27a6', '\\u27a7', '\\u27a8', '\\u27a9', '\\u27b2', '\\u27b3', '\\u27b4', '\\u27b5', '\\u27b6', '\\u27b7', '\\u27b8', '\\u27b9', '\\u27ba', '\\u27bb', '\\u27bc', '\\u27bd', '\\u27be', '\\u25a2', '\\u25a3', '\\u25a4', '\\u25a5', '\\u25a6', '\\u25a7', '\\u25a8', '\\u25a9', '\\u25ab', '\\u25ac', '\\u25ad', '\\u25ae', '\\u25af', '\\u25b0', '\\u25b1', '\\u25b4', '\\u25b5', '\\u25b7', '\\u25b8', '\\u25b9', '\\u25bb', '\\u25be', '\\u25bf', '\\u25c1', '\\u25c2', '\\u25c3', '\\u25c5', '\\u25c8', '\\u25ca', '\\u25cc', '\\u25cd', '\\u25d0', '\\u25d1', '\\u25d2', '\\u25d3', '\\u25d4', '\\u25d5', '\\u25d6', '\\u25d7', '\\u25d8', '\\u25d9', '\\u25da', '\\u25db', '\\u25dc', '\\u25dd', '\\u25de', '\\u25df', '\\u25e0', '\\u25e1', '\\u25e2', '\\u25e3', '\\u25e4', '\\u25e5', '\\u25e7', '\\u25e8', '\\u25e9', '\\u25ea', '\\u25eb', '\\u25ec', '\\u25ed', '\\u25ee', '\\u2609', '\\u263f', '\\u2640', '\\u2641', '\\u2642', '\\u2643', '\\u2644', '\\u2645', '\\u2646', '\\u2647'];\nlet KHZ_SYM_SMALL = new Set(['.', ',', '\\u00b7', '\\u2022', '\\u25cf', '\\u25aa', '-', '\\u2013', '\\u2014', '_', '~', \"'\", '\"', '`', '^', '\\u00b0', '\\u00af', '=', ':', ';', '\\u2018', '\\u2019', '\\u201c', '\\u201d', '*', '+', '\\u2212', '\\u00a8', '\\u02d9', '\\u00b4', '\\u2219', '\\u00b8', '\\u02dc', '\\u2026']);\nlet KHZ_SYM_SOLID = new Set(['\\u25cf', '\\u25a0', '\\u25b2', '\\u25bc', '\\u25c6', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4']);\nlet KHZ_SYM_CANDS = ['\\u2713', '\\u2717', '\\u2195', '\\u2196', '\\u2197', '\\u2198', '\\u2199', '\\u21d0', '\\u21d1', '\\u21d3', '\\u21d4', '\\u21ba', '\\u21bb', '\\u25a1', '\\u25b6', '\\u25c0', '\\u25ba', '\\u25c4', '\\u25ce', '\\u25c9', '\\u25bd', '\\u2213', '\\u2295', '\\u2297', '\\u2229', '\\u222a', '\\u2202', '\\u2207', '\\u2245', '\\u22a5', '\\u2302', '\\u26a1', '\\u2460', '\\u2461', '\\u2462', '\\u2463', '\\u2464', '\\u2465', '\\u2466', '\\u2467', '\\u2468', '\\u2469', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154', '\\u25cb', '\\u25b2', '\\u25bc', '\\u25b3', '\\u25c6', '\\u25c7', '\\u25aa', '\\u2220', '\\u2030', '\\u2104', '\\u25cf', '\\u25a0', '\\u221a', '\\u2206', '\\u2190', '\\u2192', '\\u2191', '\\u2193', '\\u2194', '\\u21d2', '\\u2234', '\\u2205', '\\u2300', '\\u2116', '\\u2209', '\\u2208', '\\u221d', '\\u2248', '\\u2260', '\\u2261', '\\u221e', '\\u2211', '\\u03c0', '\\u222b', '\\u20ac', '\\u00a3', '\\u00a5', '\\u00a2', '\\u2103', '\\u2109', '²', '³', '¹', '½', '¼', '¾', '·', '•', '®', '©', '™', '×', '÷', '—', '–', '-', '°', '±', '≥', '≤', 'µ', 'Ω', 'φ', 'Φ', 'Ø', '%', '&', '@', '#', '*', '+', '=', '<', '>', '/', '?', '!', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '\\u25ef'];\nlet khzOcrGlyphCache = new Map();\nlet KHZ_FIT_SHIFTS = (() => { const a = []; for (let sy = -2; sy <= 2; sy++) for (let sx = -2; sx <= 2; sx++) a.push([sx, sy]); return a.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - Math.abs(q[0]) - Math.abs(q[1])); })();\nlet KHZ_LOOKALIKE = { A: ['\\u2206'], v: ['\\u221a', '\\u2713'], V: ['\\u221a', '\\u2207', '\\u2713'], '=': ['\\u2261', '\\u21d2', '\\u2248'], '@': ['\\u25c6'], '\\u00d8': ['\\u2205', '\\u2300'], '\\u00a9': ['\\u2205'], '\\u03b1': ['\\u221d', '\\u2300'], '\\u00ab': ['\\u221d'] };\nlet KHZ_FRACTIONS = ['\\u00bc', '\\u00bd', '\\u00be', '\\u215b', '\\u215c', '\\u215d', '\\u215e', '\\u2153', '\\u2154'];\nlet KHZ_POOL_MAX = 0;\nlet KHZ_POOL_BG = 0;\nlet KHZ_POOL_FNS = ['khzInkCore', 'khzOcrColors', 'khzOcrStroke', 'khzOcrSlant', 'khzOcrInkGrid', 'khzOcrDrawnWord', 'khzOcrFaceScore', 'khzOcrTilted', 'khzOcrGlyphMask', 'khzOcrGlyphFit', 'khzOcrEraseReach', 'khzOcrErase', 'khzOcrBackdrop', 'khzOcrPack', 'khzOcrBoxMean', 'khzOcrPrintOff', 'khzOcrThinLines', 'khzOcrPrintMask', 'khzOcrUnderColours', 'khzOcrGrow'];\nconst KHZ_POOL_CONSTS = () => ({ arrays: { KHZ_FIT_SHIFTS, KHZ_SYM_RARE }, sets: { KHZ_SYM_EXTRA, KHZ_SYM_SMALL, KHZ_SYM_SHAPES, KHZ_SYM_SOLID } });\nlet khzOcrPoolP = null;\nlet KHZ_FORM_MARKS = new Set(['☐', '☑', '☒', '□', '○', '●', '◉', '◎', '✓', '✔', '✗', '✘', '×', '•', '·', '-', '–', '—', '*', '#', '%', '&', '@', '$', '/', '\\\\', ':', ';', ',', '.', '(', ')', '[', ']', '\"', \"'\", '?', '!', '+', '=', '<', '>', '°', '±', '∅', 'Ø', '⌀', 'Φ', 'φ', 'µ', 'Ω', '→', '←', '↑', '↓']);","big":["KHZ_OCR_FACES"],"vals":["TEXT_FONT","ocrDeskInfo","KHZ_OCR_FAMS","KHZ_OCR_KIDS","KHZ_OCR_KID_LEAD","KHZ_OCR_SCRIPT_TOP","KHZ_OCR_CAL_LEAD","KHZ_OCR_FACES","KHZ_SYM_LONE","KHZ_SYM_RAISED","KHZ_SYM_PUNCT","KHZ_SYM_SAME","KHZ_SYM_EXTRA","KHZ_SYM_SHAPES","KHZ_SYM_RARE","KHZ_SYM_SMALL","KHZ_SYM_SOLID","KHZ_SYM_CANDS","KHZ_FIT_SHIFTS","KHZ_LOOKALIKE","KHZ_FRACTIONS","KHZ_SUPS","KHZ_POOL_FNS","KHZ_POOL_MAX","KHZ_POOL_BG","KHZ_FORM_MARKS"],"live":["ocrDeskInfo","KHZ_POOL_BG"]};   // (filled in by the build: tools/finish-src.js)
 let khzFinishP = null;
 // (2026.11.309 tried a second finishing thread — two pages finished at once. On the user's 12-processor PC it gained
 // nothing with the readings remembered (31 s against 30) and lost a lot with the pages read fresh (47 s against 32):
@@ -76392,14 +76435,14 @@ function khzFinishThreadMain() {
     const job = { stop: false }; jobs.set(m.id, job);
     try {
       for (const [n, v] of Object.entries(m.live || {})) setLive(n, v);
-      const c = toCanvas(m.c), rc = m.rc ? toCanvas(m.rc) : c, clean = m.clean ? toCanvas(m.clean) : null;
+      const c = toCanvas(m.c), rc = m.rc ? toCanvas(m.rc) : c, clean = m.clean ? toCanvas(m.clean) : null, drawnPic = m.drawnPic ? toCanvas(m.drawnPic) : null;
       if (m.stamps) rc._stamps = m.stamps;
       const laps = {}; let tl = performance.now();
       const lap = key => { const t = performance.now(); laps[key] = (laps[key] || 0) + Math.round(t - tl); tl = t; };
       // (the web version's Tesseract stays in the window: asked for each reading)
       const worker = m.tess ? { read: async (psm, img, o1, o2) => { const bm = await createImageBitmap(img); return ask('tess.read', [psm, bm, o1, o2], [bm], m.id); } } : null;
       const st = {};
-      const r = await khzOcrFinishHere({ ...m.J, c, cx: c.getContext('2d', { willReadFrequently: true }), rc, clean, gray: m.gray, worker, stop: () => job.stop, lap, st });
+      const r = await khzOcrFinishHere({ ...m.J, c, cx: c.getContext('2d', { willReadFrequently: true }), rc, clean, drawnPic, gray: m.gray, worker, stop: () => job.stop, lap, st });
       // (as a converted page is kept on this computer, app225: a line turned on its side keeps its frame as numbers)
       postMessage({ type: 'done', id: m.id, ok: true, r: r.cancelled ? r : khzOcrKeptPack(r), laps, st });
     } catch (err) { postMessage({ type: 'done', id: m.id, ok: false, err: String(err && err.stack || err) }); }
@@ -76488,13 +76531,15 @@ async function khzOcrFinish(J) {
   try {
     const bm = x => createImageBitmap(x);
     const msg = { type: 'job', id, J: { n: J.n, k: J.k, mode: J.mode, desk: J.desk, scan: J.scan, found: J.found, aiRes: J.aiRes, sys: J.sys, down: J.down }, gray: J.gray, tess: !!J.worker, live: {} };
+    if (typeof khzBgPrepNow === 'function') KHZ_POOL_BG = khzBgPrepNow() ? 2 : 0;
     for (const n of KHZ_FINISH_SRC.live) { try { const v = (0, eval)(n); if (v != null && typeof v.then !== 'function' && typeof v !== 'function') msg.live[n] = v; } catch (e) {} }
     msg.c = await bm(J.c);
     if (J.rc && J.rc !== J.c) { msg.rc = await bm(J.rc); if (J.rc._stamps) msg.stamps = J.rc._stamps; }
     if (J.clean && J.clean !== J.c) msg.clean = await bm(J.clean);
+    if (J.drawnPic) msg.drawnPic = await bm(J.drawnPic);
     T.jobs.set(id, J);
     const done = new Promise(res => T.waits.set(id, res));
-    T.w.postMessage(msg, [msg.c, msg.rc, msg.clean].filter(Boolean));
+    T.w.postMessage(msg, [msg.c, msg.rc, msg.clean, msg.drawnPic].filter(Boolean));
     const poll = setInterval(() => { if (J.stop()) T.w.postMessage({ type: 'stop', id }); }, 100);
     const r = await done.finally(() => { clearInterval(poll); T.jobs.delete(id); });
     if (!r.ok) throw new Error(r.err);
@@ -84557,6 +84602,251 @@ function khzTwHoverable(a) { return !!a && typeof khzTypewriter === 'function' &
   const _sat = setActiveTool;
   setActiveTool = function () { const r = _sat.apply(this, arguments); if (state.activeTool !== 'select') set(null); return r; };
 }
+// ================================================================
+//  (2026.11.2301, Brandon's New NextGen Pads.pdf and his Acrobat video) A PAGE WHOSE LETTERS ARE DRAWN SHAPES IS MADE
+//  EDITABLE WITHOUT ERASING THEM FROM ITS PICTURE. A page printed with "Microsoft: Print To PDF" from some programs has
+//  no text: every letter is a filled outline (page 1: 40,777 shapes). Made editable (Edit PDF › Recognize Text) it was
+//  converted like a scan — the page drawn as a picture and each recognized word rubbed out of it pixel by pixel
+//  (khzOcrEraseAll: 34–38 s a page on the AOG computer). Acrobat has the page's own drawing: the words' shapes are simply
+//  left out of the page's picture. So does KHZ now: once a page has been read, it is drawn again without the shapes that
+//  lie wholly inside a recognized word (pdf.js operationsFilter), and the finishing off takes each word's area from that
+//  drawing instead of erasing it (khzOcrFinishHere). Lines, boxes and pictures that cross a word aren't wholly inside it
+//  and stay. A word whose letters aren't shapes after all (print inside a picture on the page) is still erased as before.
+//  Scans are not affected.
+// ================================================================
+// the boxes of everything the readers read on the page (pixels of the page picture, as found / aiRes / sys)
+function khzOcrReadBoxes(found, aiRes, sys) {
+  const out = [];
+  const add = b => { if (b && b.x1 > b.x0 && b.y1 > b.y0) out.push({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }); };
+  (found || []).forEach(w => add(w && w.bbox));
+  (sys && sys.words || []).forEach(w => add(w && w.bbox));
+  (aiRes && aiRes.lines || []).forEach(l => {
+    if (!l) return; if (l.bbox) return add(l.bbox);
+    const q = l.quad || l.box; if (!q) return;
+    const f = [].concat(...q.map(p => (Array.isArray(p) ? p : [p])));
+    const xs = f.filter((_, i) => !(i & 1)), ys = f.filter((_, i) => i & 1);
+    if (xs.length && ys.length) add({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+  });
+  // (and each run of words side by side on a line: some programs fill a whole run of letters as one shape — on Brandon's
+  // page "PERFORMANCE APPLICATIONS ONLY" was one — which lies inside no single word)
+  const ws = out.slice().sort((a, b) => a.x0 - b.x0), used = new Uint8Array(ws.length);
+  for (let i = 0; i < ws.length; i++) {
+    if (used[i]) continue; used[i] = 1;
+    const r = { ...ws[i] }; let n = 1;
+    for (let j = i + 1; j < ws.length; j++) {
+      const w = ws[j], h = Math.min(w.y1 - w.y0, r.y1 - r.y0);
+      if (w.x0 > r.x1 + 2 * h) { if (w.x0 > r.x1 + 40 * h) break; continue; }
+      const ov = Math.min(w.y1, r.y1) - Math.max(w.y0, r.y0);
+      if (used[j] || ov < 0.6 * h || Math.abs((w.y1 - w.y0) - (r.y1 - r.y0)) > 0.5 * h) continue;
+      used[j] = 1; n++; r.x1 = Math.max(r.x1, w.x1); r.y0 = Math.min(r.y0, w.y0); r.y1 = Math.max(r.y1, w.y1);
+    }
+    if (n > 1) out.push(r);
+  }
+  return out;
+}
+// the page drawn again (as khzOcrRead drew it: white paper, vp, print) without the shapes wholly inside a read box.
+// → a canvas W×H, or null (nothing left out: no shapes in the words)
+async function khzOcrDrawnPic(pg, vp, W, H, boxes, c) {
+  if (!pg || !vp || !boxes || !boxes.length || !pdfjsLib.OPS) return null;
+  const O = pdfjsLib.OPS;
+  const ol = await pg.getOperatorList({ intent: 'print', annotationMode: pdfjsLib.AnnotationMode.DISABLE });
+  // (the read boxes a little larger — a letter's outline reaches a little past where the reader put its box — on a grid)
+  // (and each box's ink colour — the darkest tenth of its pixels on the page as drawn: only shapes painted in about that
+  // colour are left out, so a grey watermark or a coloured band behind the words stays. Brandon's page has a big grey
+  // "ENGINEERING EXPRESS" logo behind its notes)
+  const D = c ? c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data : null;
+  const inkOf = b => {
+    if (!D) return null;
+    const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0)), x1 = Math.min(W, Math.ceil(b.x1)), y1 = Math.min(H, Math.ceil(b.y1));
+    const hist = new Uint32Array(256), sum = Array.from({ length: 256 }, () => [0, 0, 0]); let n = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0, q = (y * W + x0) * 4; x < x1; x++, q += 4) { const L = (D[q] * 77 + D[q + 1] * 150 + D[q + 2] * 29) >> 8; hist[L]++; sum[L][0] += D[q]; sum[L][1] += D[q + 1]; sum[L][2] += D[q + 2]; n++; }
+    let want = Math.max(1, Math.round(0.1 * n)), got = 0; const rgb = [0, 0, 0];
+    for (let L = 0; L < 256 && got < want; L++) { if (!hist[L]) continue; if (L > 200) break; got += hist[L]; rgb[0] += sum[L][0]; rgb[1] += sum[L][1]; rgb[2] += sum[L][2]; }
+    return got ? rgb.map(v => v / got) : null;
+  };
+  const B = boxes.map(b => { const m = 0.15 * (b.y1 - b.y0) + 1; return { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m, h: b.y1 - b.y0, ink: inkOf(b) }; });
+  const G = 64, grid = new Map();
+  B.forEach((b, i) => { for (let gy = Math.floor(b.y0 / G); gy <= Math.floor(b.y1 / G); gy++) for (let gx = Math.floor(b.x0 / G); gx <= Math.floor(b.x1 / G); gx++) { const key = gy * 100000 + gx; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(i); } });
+  const near = (ink, col) => !col || (ink && Math.abs(ink[0] - col[0]) + Math.abs(ink[1] - col[1]) + Math.abs(ink[2] - col[2]) <= 110);
+  const inWord = (x0, y0, x1, y1, col) => { const cand = grid.get(Math.floor(y0 / G) * 100000 + Math.floor(x0 / G)); if (!cand) return false;
+    for (const i of cand) { const b = B[i]; if (x0 >= b.x0 && y0 >= b.y0 && x1 <= b.x1 && y1 <= b.y1 && (y1 - y0) <= 1.3 * b.h + 2 && (D ? b.ink && near(b.ink, col) : true)) return true; } return false; };
+  const hex = h => (typeof h === 'string' && /^#[0-9a-f]{6}$/i.test(h) ? [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)] : null);
+  let fillC = [0, 0, 0], strokeC = [0, 0, 0]; const cstack = [];
+  const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+  let ctm = vp.transform.slice(); const stack = [];
+  const skip = new Set(), F = ol.fnArray, A = ol.argsArray;
+  for (let i = 0; i < F.length; i++) {
+    const f = F[i], a = A[i];
+    if (f === O.save) { stack.push(ctm); cstack.push([fillC, strokeC]); }
+    else if (f === O.restore) { if (stack.length) ctm = stack.pop(); if (cstack.length) [fillC, strokeC] = cstack.pop(); }
+    else if (f === O.setFillRGBColor) fillC = hex(a && a[0]);
+    else if (f === O.setStrokeRGBColor) strokeC = hex(a && a[0]);
+    else if (f === O.setFillGray || f === O.setFillCMYKColor || f === O.setFillColor || f === O.setFillColorN || f === O.setFillTransparent) fillC = null;
+    else if (f === O.setStrokeGray || f === O.setStrokeCMYKColor || f === O.setStrokeColor || f === O.setStrokeColorN || f === O.setStrokeTransparent) strokeC = null;
+    else if (f === O.transform) ctm = mul(ctm, a);
+    else if (f === O.paintFormXObjectBegin) { stack.push(ctm); const m = a && a[0]; if (m && m.length === 6) ctm = mul(ctm, Array.from(m)); }
+    else if (f === O.paintFormXObjectEnd) { if (stack.length) ctm = stack.pop(); }
+    else if (f === O.constructPath) {
+      // (only a shape that is painted — not one that sets a clipping area, which is applied by the path after it)
+      const paint = a && a[0], mm = a && a[2];
+      if (paint === O.endPath || !mm || mm.length < 4 || !isFinite(mm[0]) || !isFinite(mm[3])) continue;
+      if (i && (F[i - 1] === O.clip || F[i - 1] === O.eoClip)) continue;
+      const xs = [], ys = [];
+      for (const [x, y] of [[mm[0], mm[1]], [mm[2], mm[1]], [mm[0], mm[3]], [mm[2], mm[3]]]) { xs.push(ctm[0] * x + ctm[2] * y + ctm[4]); ys.push(ctm[1] * x + ctm[3] * y + ctm[5]); }
+      // (its colour: a fill's, a stroke's — both for a filled and stroked shape; a colour not known here keeps the shape)
+      const isStroke = paint === O.stroke || paint === O.closeStroke, isBoth = paint === O.fillStroke || paint === O.eoFillStroke || paint === O.closeFillStroke || paint === O.closeEOFillStroke;
+      const cols = isStroke ? [strokeC] : isBoth ? [fillC, strokeC] : [fillC];
+      if (cols.some(x => !x)) continue;
+      const bx = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      if (cols.every(col => inWord(bx[0], bx[1], bx[2], bx[3], col))) skip.add(i);
+    }
+  }
+  if (!skip.size) return null;
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const cx = out.getContext('2d', { willReadFrequently: true }); cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+  await pg.render({ canvasContext: cx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.DISABLE, intent: 'print', operationsFilter: i => !skip.has(i) }).promise;
+  out._left = skip.size;
+  return out;
+}
+// (finishing off, app16 khzOcrFinishHere — also in the background thread) each word's area taken from the drawing without
+// the words' shapes (dp), where the page picture px still shows the page as drawn (not where a picture was cut out of it).
+// A word whose ink is unchanged in dp (its letters weren't shapes) is left to be erased — ink that changed counts as
+// taken out (a letter left out over a grey watermark leaves the watermark's grey). → for each box, true = taken
+function khzOcrFromDrawn(px, c, dp, boxes, paper) {
+  const W = px.width, H = px.height, D = px.data;
+  const O = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const P = dp.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const pr = paper ? paper[0] : 255, pgg = paper ? paper[1] : 255, pb = paper ? paper[2] : 255;
+  const ink = (d, q) => Math.abs(d[q] - pr) + Math.abs(d[q + 1] - pgg) + Math.abs(d[q + 2] - pb) > 90;
+  return boxes.map(b => {
+    const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0)), x1 = Math.min(W, Math.ceil(b.x1)), y1 = Math.min(H, Math.ceil(b.y1));
+    if (x1 <= x0 || y1 <= y0) return true;
+    let was = 0, left = 0, more = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0, q = (y * W + x0) * 4; x < x1; x++, q += 4) { if (ink(O, q)) { was++; if (Math.abs(P[q] - O[q]) + Math.abs(P[q + 1] - O[q + 1]) + Math.abs(P[q + 2] - O[q + 2]) < 60) left++; } else if (ink(P, q)) more++; }
+    // (nor one where the drawing without the shapes has ink the page hadn't — a white outline round letters left out
+    // over black ones kept)
+    if (was && left > 0.25 * was || more > 0.02 * (x1 - x0) * (y1 - y0) + 4) return false;
+    for (let y = y0; y < y1; y++) for (let x = x0, q = (y * W + x0) * 4; x < x1; x++, q += 4)
+      if (D[q] === O[q] && D[q + 1] === O[q + 1] && D[q + 2] === O[q + 2]) { D[q] = P[q]; D[q + 1] = P[q + 1]; D[q + 2] = P[q + 2]; }
+    return true;
+  });
+}
+// ================================================================
+//  (2026.11.2401, Brandon's Acrobat videos 2026-11-24 13:14 and 13:18: RN400 Spec Sheet.pdf — secured, opens without a
+//  password, everything allowed but Page Extraction) A SECURED DOCUMENT SHOWS IT LIKE ACROBAT
+//  • a padlock at the top of the left icon bar ("Security Settings - View security information for this document");
+//    clicked, the Security Settings pane: "This document has an open password or a modify password." and Permission
+//    Details, which opens Document Properties › Security;
+//  • Document Properties › Security: each restriction from the file's own permissions, "Can be Opened by" from how it
+//    is encrypted (Acrobat 7.0 and later for this one), and the line about its metadata (app43);
+//  • Edit PDF's Restrict editing is ticked for a document that came secured. Unticking it: "Are you sure you want to
+//    remove security from this document?", then the Permissions Password ("The password is incorrect…" and asked
+//    again); Cancel leaves it ticked; the right password takes the security off when you save.
+//  Until 2401 the only sign was "(SECURED)" in the window title, which the desktop app doesn't show.
+// ================================================================
+// the Document Restrictions Summary rows for a file's own protection E = state.encOrig (P: its permission bits, R: its
+// security revision). Opened with its Permissions Password: all allowed (as Acrobat shows it then)
+function khzSecRows(E) {
+  const P = E.P | 0, on = b => !!(P & b), A = v => (E.isOwner || v ? 'Allowed' : 'Not Allowed');
+  const r3 = (E.R | 0) >= 3;
+  const print = E.isOwner ? 'Allowed' : !on(4) ? 'Not Allowed' : (r3 && !on(2048) ? 'Low Resolution' : 'Allowed');
+  const edit = on(8), copy = on(16), notes = on(32), fill = r3 ? on(256) || notes : notes;
+  return [['Printing', print], ['Changing the Document', A(edit)], ['Document Assembly', A(edit || (r3 && on(1024)))], ['Content Copying', A(copy)],
+    ['Content Copying for Accessibility', A(copy || (r3 ? on(512) : false))], ['Page Extraction', A(copy && (r3 ? on(1024) : edit))],
+    ['Commenting', A(notes)], ['Filling of form fields', A(fill)], ['Signing', A(fill)], ['Creation of Template Pages', A(edit)]];
+}
+// "Can be Opened by" from the security revision and method, as Acrobat names them
+function khzSecOpenBy(E) {
+  const R = E.R | 0;
+  if (R >= 6) return 'Acrobat X and later';
+  if (R === 5) return 'Acrobat 9.0 and later';
+  if (R === 4) return /aes/i.test(E.M || '') ? 'Acrobat 7.0 and later' : 'Acrobat 6.0 and later';
+  if (R === 3) return 'Acrobat 5.0 and later';
+  return 'Acrobat 3.0 and later';
+}
+// the document open came secured (a password or permissions in the file) and still is
+function khzDocSecured() { return !!(state.pdfDoc && state.encOrig && !state.encOrig.removed); }
+
+// ---------- the padlock and the Security Settings pane ----------
+{
+  const bar = $('left-sidebar');
+  const b = document.createElement('button');
+  b.className = 'side-btn'; b.id = 'sb-security'; b.title = 'Security Settings - View security information for this document';
+  b.innerHTML = '<span class="ic"><svg viewBox="0 0 24 24"><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5.5" y="10.3" width="13" height="10.2" rx="2.2" fill="currentColor"/></svg></span>';
+  b.style.display = 'none';
+  b.onclick = () => toggleLeftPanel('security');
+  if (bar) bar.insertBefore(b, bar.firstChild);
+  const st = document.createElement('style');
+  st.textContent = `#sb-security .ic svg { width:20px; height:20px; }
+    .khz-secpane { padding:10px 12px; font-size:12px; line-height:1.5; color:var(--ac-text,#ddd); }
+    .khz-secpane a { color:var(--ac-blue,#4a9eff); text-decoration:underline; cursor:pointer; display:inline-block; margin-top:4px; }`;
+  document.head.appendChild(st);
+  const _llp = loadLeftPanel;
+  loadLeftPanel = function (mode) {
+    if (mode !== 'security') return _llp.apply(this, arguments);
+    $('left-panel-title').textContent = 'Security Settings';
+    const body = $('left-panel-body');
+    body.innerHTML = `<div class="khz-secpane"><div>This document has an open password or a modify password.</div><a class="khz-secdet" title="Show the permission details for this document">Permission Details</a></div>`;
+    body.querySelector('.khz-secdet').onclick = () => showDocumentProperties('Security');
+  };
+  const _tlp = toggleLeftPanel;
+  toggleLeftPanel = function (mode) {
+    const r = _tlp.apply(this, arguments);
+    b.classList.toggle('active', state.leftPanelMode === 'security' && $('left-panel').classList.contains('open'));
+    return r;
+  };
+}
+// shown for a secured document (the document open, a tab shown, a save), its pane closed when the document isn't
+function khzSecSync() {
+  const b = $('sb-security'); if (!b) return;
+  const on = khzDocSecured();
+  b.style.display = on ? '' : 'none';
+  if (!on && state.leftPanelMode === 'security') closeLeftPanel();
+  if (typeof khzFpSync === 'function') khzFpSync();
+}
+updateTitle = (prev => function () { const r = prev.apply(this, arguments); try { khzSecSync(); } catch (e) {} return r; })(updateTitle);
+
+// ---------- Edit PDF's Restrict editing ----------
+// ticked for a document that came secured, too (app224 ticks it for a Permissions Password set here)
+khzFpSync = (prev => function () { prev.apply(this, arguments); const c = $('fp-restrict'); if (c && khzDocSecured()) c.checked = true; })(khzFpSync);
+// Acrobat's question before taking security off (its window: a warning sign, OK and Cancel)
+function khzSecAsk(msg) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+    const ov = esDialog('khz-secask', 'KHZ PDF', `<div style="display:flex;gap:12px;align-items:flex-start;margin:4px 0 8px"><span style="font-size:26px;line-height:1;color:#e8b400">⚠</span><div>${escapeHtml(msg)}</div></div>`,
+      [{ label: 'OK', primary: true, run: () => fin(true) }, { label: 'Cancel', run: () => fin(false) }], 440);
+    const x = ov && ov.querySelector('.ap-x'); if (x) { const c0 = x.onclick; x.onclick = () => { fin(false); c0 && c0(); }; }
+    if (ov) ov.addEventListener('keydown', e => { if (e.key === 'Escape') fin(false); });
+  });
+}
+// unticked on a document that came secured: asked, then the Permissions Password until it's right or Cancel
+khzFpRestrict = (prev => async function (cbox) {
+  if (cbox.checked || !khzDocSecured()) return prev.apply(this, arguments);
+  cbox.checked = true;   // (stays ticked unless the security really comes off)
+  if (!(await khzSecAsk('Are you sure you want to remove security from this document?'))) return;
+  const E = state.encOrig;
+  if (!E.isOwner) {
+    for (;;) {
+      const pw = await khzPasswordDialog(state.fileName, false, true);
+      if (pw == null) return;
+      let ok = false;
+      for (const v of [pw, ...khzPwVariants(pw)]) {
+        const info = await qpdfRun(['--password=' + v, '--show-encryption', '/in.pdf'], { 'in.pdf': E.bytes }, []);
+        if (/Supplied password is owner password/.test(info.text)) { E.pw = v; E.isOwner = true; ok = true; break; }
+      }
+      if (ok) break;
+      await khzInfo('The password is incorrect. Please make sure that Caps Lock is not on by mistake, and try again.');
+    }
+  }
+  // the right password: no security from the next save on
+  E.removed = true;
+  state.security = null; state.secRestricted = null;
+  if (typeof updateSecurityBadge === 'function') updateSecurityBadge();
+  markDirty();
+  cbox.checked = false;
+  if (typeof updateTitle === 'function') updateTitle();
+  toast('Security removed. Save to apply it.');
+})(khzFpRestrict);
 </script>
 </body>
 </html>
